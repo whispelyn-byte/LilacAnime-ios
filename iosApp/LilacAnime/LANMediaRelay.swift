@@ -196,7 +196,7 @@ final class LANMediaRelay {
     private func sendBytes(_ connection: NWConnection, data: Data, type: String, range: String?, head: Bool) async throws {
         let selected: ByteRange?
         do { selected = try Self.byteRange(range, size: Int64(data.count)) }
-        catch { reply(connection, status: 416, headers: ["Content-Range": "bytes */" + String(data.count)]); return }
+        catch { try await send(connection, data: makeHeader(status: 416, length: 0, headers: ["Content-Range": "bytes */" + String(data.count)])); return }
         var headers = ["Content-Type": type, "Accept-Ranges": "bytes"]
         if let selected { headers["Content-Range"] = "bytes \(selected.start)-\(selected.end)/\(data.count)" }
         try await send(connection, data: makeHeader(status: selected == nil ? 200 : 206, length: selected?.length ?? Int64(data.count), headers: headers))
@@ -209,7 +209,7 @@ final class LANMediaRelay {
         let size = (try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0
         let selected: ByteRange?
         do { selected = try Self.byteRange(range, size: size) }
-        catch { reply(connection, status: 416, headers: ["Content-Range": "bytes */" + String(size)]); return }
+        catch { try await send(connection, data: makeHeader(status: 416, length: 0, headers: ["Content-Range": "bytes */" + String(size)])); return }
         var headers = ["Content-Type": Self.mime(url), "Accept-Ranges": "bytes"]
         if let selected { headers["Content-Range"] = "bytes \(selected.start)-\(selected.end)/\(size)" }
         try await send(connection, data: makeHeader(status: selected == nil ? 200 : 206, length: selected?.length ?? size, headers: headers))
@@ -232,6 +232,20 @@ final class LANMediaRelay {
         if let range { request.setValue(range, forHTTPHeaderField: "Range") }
         let (bytes, response) = try await URLSession.shared.bytes(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw SubtitleFiles.failure("Media request failed") }
+        if http.mimeType?.lowercased().contains("mpegurl") == true {
+            if head {
+                try await send(connection, data: makeHeader(status: 200, length: nil, headers: ["Content-Type": "application/vnd.apple.mpegurl"]))
+                return
+            }
+            var manifest = Data()
+            for try await byte in bytes {
+                try Task.checkCancellation()
+                guard manifest.count < 4_000_000 else { throw SubtitleFiles.failure("HLS manifest too large") }
+                manifest.append(byte)
+            }
+            try await sendManifest(connection, data: manifest, base: url, stream: stream, head: false)
+            return
+        }
         var headers = ["Content-Type": http.mimeType ?? Self.mime(url), "Accept-Ranges": http.value(forHTTPHeaderField: "Accept-Ranges") ?? "bytes"]
         if let value = http.value(forHTTPHeaderField: "Content-Range") { headers["Content-Range"] = value }
         try await send(connection, data: makeHeader(status: http.statusCode, length: http.expectedContentLength >= 0 ? http.expectedContentLength : nil, headers: headers))

@@ -36,3 +36,9 @@ internal fun String.format(vararg values: Any?): String {
         }
     }
 }
+
+internal fun <K, V : Any> MutableMap<K, V>.putIfAbsent(key: K, value: V): V? {
+    val previous = this[key]
+    if (previous == null) this[key] = value
+    return previous
+}

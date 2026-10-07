@@ -64,7 +64,7 @@ final class TranslationCoordinator: ObservableObject {
                         model: preferences.translationModel, region: preferences.qwenRegion)
                     output = try await withCheckedThrowingContinuation { continuation in
                         service.translate(content: content, extension: ext, config: config, progress: { [weak self] done, total in
-                            if token == self?.generation { self?.progress = Double(done) / Double(max(total, 1)) }
+                            if token == self?.generation { self?.progress = done.doubleValue / max(total.doubleValue, 1) }
                         }, partial: { [weak self] value in
                             guard token == self?.generation else { return }
                             do { try publish(value) } catch { self?.error = error.localizedDescription }

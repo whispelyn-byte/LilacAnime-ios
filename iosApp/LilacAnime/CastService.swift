@@ -46,7 +46,10 @@ final class CastService: NSObject, GCKRequestDelegate {
         request?.delegate = self
         GCKCastContext.sharedInstance().presentDefaultExpandedMediaControls()
     }
-    func request(_ request: GCKRequest, didFailWithError error: GCKError) { onError?(error.localizedDescription) }
+    nonisolated func request(_ request: GCKRequest, didFailWithError error: GCKError) {
+        let message = error.localizedDescription
+        DispatchQueue.main.async { [weak self] in self?.onError?(message) }
+    }
     func stop() { request = nil }
 }
 

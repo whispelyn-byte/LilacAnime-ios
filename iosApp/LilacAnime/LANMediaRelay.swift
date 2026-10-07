@@ -28,9 +28,17 @@ final class LANMediaRelay {
         guard end >= start else { throw SubtitleFiles.failure("Invalid byte range") }
         return ByteRange(start: start, end: end)
     }
+    private static func canonicalPath(_ url: URL) -> String? {
+        guard url.isFileURL else { return nil }
+        return url.withUnsafeFileSystemRepresentation { path in
+            guard let path, let resolved = realpath(path, nil) else { return nil }
+            defer { free(resolved) }
+            return String(cString: resolved)
+        }
+    }
     static func allowedLocal(_ url: URL, root: URL) -> Bool {
-        url.isFileURL && url.resolvingSymlinksInPath().standardizedFileURL.path
-            .hasPrefix(root.resolvingSymlinksInPath().standardizedFileURL.path + "/")
+        guard let path = canonicalPath(url), let directory = canonicalPath(root) else { return false }
+        return path.hasPrefix(directory + "/")
     }
     private let queue = DispatchQueue(label: "Lilac.CastRelay")
     private let token = UUID().uuidString + UUID().uuidString

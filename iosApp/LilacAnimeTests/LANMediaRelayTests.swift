@@ -55,6 +55,13 @@ final class LANMediaRelayTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: folder) }
         let link = folder.appendingPathComponent("outside")
         try FileManager.default.createSymbolicLink(at: link, withDestinationURL: folder.deletingLastPathComponent())
-        XCTAssertFalse(LANMediaRelay.allowedLocal(link.appendingPathComponent("secret"), root: folder))
+        XCTAssertFalse(LANMediaRelay.allowedLocal(link.appendingPathComponent("missing"), root: folder))
+        let outside = folder.deletingLastPathComponent().appendingPathComponent(UUID().uuidString)
+        try Data([1]).write(to: outside)
+        defer { try? FileManager.default.removeItem(at: outside) }
+        XCTAssertFalse(LANMediaRelay.allowedLocal(link.appendingPathComponent(outside.lastPathComponent), root: folder))
+        let inside = folder.appendingPathComponent("allowed.ts")
+        try Data([71]).write(to: inside)
+        XCTAssertTrue(LANMediaRelay.allowedLocal(inside, root: folder))
     }
 }

@@ -19,3 +19,4 @@ xcodebuild -project LilacAnime.xcodeproj -scheme LilacAnime -configuration Debug
 
 ditto -c -k --sequesterRsrc --keepParent build/DerivedData/Build/Products/Debug-iphonesimulator/LilacAnime.app build/LilacAnime-simulator.zip
 ditto -c -k --sequesterRsrc --keepParent build/DerivedData/Build/Products/Debug-iphoneos/LilacAnime.app build/LilacAnime-device-unsigned.zip
+sh scripts/package-ipa.sh build/DerivedData/Build/Products/Debug-iphoneos/LilacAnime.app build/LilacAnime-SideStore.ipa

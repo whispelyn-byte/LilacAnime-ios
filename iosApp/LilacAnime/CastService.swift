@@ -51,8 +51,11 @@ final class CastService: NSObject, GCKRequestDelegate, GCKSessionManagerListener
                     throw SubtitleFiles.failure("Cast용으로 변환할 자막이 없습니다.")
                 }
                 let url = relay.subtitle(Data(vtt.utf8))
-                tracks.append(GCKMediaTrack(identifier: 1, contentIdentifier: url.absoluteString, contentType: "text/vtt",
-                    type: .text, textSubtype: .subtitles, name: "선택한 자막", languageCode: "ko", customData: nil))
+                guard let track = GCKMediaTrack(identifier: 1, contentIdentifier: url.absoluteString, contentType: "text/vtt",
+                    type: .text, textSubtype: .subtitles, name: "선택한 자막", languageCode: "ko", customData: nil) else {
+                    throw SubtitleFiles.failure("Cast 자막 트랙을 생성할 수 없습니다.")
+                }
+                tracks.append(track)
             } else {
                 tracks = stream.subtitles.enumerated().compactMap { index, track in
                     guard track.url.scheme == "https", track.url.pathExtension.lowercased() == "vtt" else { return nil }

@@ -322,7 +322,7 @@ object AnimenosubParser {
             value.startsWith("/") -> BASE_URL + value
             value.startsWith("http://", true) || value.startsWith("https://", true) -> value
             else -> try {
-                java.net.URI(base).resolve(value).toString()
+                com.fleeksoft.ksoup.internal.StringUtil.resolve(base, value)
             } catch (_: Exception) {
                 value
             }

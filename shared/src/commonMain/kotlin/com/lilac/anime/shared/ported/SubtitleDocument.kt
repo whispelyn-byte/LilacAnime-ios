@@ -63,7 +63,7 @@ object SubtitleDocument {
         }
         return buildString {
             var offset = 0
-            for ((position, tags) in insertions.toSortedMap()) {
+            for ((position, tags) in insertions.entries.sortedBy { it.key }) {
                 append(escape(text.substring(offset, position)))
                 append(tags.joinToString(""))
                 offset = position

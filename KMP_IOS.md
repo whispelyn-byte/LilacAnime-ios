@@ -32,7 +32,7 @@ open iosApp/LilacAnime.xcodeproj
 
 GitHub Actions에는 동일한 검증 절차를 추가했습니다. 비공개 저장소는 https://github.com/whispelyn-byte/LilacAnime-ios 입니다.
 
-2026-10-08 검증: https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37696263105 (커밋 9d781f0, Xcode 26.3). JVM 테스트, KMP iOS 테스트, 시뮬레이터 테스트 3개, 서명 없는 iOS arm64 빌드가 통과했습니다. Actions의 ios-app-builds 아티팩트에는 LilacAnime-simulator.zip과 LilacAnime-device-unsigned.zip이 들어 있습니다. 실기기 설치에는 별도 Apple 서명이 필요합니다.
+2026-10-08 최신 검증: https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37702875269 (커밋 550f657, Xcode 26.3). JVM 테스트 16개, KMP iOS 테스트, 시뮬레이터 테스트 6개, 서명 없는 iOS arm64 빌드가 통과했습니다. 시뮬레이터 테스트에는 실제 HTTP Range/HEAD/404/416 응답, HLS 로컬 조각 재작성, 폴더 밖 파일과 심볼릭 링크 차단이 포함됩니다. Actions의 ios-app-builds 아티팩트에는 LilacAnime-simulator.zip과 LilacAnime-device-unsigned.zip이 들어 있습니다. 실기기 설치에는 별도 Apple 서명이 필요합니다.
 
 ## 확인 결과와 남은 제한
 

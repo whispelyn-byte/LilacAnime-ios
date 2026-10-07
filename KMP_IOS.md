@@ -50,6 +50,12 @@ GitHub Actions에는 동일한 검증 절차를 추가했습니다. 비공개 �
 
 의존성: Kotlin 2.3.21 / Ktor 3.1.3 / MPVKit 1.0.0 (LGPL) / ZIPFoundation 0.9.19 / Google Cast 4.8.6 / llama.cpp b5046. 배포 시 각 의존성과 원본 저장소의 라이선스 조건을 확인해야 합니다.
 
+## SideStore 설치 파일
+
+SideStore용 IPA 패키징 성공: https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37703774135 . 검증된 550f657 실기기 앱을 재사용해 Payload/LilacAnime.app 구조의 arm64 iPhoneOS 패키지를 생성했습니다. 아티팩트 LilacAnime-SideStore를 다운로드하고 바깥 ZIP을 한 번만 풀면 LilacAnime-SideStore.ipa가 나옵니다. IPA는 더 풀지 말고 SideStore에서 가져옵니다. SideStore가 개인 개발 인증서로 다시 서명해 설치하며, 실제 기기 설치는 아직 확인하지 않았습니다. 공식 안내: https://docs.sidestore.io/docs/faq .
+
+향후 전체 iOS 빌드도 별도 LilacAnime-SideStore 아티팩트에 IPA를 업로드합니다. Package SideStore IPA 워크플로는 성공한 빌드의 run ID로 기존 실기기 앱을 다시 패키징할 수 있습니다.
+
 ## TMDB·Cast 사용
 
 설정의 한국어 제목 검색 · TMDB에서 API Key 또는 API Read Access Token을 저장하고 연결 테스트를 실행합니다. 빈 키를 저장하면 삭제됩니다. 키는 Keychain에 보관하며 고정 HTTPS 목적지 api.themoviedb.org에만 전송합니다. 제목 조회 요청은 리디렉션을 따라가지 않습니다. 요청 오류에는 키를 노출하지 않습니다. 키가 없거나 조회가 실패하면 기존 Namu/수동 제목 검색을 사용합니다.

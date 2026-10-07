@@ -1,0 +1,80 @@
+name: LilacAnime
+options:
+  bundleIdPrefix: com.lilac
+  deploymentTarget:
+    iOS: "16.0"
+packages:
+  MPVKit:
+    url: https://github.com/mpvkit/MPVKit.git
+    exactVersion: 1.0.0
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation.git
+    exactVersion: 0.9.19
+  GoogleCast:
+    url: https://github.com/googlecast/google-cast-ios-sdk.git
+    exactVersion: 4.8.6
+  LilacLocalAI:
+    path: Native
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+targets:
+  LilacAnime:
+    type: application
+    platform: iOS
+    sources:
+      - path: LilacAnime
+        excludes: [Info.plist]
+    info:
+      path: LilacAnime/Info.plist
+      properties:
+        CFBundleDisplayName: LilacAnime
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UIBackgroundModes: [audio]
+        NSLocalNetworkUsageDescription: 같은 Wi-Fi의 Chromecast에서 영상을 재생합니다.
+        NSBonjourServices: [_googlecast._tcp, _CC1AD845._googlecast._tcp]
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+    dependencies:
+      - package: MPVKit
+        product: MPVKit
+      - package: ZIPFoundation
+      - package: GoogleCast
+        product: GoogleCastDynamic
+      - package: LilacLocalAI
+    settings:
+      base:
+        SWIFT_OBJC_BRIDGING_HEADER: LilacAnime/NativeAudio.h
+        CLANG_CXX_LANGUAGE_STANDARD: c++17
+        PRODUCT_BUNDLE_IDENTIFIER: com.lilac.anime.ios
+        FRAMEWORK_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)"
+        OTHER_LDFLAGS: "$(inherited) -framework LilacShared"
+    preBuildScripts:
+      - name: Build KMP framework
+        script: |
+          cd "$SRCROOT/.."
+          /bin/sh ./gradlew :shared:embedAndSignAppleFrameworkForXcode
+        basedOnDependencyAnalysis: false
+  LilacAnimeTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [LilacAnimeTests]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: LilacAnime
+schemes:
+  LilacAnime:
+    build:
+      targets:
+        LilacAnime: all
+        LilacAnimeTests: [test]
+    test:
+      targets: [LilacAnimeTests]

@@ -7,9 +7,24 @@ final class TitleLookup: NSObject {
     private var continuation: CheckedContinuation<String?, Never>?
     private var task: Task<Void, Never>?
     private var generation = UUID()
-    func resolve(_ query: String) async -> String? {
+    private let service = IosServices()
+    func resolve(_ query: String, aliases: [String] = []) async -> String? {
         cancel()
         let token = generation
+        let credential = SecureKeys.load("tmdb")
+        if !credential.isEmpty {
+            let titles = [query] + aliases.filter { !$0.isEmpty }
+            let cache = "tmdb.title.v1." + SubtitleFiles.key(titles.joined(separator: "|") + SubtitleFiles.key(credential))
+            if let saved = UserDefaults.standard.string(forKey: cache) { return saved }
+            let title: String? = await withCheckedContinuation { pending in
+                service.koreanTitle(titles: titles, credential: credential) { title, _ in pending.resume(returning: title) }
+            }
+            guard token == generation, !Task.isCancelled else { return nil }
+            if let title {
+                UserDefaults.standard.set(title, forKey: cache)
+                return title
+            }
+        }
         let key = "namu.title.v9." + SubtitleFiles.key(query)
         if let saved = UserDefaults.standard.string(forKey: key) { return saved }
         return await withCheckedContinuation { continuation in

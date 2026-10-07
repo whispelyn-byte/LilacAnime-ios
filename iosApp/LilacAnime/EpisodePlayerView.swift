@@ -81,7 +81,7 @@ final class EpisodePlayerModel: ObservableObject {
         resolver.resolve(item)
     }
     func change(_ item: PlaybackItem, library: LibraryStore) {
-        save(library: library); engine.pause(); proxy?.stop(); proxy = nil; translation.cancel()
+        save(library: library); engine.pause(); proxy?.stop(); proxy = nil; translation.cancel(); cast.stop()
         generation = UUID(); titleLookup.cancel(); searchTitle = item.anime.title; self.item = item; active = nil; subtitle = nil; sourceSubtitle = nil; assets = []; subtitleFiles = []; chapters = []
         loadedSkip = false; lastSave = 0; lastSkipped = ""; systemPlayback = false
         begin(library: library)
@@ -117,10 +117,11 @@ final class EpisodePlayerModel: ObservableObject {
         guard let active else { return }
         cast.onError = { [weak self] error in self?.error = error }
         Task {
-            do { try await cast.send(active, title: item.anime.title + " · " + item.title, position: engine.position, subtitle: subtitle); engine.pause() }
+            do { try await cast.send(active, title: item.anime.title + " · " + item.title, position: engine.position, subtitle: subtitle, subtitleOffset: subtitleOffset); engine.pause() }
             catch { self.error = error.localizedDescription }
         }
     }
+    func stopCast() { cast.stop() }
     func search(_ provider: String) {
         let token = generation
         searching = true; error = nil
@@ -130,7 +131,7 @@ final class EpisodePlayerModel: ObservableObject {
                 let korean = [anime.title, anime.native, anime.romaji, anime.english].first { TitleCandidates.shared.isKorean(title: $0) }
                 let resolved: String
                 if let korean { resolved = korean }
-                else { let found = await titleLookup.resolve(searchTitle); resolved = found ?? searchTitle }
+                else { let found = await titleLookup.resolve(searchTitle, aliases: [anime.native, anime.romaji, anime.english]); resolved = found ?? searchTitle }
                 guard token == generation else { return }
                 searchTitle = resolved; performSubtitleSearch(provider, token: token)
             }
@@ -219,6 +220,7 @@ struct EpisodePlayerView: View {
                             HStack {
                                 Button("다운로드") { downloads.download(model.item, stream: active, quality: library.preferences.quality) }
                                 Button("Cast 재생") { model.castVideo() }
+                                Button("Cast 중계 종료") { model.stopCast() }
                                 Button("시스템 재생 / PiP") { model.engine.pause(); model.systemPlayback = true; showWeb = false }
                             }
                         }

@@ -1,11 +1,16 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import LilacShared
 
 struct SettingsView: View {
     @EnvironmentObject private var store: LibraryStore
     @State private var apiKey = ""
     @State private var error: String?
     @State private var importFont = false
+    @State private var tmdbKey = ""
+    @State private var tmdbStatus: String?
+    @State private var tmdbTesting = false
+    @State private var tmdbService = IosServices()
     var body: some View {
         NavigationStack {
             Form {
@@ -35,6 +40,27 @@ struct SettingsView: View {
                     Toggle("ASS 효과", isOn: $store.preferences.assEffects)
                     Slider(value: $store.preferences.subtitlePadding, in: 0...40)
                     Stepper("싱크 \(store.preferences.subtitleOffset, specifier: "%.1f")초", value: $store.preferences.subtitleOffset, in: -120...120, step: 0.1)
+                }
+                Section("한국어 제목 검색 · TMDB") {
+                    SecureField("API Key 또는 Read Access Token", text: $tmdbKey)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    Button("TMDB 키 저장") {
+                        do { try SecureKeys.save(tmdbKey.trimmingCharacters(in: .whitespacesAndNewlines), name: "tmdb"); tmdbStatus = "저장했습니다." }
+                        catch { self.error = error.localizedDescription }
+                    }
+                    Button("TMDB 연결 테스트") {
+                        tmdbTesting = true
+                        tmdbService.testTmdb(credential: tmdbKey.trimmingCharacters(in: .whitespacesAndNewlines)) { result, failure in
+                            Task { @MainActor in tmdbStatus = result ?? failure; tmdbTesting = false }
+                        }
+                    }.disabled(tmdbTesting || tmdbKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    if tmdbTesting { ProgressView() }
+                    if let tmdbStatus { Text(tmdbStatus) }
+                    Text("키는 Keychain에 저장합니다. 자막 검색 제목을 찾을 때 작품 제목과 키를 api.themoviedb.org에 전송합니다. 빈 키를 저장하면 삭제됩니다.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Link("TMDB API 설정", destination: URL(string: "https://www.themoviedb.org/settings/api")!)
+                    Text("This product uses the TMDB API but is not endorsed or certified by TMDB.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("AI 번역") {
                     Toggle("자막 자동 번역", isOn: $store.preferences.autoTranslation)
@@ -74,7 +100,7 @@ struct SettingsView: View {
                 if let error { Text(error).foregroundStyle(.red) }
                 if let error = store.persistenceError { Text(error).foregroundStyle(.red) }
             }.navigationTitle("설정")
-            .onAppear { apiKey = SecureKeys.load(store.preferences.translationProvider) }
+            .onAppear { apiKey = SecureKeys.load(store.preferences.translationProvider); tmdbKey = SecureKeys.load("tmdb") }
             .onChange(of: store.preferences.translationProvider) { provider in apiKey = SecureKeys.load(provider) }
             .fileImporter(isPresented: $importFont, allowedContentTypes: [.data]) { result in
                 do {

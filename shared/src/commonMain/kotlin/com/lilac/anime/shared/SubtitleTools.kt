@@ -33,6 +33,11 @@ object SubtitleTools {
     fun toVtt(content: String, extension: String): String = "WEBVTT\n\n" + cues(content, extension).mapIndexed { i, cue ->
         (i + 1).toString() + "\n" + clock(cue.startSeconds) + " --> " + clock(cue.endSeconds) + "\n" + cue.text
     }.joinToString("\n\n")
+    fun castVtt(content: String, extension: String, offsetSeconds: Double): String = "WEBVTT\n\n" +
+        cues(content, extension).filter { it.endSeconds + offsetSeconds > 0 }.mapIndexed { i, cue ->
+            (i + 1).toString() + "\n" + clock(cue.startSeconds + offsetSeconds) + " --> " +
+                clock(cue.endSeconds + offsetSeconds) + "\n" + cue.text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        }.joinToString("\n\n")
     private fun clock(seconds: Double): String {
         val ms = (seconds.coerceAtLeast(0.0) * 1000).toLong()
         return (ms / 3600000).toString().padStart(2, '0') + ":" +

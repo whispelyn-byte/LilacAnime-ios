@@ -7,6 +7,13 @@ class IosServices {
     private val translator = CloudTranslator()
     private val skip = AniSkip()
     private val models = ModelRepository()
+    private val tmdb = TmdbTitleResolver()
+    fun koreanTitle(titles: List<String>, credential: String, completion: (String?, String?) -> Unit) {
+        scope.launch { call(completion) { tmdb.resolve(titles, credential) } }
+    }
+    fun testTmdb(credential: String, completion: (String?, String?) -> Unit) {
+        scope.launch { call(completion) { tmdb.test(credential) } }
+    }
     fun browse(sourceKey: String, query: String, page: Int, filter: BrowseFilter, completion: (List<Anime>?, String?) -> Unit) {
         scope.launch { call(completion) { source.browse(sourceKey, query, page, filter) } }
     }
@@ -48,5 +55,5 @@ class IosServices {
         scope.launch { call(completion) { models.files(repo) } }
     }
     fun cancel() { scope.coroutineContext.cancelChildren() }
-    fun close() { scope.cancel(); source.close(); discovery.close(); translator.close(); skip.close(); models.close() }
+    fun close() { scope.cancel(); source.close(); discovery.close(); translator.close(); skip.close(); models.close(); tmdb.close() }
 }

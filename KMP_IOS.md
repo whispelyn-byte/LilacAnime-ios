@@ -30,12 +30,14 @@ open iosApp/LilacAnime.xcodeproj
 
 검증 스크립트는 KMP iOS 테스트, 프로젝트 생성, Swift 패키지 해석, iPhone 시뮬레이터 테스트, 서명 없는 실기기 빌드를 수행합니다. 결과는 iosApp/build 아래에 기록됩니다. 실제 설치는 Xcode에서 Team과 본인 bundle ID를 설정해야 합니다. iOS 프레임워크는 Xcode 빌드 단계에서 생성됩니다.
 
-GitHub Actions에는 동일한 검증 절차를 추가했습니다. 이 작업에서는 저장소에 push하거나 원격 CI를 실행하지 않았습니다.
+GitHub Actions에는 동일한 검증 절차를 추가했습니다. 비공개 저장소는 https://github.com/whispelyn-byte/LilacAnime-ios 입니다.
+
+2026-10-08 검증: https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37696263105 (커밋 9d781f0, Xcode 26.3). JVM 테스트, KMP iOS 테스트, 시뮬레이터 테스트 3개, 서명 없는 iOS arm64 빌드가 통과했습니다. Actions의 ios-app-builds 아티팩트에는 LilacAnime-simulator.zip과 LilacAnime-device-unsigned.zip이 들어 있습니다. 실기기 설치에는 별도 Apple 서명이 필요합니다.
 
 ## 확인 결과와 남은 제한
 
 - Windows에서 shared JVM 컴파일 및 테스트 **13개 통과**. Swift 소스의 문법 파싱과 프로젝트 YAML 검사를 수행했습니다.
-- iOS SDK 컴파일·시뮬레이터 테스트·실기기 재생은 **미실행**입니다. Swift 문법 검사만으로 SDK API 타입 호환성, 네이티브 링크, GPU 재생을 확인할 수 없습니다.
+- GitHub macOS runner에서 iOS SDK 컴파일·네이티브 링크·시뮬레이터 테스트를 확인했습니다. 실제 외부 영상 재생, GPU 출력, 로컬 AI 추론 및 실기기 재생은 아직 검증하지 않았습니다.
 - 실제 외부 서비스 응답과 로그인·캡차·만료 URL은 기기에서 검증해야 합니다. Linkkf 공개 API 연결 확인은 HTTP 522로 실패했습니다.
 - PiP/AirPlay용 시스템 AVPlayer 경로는 mpv의 외부 ASS·번역 자막 표시를 그대로 제공하지 않습니다.
 - 다운로드의 앱 종료·재실행·백그라운드 재개, FFmpeg HLS/MKV 디코딩, OP/ED 분석 정확도는 실기기 검증이 필요합니다.

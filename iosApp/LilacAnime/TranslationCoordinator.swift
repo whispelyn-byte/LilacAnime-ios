@@ -30,7 +30,7 @@ final class TranslationCoordinator: ObservableObject {
                 }
                 let working = SubtitleFiles.translations.appendingPathComponent("working-" + token.uuidString + "." + ext)
                 workingFiles.insert(working)
-                func publish(_ output: String) throws {
+                @MainActor func publish(_ output: String) throws {
                     guard token == generation else { return }
                     try output.write(to: working, atomically: true, encoding: .utf8)
                     completion(working)
@@ -64,10 +64,15 @@ final class TranslationCoordinator: ObservableObject {
                         model: preferences.translationModel, region: preferences.qwenRegion)
                     output = try await withCheckedThrowingContinuation { continuation in
                         service.translate(content: content, extension: ext, config: config, progress: { [weak self] done, total in
-                            if token == self?.generation { self?.progress = done.doubleValue / max(total.doubleValue, 1) }
+                            let fraction = done.doubleValue / max(total.doubleValue, 1)
+                            Task { @MainActor in
+                                if token == self?.generation { self?.progress = fraction }
+                            }
                         }, partial: { [weak self] value in
-                            guard token == self?.generation else { return }
-                            do { try publish(value) } catch { self?.error = error.localizedDescription }
+                            Task { @MainActor in
+                                guard token == self?.generation else { return }
+                                do { try publish(value) } catch { self?.error = error.localizedDescription }
+                            }
                         }, completion: { value, error in
                             if let value { continuation.resume(returning: value) }
                             else { continuation.resume(throwing: SubtitleFiles.failure(error ?? "번역 실패")) }

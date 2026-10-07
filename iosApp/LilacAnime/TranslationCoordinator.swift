@@ -70,7 +70,7 @@ final class TranslationCoordinator: ObservableObject {
                             }
                         }, partial: { [weak self] value in
                             Task { @MainActor in
-                                guard token == self?.generation else { return }
+                                guard token == self?.generation, self?.running == true else { return }
                                 do { try publish(value) } catch { self?.error = error.localizedDescription }
                             }
                         }, completion: { value, error in

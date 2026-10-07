@@ -22,7 +22,7 @@ class JSONObject internal constructor(private val values: MutableMap<String, Jso
     fun put(key: String, value: Any?): JSONObject { values[key] = wrap(value); return this }
     override fun toString() = JsonObject(values).toString()
     internal fun json() = JsonObject(values)
-    companion object { val NULL: Any = JsonNull }
+    companion object { internal val NULL: Any = JsonNull }
 }
 class JSONArray internal constructor(private val values: MutableList<JsonElement>) {
     constructor() : this(mutableListOf())

@@ -9,6 +9,10 @@ object LocalTranslationPrompt {
             user, null, false, true, thinking))
         return prepared.messages.joinToString("\n\n") { it.second }
     }
-    fun clean(text: String): String = text.replace(Regex("(?is)<think>.*?</think>"), "")
-        .replace(Regex("(?is)^.*?</think>"), "").trim().trim('"')
+    fun clean(text: String): String {
+        var result = text.replace(Regex("(?is)<think>.*?</think>"), "").replace(Regex("(?is)^.*?</think>"), "")
+            .replace(Regex("(?is)<\\|channel>thought.*?<channel\\|>"), "")
+        if (result.contains("<|channel>final")) result = result.substringAfterLast("<|channel>final")
+        return result.replace(Regex("<\\|(?:im_end|eot_id)\\|>|<turn\\|>|<eos>"), "").trim().trim('"')
+    }
 }

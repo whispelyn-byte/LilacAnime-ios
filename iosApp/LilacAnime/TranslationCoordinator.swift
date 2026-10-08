@@ -100,17 +100,14 @@ final class TranslationCoordinator: ObservableObject {
                             kept[lines[first]] = cleaned
                         } else {
                             let config = TranslationConfig(provider: provider, key: SecureKeys.load(provider),
-                                model: preferences.translationModels?[provider] ?? (provider == preferences.translationProvider ? preferences.translationModel : ""), region: preferences.qwenRegion, terminology: AnimeGlossary.shared.hints(text: pending.map { lines[$0] }.joined(separator: "\n"), characters: characters, custom: preferences.translationGlossary ?? ""))
-                            let batch = pending.map { lines[$0] }
-                            let output: [String] = try await withCheckedThrowingContinuation { continuation in
-                                service.translateLines(lines: batch, config: config) { result, failure in
-                                    if let result { continuation.resume(returning: result) }
-                                    else { continuation.resume(throwing: SubtitleFiles.failure(failure ?? "번역 실패")) }
+                                model: preferences.translationModels?[provider] ?? (provider == preferences.translationProvider ? preferences.translationModel : ""), region: preferences.qwenRegion, terminology: AnimeGlossary.shared.hints(text: lines.joined(separator: "\n"), characters: characters, custom: preferences.translationGlossary ?? ""))
+                            try await CloudSubtitleScheduler.translate(lines: lines, cues: cues, provider: provider, config: config,
+                                service: service, position: position, cached: { kept }) { additions in
+                                    kept.merge(additions) { old, _ in old }
+                                    try publish()
                                 }
-                            }
                             try Task.checkCancellation()
-                            guard output.count == batch.count else { throw SubtitleFiles.failure("번역 줄 수가 일치하지 않습니다.") }
-                            for (index, translated) in output.enumerated() { kept[batch[index]] = translated }
+
                         }
                         try publish()
                     } catch is CancellationError { throw CancellationError() }
@@ -135,7 +132,7 @@ final class TranslationCoordinator: ObservableObject {
             catch { if token == generation { self.error = error.localizedDescription; running = false } }
         }
     }
-    func cancel() { if running { local.cancel(requestID: generation) }; generation = UUID(); task?.cancel(); task = nil; running = false }
+    func cancel() { if running { local.cancel(requestID: generation); service.cancel() }; generation = UUID(); task?.cancel(); task = nil; running = false }
     func shutdown() { cancel(); workingFiles.forEach { try? FileManager.default.removeItem(at: $0) }; workingFiles.removeAll(); Task { await local.unload() } }
 }
 

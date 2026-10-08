@@ -121,7 +121,9 @@ final class DownloadStore: ObservableObject {
                     do { try await Task.sleep(nanoseconds: 200_000_000) } catch { return }
                 }
                 if Task.isCancelled { return }
-                if let stream = resolver.streams.first { download(item, stream: stream, quality: quality) }
+                let chosen = item.anime.source == "miruro" ? await DownloadStreamSelector.choose(resolver.streams, quality: quality) : resolver.streams.first
+                if Task.isCancelled { return }
+                if let stream = chosen { download(item, stream: stream, quality: quality) }
                 else { error = item.title + ": " + (resolver.error ?? "영상 주소를 찾지 못했습니다.") }
                 pendingResolution -= 1
             }

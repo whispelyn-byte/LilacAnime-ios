@@ -141,7 +141,7 @@ struct DesktopSourceView: View {
     private func grid(_ items: [Anime]) -> some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 145))], spacing: 18) {
             ForEach(items, id: \.id) { anime in
-                NavigationLink { DetailView(summary: anime, source: library.preferences.source) } label: { AnimePosterCard(anime: anime) }.buttonStyle(.plain)
+                NavigationLink { DetailView(summary: anime, source: anime.source == "jikan" ? "jikan" : library.preferences.source) } label: { AnimePosterCard(anime: anime) }.buttonStyle(.plain)
             }
         }
     }

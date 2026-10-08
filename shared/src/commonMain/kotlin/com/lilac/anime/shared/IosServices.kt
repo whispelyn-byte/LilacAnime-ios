@@ -67,7 +67,7 @@ class IosServices {
     }
     private suspend fun <T> call(completion: (T?, String?) -> Unit, block: suspend () -> T) {
         try { completion(block(), null) }
-        catch (error: CancellationException) { throw error }
+        catch (error: CancellationException) { completion(null, "요청을 취소했습니다."); throw error }
         catch (error: Exception) { completion(null, error.message ?: "요청을 완료할 수 없습니다.") }
     }
     fun searchModels(query: String, completion: (List<ModelSearchResult>?, String?) -> Unit) {

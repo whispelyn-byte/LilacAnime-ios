@@ -17,6 +17,7 @@ struct LilacModel {
     std::atomic<bool> cancelled{false};
     std::string error;
     bool gpu = false;
+    bool thinking = false;
     int output_tokens = 0;
     double seconds = 0;
 };
@@ -42,6 +43,7 @@ extern "C" LilacModel *lilac_model_open_with_backend(const char *path, int conte
 extern "C" LilacModel *lilac_model_open(const char *path, int context, int threads) {
     return lilac_model_open_with_backend(path, context, threads, 1);
 }
+extern "C" void lilac_set_thinking(LilacModel *state, int enabled) { if (state) state->thinking = enabled != 0; }
 extern "C" const char *lilac_backend(LilacModel *state) { return state && state->gpu ? "Metal" : "CPU"; }
 extern "C" int lilac_output_tokens(LilacModel *state) { return state ? state->output_tokens : 0; }
 extern "C" double lilac_generation_seconds(LilacModel *state) { return state ? state->seconds : 0; }
@@ -52,7 +54,7 @@ extern "C" void lilac_model_close(LilacModel *state) {
 extern "C" void lilac_cancel(LilacModel *state) { if (state) state->cancelled = true; }
 extern "C" const char *lilac_error(LilacModel *state) { return state ? state->error.c_str() : "GGUF model could not be loaded"; }
 extern "C" void lilac_string_free(char *text) { free(text); }
-static std::string format_prompt(const char *chat_template, const char *prompt, const char *bos, const char *eos) {
+static std::string format_prompt(const char *chat_template, const char *prompt, const char *bos, const char *eos, bool thinking = false) {
     std::string formatted;
         std::string input(prompt);
         const auto separator = input.find('\x1e');
@@ -63,7 +65,7 @@ static std::string format_prompt(const char *chat_template, const char *prompt, 
         messages.push_back(common_json::object({{"role", "user"}, {"content", user}}));
         if (chat_template && chat_template[0]) {
             common_json values = common_json::object({
-                {"messages", messages}, {"add_generation_prompt", true}, {"enable_thinking", false},
+                {"messages", messages}, {"add_generation_prompt", true}, {"enable_thinking", thinking},
                 {"bos_token", std::string(bos ? bos : "")}, {"eos_token", std::string(eos ? eos : "")}
             });
             jinja::lexer lexer;
@@ -94,7 +96,7 @@ extern "C" char *lilac_generate(LilacModel *state, const char *prompt, int max_t
     };
     const auto bos = tokenText(llama_vocab_bos(vocab)), eos = tokenText(llama_vocab_eos(vocab));
     std::string formatted;
-    try { formatted = format_prompt(chat_template, prompt, bos.c_str(), eos.c_str()); }
+    try { formatted = format_prompt(chat_template, prompt, bos.c_str(), eos.c_str(), state->thinking); }
     catch (const std::exception &error) { state->error = std::string("Chat template: ") + error.what(); return nullptr; }
     prompt = formatted.c_str();
     int count = -llama_tokenize(vocab, prompt, (int)strlen(prompt), nullptr, 0, true, true);

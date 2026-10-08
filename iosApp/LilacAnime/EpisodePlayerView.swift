@@ -231,12 +231,15 @@ final class EpisodePlayerModel: ObservableObject {
             }
         }
     }
-    func translate(library: LibraryStore, fresh: Bool = false) {
+    func translate(library: LibraryStore, fresh: Bool = false, provider: String? = nil) {
         guard let sourceSubtitle else { error = "먼저 자막을 선택하세요."; return }
         stopPrefetch()
-        translation.translate(sourceSubtitle, preferences: library.preferences, position: { [weak self] in self?.engine.position ?? 0 }, anime: item.anime, fresh: fresh) { [weak self] output in
+        var preferences = library.preferences
+        if let provider { preferences.translationProvider = provider; preferences.translationModel = preferences.translationModels?[provider] ?? "" }
+        let usedProvider = preferences.translationProvider
+        translation.translate(sourceSubtitle, preferences: preferences, position: { [weak self] in self?.engine.position ?? 0 }, anime: item.anime, fresh: fresh) { [weak self] output in
             guard let self else { return }
-            EpisodeSubtitleStore.shared.save(output, item: self.item, provider: library.preferences.translationProvider, translated: true)
+            EpisodeSubtitleStore.shared.save(output, item: self.item, provider: usedProvider, translated: true)
             if self.subtitle == output { self.engine.reloadSubtitle() }
             else { self.subtitle = output; self.engine.subtitle(output) }
         }
@@ -306,6 +309,7 @@ struct EpisodePlayerView: View {
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var downloads: DownloadStore
     @StateObject private var model: EpisodePlayerModel
+    @ObservedObject private var savedSubtitles = EpisodeSubtitleStore.shared
     @State private var showWeb = true
     @State private var importer = false
     @State private var subtitleSheet = false
@@ -373,7 +377,7 @@ struct EpisodePlayerView: View {
                         if !model.resolver.streams.isEmpty {
                             Menu {
                                 ForEach(model.resolver.streams) { stream in
-                                    Button(stream.label + " · " + (stream.url.host ?? "")) { model.play(stream, library: library); showWeb = false }
+                                    Button(stream.label + " · " + (stream.url.host ?? "")) { library.preferences.preferredStream = stream.label; model.play(stream, library: library); showWeb = false }
                                 }
                             } label: { Label("영상 선택 · " + (model.active?.label ?? "자동"), systemImage: "slider.horizontal.3").font(.subheadline) }
                         }
@@ -397,7 +401,7 @@ struct EpisodePlayerView: View {
             }
             .onDisappear { model.shutdown(library: library); OrientationController.portrait() }
             .onChange(of: model.resolver.streams) { streams in
-                if let stream = streams.first, model.active == nil || (model.active?.url == stream.url && model.active?.manifestKey != stream.manifestKey) {
+                if let stream = streams.first(where: { $0.label == library.preferences.preferredStream }) ?? streams.first, model.active == nil || (model.active?.url == stream.url && model.active?.manifestKey != stream.manifestKey) {
                     model.play(stream, library: library); showWeb = false
                 }
             }
@@ -418,8 +422,15 @@ struct EpisodePlayerView: View {
                         ForEach(Array(model.makers.enumerated()), id: \.offset) { _, maker in
                             Button(maker.name + " · " + maker.status) { model.searchMaker(maker) }
                         }
+                        Section("다시 번역") {
+                            ForEach(["local", "gemini", "openai", "deepl", "qwen"], id: \.self) { provider in
+                                if provider == "local" ? !library.preferences.selectedGGUF.isEmpty : !SecureKeys.load(provider).isEmpty {
+                                    Button(provider + "로 캐시 없이 다시 번역") { model.translate(library: library, fresh: true, provider: provider) }
+                                }
+                            }
+                        }
                         Section("이 회차에 저장한 자막") {
-                            ForEach(EpisodeSubtitleStore.shared.list(model.item)) { record in
+                            ForEach(savedSubtitles.list(model.item)) { record in
                                 if let file = record.file {
                                     HStack {
                                         Button(record.name) { model.selectSubtitle(file, library: library, translate: !record.translated); subtitleSheet = false }

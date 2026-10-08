@@ -66,6 +66,7 @@ actor LocalInference {
         }
         guard let model else { throw SubtitleFiles.failure("모델을 선택하세요.") }
         try Task.checkCancellation(); state.begin(requestID)
+        lilac_set_thinking(model, preferences.thinking == "on" ? 1 : 0)
         defer { state.end(requestID) }
         guard let result = lilac_generate(model, prompt, Int32(preferences.maxTokens), Float(preferences.temperature),
                                          Float(preferences.topP), Int32(preferences.topK), Float(preferences.repetitionPenalty)) else {

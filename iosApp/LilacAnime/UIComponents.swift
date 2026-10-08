@@ -69,7 +69,7 @@ struct AnimeRail: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 14) {
                     ForEach(items, id: \.id) { anime in
-                        NavigationLink { DetailView(summary: anime, source: source) } label: {
+                        NavigationLink { DetailView(summary: anime, source: anime.source == "jikan" ? "jikan" : source) } label: {
                             AnimePosterCard(anime: anime, width: 135, height: 190)
                         }.buttonStyle(.plain)
                     }

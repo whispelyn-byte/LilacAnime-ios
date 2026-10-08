@@ -41,6 +41,7 @@ class SourceRepository(private val client: HttpClient = newSharedClient()) {
     }
     suspend fun detail(summary: Anime, source: String): SourceDetail = coroutineScope {
         when (source) {
+            "jikan" -> SourceDetail(DesktopMetadataFallback.parse(kotlinx.serialization.json.Json.parseToJsonElement(getText("https://api.jikan.moe/v4/anime/" + summary.id + "/full")).jsonObject).first(), emptyList())
             "miruro", "ohli24", "linkani" -> desktop.detail(summary, source)
             "reanime" -> {
                 val slug = summary.id.removePrefix("reanime:").substringBefore('/')
@@ -86,7 +87,13 @@ class SourceRepository(private val client: HttpClient = newSharedClient()) {
         header("Referer", Url(url).let { it.protocol.name + "://" + it.host + "/" })
         params.forEach { (key, value) -> parameter(key, value) }
     }.bodyAsText()
-    suspend fun sourceSections(source: String): List<SourceSection> {
+    suspend fun sourceSections(source: String): List<SourceSection> = try { primarySections(source) }
+        catch (e: CancellationException) { throw e }
+        catch (_: Exception) {
+            listOf(SourceSection("영상 소스 응답 없음 · Jikan 이번 시즌 정보", DesktopMetadataFallback.parse(kotlinx.serialization.json.Json.parseToJsonElement(getText("https://api.jikan.moe/v4/seasons/now", mapOf("limit" to "20", "sfw" to "true"))).jsonObject)),
+                SourceSection("Jikan 인기 작품 정보", DesktopMetadataFallback.parse(kotlinx.serialization.json.Json.parseToJsonElement(getText("https://api.jikan.moe/v4/top/anime", mapOf("limit" to "20"))).jsonObject)))
+        }
+    private suspend fun primarySections(source: String): List<SourceSection> {
         if (source == "linkkf") return listOf("PV" to "5086", "극장판" to "5061", "16+" to "5085").map { (name, tag) ->
             SourceSection(name, linkkf.filtered(1, BrowseFilter(format = tag)))
         }

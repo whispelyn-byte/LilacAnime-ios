@@ -33,6 +33,7 @@ struct AppPreferences: Codable {
     var titleLanguage: String? = nil
     var desktopWorkspace: Bool? = false
     var preferredServer: String? = nil
+    var preferredStream: String? = nil
     var modelSampling: Bool? = true
     var localGPU: Bool? = true
     var pretranslateNext: Bool? = true

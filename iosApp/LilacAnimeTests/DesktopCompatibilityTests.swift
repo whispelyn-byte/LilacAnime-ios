@@ -56,20 +56,21 @@ final class DesktopCompatibilityTests: XCTestCase {
         defer { lilac_string_free(second) }
         XCTAssertFalse(String(cString: second).isEmpty)
     }
-    func testSubtitleArchivesRead7zRARAndLegacyKoreanZIPWithoutTraversal() throws {
-        for (name, ext) in [("subtitle", "7z"), ("subtitle", "rar"), ("subtitle-cp949", "zip")] {
-            let file = try XCTUnwrap(Bundle(for: Self.self).url(forResource: name, withExtension: ext))
-            let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            defer { try? FileManager.default.removeItem(at: folder) }
-            let extracted = try SubtitleArchive.extract(file, into: folder)
-            XCTAssertTrue(extracted.contains { $0.lastPathComponent.hasSuffix("한국어.srt") }, "\(ext) filename")
-            for item in extracted {
-                XCTAssertEqual(item.deletingLastPathComponent().standardizedFileURL, folder.standardizedFileURL)
-                XCTAssertTrue(try String(contentsOf: item, encoding: .utf8).contains("테스트 자막"))
-            }
-            XCTAssertEqual(extracted.count, ext == "zip" ? 2 : 1)
+    func test7zSubtitleUnicodeFilename() throws { try checkArchive(name: "subtitle", ext: "7z") }
+    func testRARSubtitleUnicodeFilename() throws { try checkArchive(name: "subtitle", ext: "rar") }
+    func testLegacyKoreanZIPFilenameAndTraversalFlattening() throws { try checkArchive(name: "subtitle-cp949", ext: "zip") }
+    private func checkArchive(name: String, ext: String) throws {
+        let file = try XCTUnwrap(Bundle(for: Self.self).url(forResource: name, withExtension: ext))
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let extracted = try SubtitleArchive.extract(file, into: folder)
+        XCTAssertTrue(extracted.contains { $0.lastPathComponent.hasSuffix("한국어.srt") }, "\(ext) filename")
+        for item in extracted {
+            XCTAssertEqual(item.deletingLastPathComponent().standardizedFileURL, folder.standardizedFileURL)
+            XCTAssertTrue(try String(contentsOf: item, encoding: .utf8).contains("테스트 자막"))
         }
+        XCTAssertEqual(extracted.count, ext == "zip" ? 2 : 1)
     }
     func testDownloadedEpisodeSuffixIsNotSkipped() throws {
         let anime = SavedAnime(AnimeSnapshot.shared.decode(content: """

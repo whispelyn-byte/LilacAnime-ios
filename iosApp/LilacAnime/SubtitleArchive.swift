@@ -20,7 +20,8 @@ enum SubtitleArchive {
             if result == ARCHIVE_EOF { break }
             guard result >= ARCHIVE_WARN, let entry else { throw failure(reader) }
             guard archive_entry_filetype(entry) == UInt32(S_IFREG) else { archive_read_data_skip(reader); continue }
-            guard let path = archive_entry_pathname(entry) else { archive_read_data_skip(reader); continue }
+            // iOS can retain the C locale; requesting locale bytes loses Unicode 7z/RAR names.
+            guard let path = archive_entry_pathname_utf8(entry) ?? archive_entry_pathname(entry) else { archive_read_data_skip(reader); continue }
             let name = String(cString: path)
             let ext = URL(fileURLWithPath: name).pathExtension.lowercased()
             guard ["ass","ssa","srt","vtt","smi","sbv","sub","mpl2","ttml","xml","ttf","otf","ttc"].contains(ext) else { archive_read_data_skip(reader); continue }

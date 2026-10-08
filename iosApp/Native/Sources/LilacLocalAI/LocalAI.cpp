@@ -110,7 +110,7 @@ extern "C" char *lilac_generate(LilacModel *state, const char *prompt, int max_t
         if (llama_decode(state->context, batch) != 0) { state->error = "Prompt decoding failed"; return nullptr; }
     }
     auto *sampler = llama_sampler_chain_init(llama_sampler_chain_default_params());
-    llama_sampler_chain_add(sampler, llama_sampler_init_penalties(64, repetition, 0, 0));
+    llama_sampler_chain_add(sampler, llama_sampler_init_penalties(llama_vocab_n_tokens(vocab), 64, repetition, 0, 0));
     llama_sampler_chain_add(sampler, llama_sampler_init_top_k(top_k));
     llama_sampler_chain_add(sampler, llama_sampler_init_top_p(top_p, 1));
     if (temperature <= 0) llama_sampler_chain_add(sampler, llama_sampler_init_greedy());

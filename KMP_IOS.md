@@ -30,7 +30,7 @@ open iosApp/LilacAnime.xcodeproj
 
 검증 스크립트는 KMP iOS 테스트, 프로젝트 생성, Swift 패키지 해석, iPhone 시뮬레이터 테스트, 서명 없는 실기기 빌드를 수행합니다. 결과는 iosApp/build 아래에 기록됩니다. 실제 설치는 Xcode에서 Team과 본인 bundle ID를 설정해야 합니다. iOS 프레임워크는 Xcode 빌드 단계에서 생성됩니다.
 
-GitHub Actions에는 동일한 검증 절차를 추가했습니다. 비공개 저장소는 https://github.com/whispelyn-byte/LilacAnime-ios 입니다.
+GitHub Actions에는 동일한 검증 절차를 추가했습니다. 공개 저장소는 https://github.com/whispelyn-byte/LilacAnime-ios 입니다.
 
 2026-10-08 최신 검증: https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37702875269 (커밋 550f657, Xcode 26.3). JVM 테스트 16개, KMP iOS 테스트, 시뮬레이터 테스트 6개, 서명 없는 iOS arm64 빌드가 통과했습니다. 시뮬레이터 테스트에는 실제 HTTP Range/HEAD/404/416 응답, HLS 로컬 조각 재작성, 폴더 밖 파일과 심볼릭 링크 차단이 포함됩니다. Actions의 ios-app-builds 아티팩트에는 LilacAnime-simulator.zip과 LilacAnime-device-unsigned.zip이 들어 있습니다. 실기기 설치에는 별도 Apple 서명이 필요합니다.
 
@@ -75,3 +75,9 @@ Android SDK와 원본 네이티브 도구 체인이 필요합니다. 원본에�
 홈을 별도 탭으로 추가하고 추천 카드, 최신 작품 가로 목록, 이어보기, 즐겨찾기 목록을 배치했습니다. 상세 화면은 배경 이미지/포스터, 이어보기, 회차·작품 정보·관련 작품 탭으로 구성했습니다. 플레이어는 영상 위 재생/탐색/시간/트랙 조작과 자막·화질·다운로드·Cast 메뉴를 사용합니다. 원본 Android와 픽셀 단위로 같지는 않으며, 요일별 편성/PV 등 원본 홈 전용 콘텐츠는 이번 UI 변경에 포함하지 않았습니다.
 
 검증 커밋 58a708d: https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37705598380 . 공통 JVM 테스트, KMP iOS 테스트, 네이티브 iOS 테스트 6개와 실기기 arm64 빌드가 통과했습니다. ios-ui-preview 아티팩트의 홈 밝음/어두움·상세·플레이어 캡처를 확인했습니다. 캡처는 예시 데이터이며 실제 외부 영상 재생 검증이 아닙니다. 최신 LilacAnime-SideStore IPA: https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37705598380/artifacts/11520020694 . ZIP을 한 번 풀고 IPA를 SideStore로 가져옵니다.
+
+## 공개 배포와 SideStore 소스
+
+2026-10-08 사용자 요청으로 저장소를 Public으로 전환했습니다. README는 LilacAnime-desktop의 다운로드·설치·사용법 구성을 참고해 iOS 기능과 시뮬레이터 예시 화면으로 다시 작성했습니다.
+
+v로 시작하는 버전 태그를 푸시하면 공통·iOS 검증 후 Release에 LilacAnime-SideStore.ipa와 source.json을 게시합니다. source.json은 IPA 안의 버전·빌드 번호·최소 iOS·권한과 실제 파일 크기로 생성하며, 태그 버전이 IPA와 일치하지 않으면 게시하지 않습니다. SideStore Sources에 https://github.com/whispelyn-byte/LilacAnime-ios/releases/latest/download/source.json 을 등록합니다. 최신 버전 확인과 업데이트 버튼을 통한 설치를 위한 소스이며 완전한 무인 설치는 보장하지 않습니다. 실제 기기에서 소스 등록·업데이트는 아직 확인하지 않았습니다.

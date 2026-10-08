@@ -6,6 +6,7 @@ struct HomeView: View {
     @StateObject private var model = CatalogModel()
     @StateObject private var home = DesktopSourceModel()
     @State private var featured = 0
+    var workspace = false
     let browse: () -> Void
     private var items: [Anime] { UIShowcase.enabled ? UIShowcase.items : model.items }
     var body: some View {
@@ -112,7 +113,9 @@ struct HomeView: View {
                     if UIShowcase.enabled { Text("UI PREVIEW · 예시 데이터").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 20) }
                 }.padding(.top, 16).padding(.bottom, 28)
             }.background(LilacStyle.background)
-                .toolbar(.hidden, for: .navigationBar)
+                .toolbar(workspace ? .visible : .hidden, for: .navigationBar)
+                .navigationTitle(workspace ? "홈" : "")
+                .navigationBarTitleDisplayMode(.inline)
                 .refreshable { if !UIShowcase.enabled { model.load() } }
                 .task(id: library.preferences.source) { if !UIShowcase.enabled { featured = 0; home.load(source: library.preferences.source, day: (Calendar.current.component(.weekday, from: Date()) + 5) % 7) } }
                 .task { if !UIShowcase.enabled && model.items.isEmpty { model.source = library.preferences.source; model.load() } }

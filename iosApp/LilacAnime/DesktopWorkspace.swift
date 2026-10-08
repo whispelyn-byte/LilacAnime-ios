@@ -5,8 +5,9 @@ import UniformTypeIdentifiers
 struct DesktopWorkspace: View {
     @EnvironmentObject private var library: LibraryStore
     @State private var section: String? = "home"
+    @State private var visibility: NavigationSplitViewVisibility = .all
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $visibility) {
             List(selection: $section) {
                 NavigationLink(value: "home") { Label("홈", systemImage: "house") }.tag("home")
                 NavigationLink(value: "catalog") { Label("전체 카탈로그", systemImage: "square.grid.2x2") }.tag("catalog")
@@ -18,6 +19,7 @@ struct DesktopWorkspace: View {
                 NavigationLink(value: "local") { Label("로컬 영상", systemImage: "folder") }.tag("local")
                 NavigationLink(value: "settings") { Label("설정", systemImage: "gear") }.tag("settings")
             }.navigationTitle("LilacAnime")
+                .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 280)
         } detail: {
             switch section {
             case "catalog": DesktopFullCatalog()
@@ -28,9 +30,10 @@ struct DesktopWorkspace: View {
             case "downloads": DownloadsView()
             case "local": LocalVideoView()
             case "settings": SettingsView()
-            default: HomeView { section = "search" }
+            default: HomeView(workspace: true) { section = "search" }
             }
-        }.task(id: library.preferences.source) {
+        }.navigationSplitViewStyle(.balanced)
+        .task(id: library.preferences.source) {
             if !UIShowcase.enabled && !DesktopCatalog.shared.running && (DesktopCatalog.shared.catalogs[library.preferences.source] ?? []).isEmpty {
                 DesktopCatalog.shared.start(library.preferences.source)
             }

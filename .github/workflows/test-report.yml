@@ -1,0 +1,39 @@
+name: Inspect iOS test result
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: KMP and iOS run containing ios-test-results
+        required: true
+permissions:
+  actions: read
+  contents: read
+jobs:
+  report:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ios-test-results
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+          path: build/results
+      - name: Export test summary and screenshots
+        shell: bash
+        run: |
+          set -eu
+          if [ -d /Applications/Xcode_26.3.app ]; then
+            sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+          fi
+          RESULT="$(find build/results -type d -name '*.xcresult' -print -quit)"
+          test -n "$RESULT"
+          mkdir -p build/report
+          xcrun xcresulttool get test-results summary --path "$RESULT" > build/report/summary.json
+          xcrun xcresulttool export attachments --path "$RESULT" --output-path build/report/attachments
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-test-report
+          path: build/report
+          if-no-files-found: error

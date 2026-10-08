@@ -1,0 +1,54 @@
+name: Capture verified iOS app
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: Successful KMP and iOS run containing ios-app-builds
+        required: true
+permissions:
+  actions: read
+  contents: read
+jobs:
+  preview:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ios-app-builds
+          run-id: ${{ inputs.build_run_id }}
+          github-token: ${{ github.token }}
+          path: build/source
+      - name: Capture workspace after launch settles
+        shell: bash
+        run: |
+          set -eu
+          if [ -d /Applications/Xcode_26.3.app ]; then
+            sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+          fi
+          mkdir -p build/simulator build/screenshots
+          ditto -x -k build/source/LilacAnime-simulator.zip build/simulator
+          for KIND in iPad iPhone; do
+            SIM="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; k=sys.argv[1]; d=json.load(sys.stdin); v=[v for a in d["devices"].values() for v in a if v.get("isAvailable") and k in v["name"]]; assert v; print(next((x for x in v if x.get("state")=="Booted"),v[0])["udid"])' "$KIND")"
+            xcrun simctl boot "$SIM" || true
+            xcrun simctl bootstatus "$SIM" -b
+            xcrun simctl install "$SIM" build/simulator/LilacAnime.app
+            xcrun simctl ui "$SIM" appearance dark
+            xcrun simctl status_bar "$SIM" override --time '9:41' --batteryState charged --batteryLevel 100
+            xcrun simctl launch --terminate-running-process "$SIM" com.lilac.anime.ios --ui-preview workspace
+            sleep 5
+            xcrun simctl io "$SIM" screenshot "build/screenshots/workspace-$KIND-5s.png"
+            sleep 10
+            xcrun simctl io "$SIM" screenshot "build/screenshots/workspace-$KIND-15s.png"
+            sleep 15
+            xcrun simctl io "$SIM" screenshot "build/screenshots/workspace-$KIND-30s.png"
+            xcrun simctl spawn "$SIM" log show --last 2m --style compact --predicate 'process == "LilacAnime"' > "build/screenshots/workspace-$KIND.log" || true
+            xcrun simctl terminate "$SIM" com.lilac.anime.ios || true
+            xcrun simctl shutdown "$SIM"
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: workspace-preview
+          path: build/screenshots
+          if-no-files-found: error

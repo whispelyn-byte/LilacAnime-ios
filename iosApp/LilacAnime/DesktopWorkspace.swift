@@ -8,15 +8,15 @@ struct DesktopWorkspace: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $section) {
-                Label("홈", systemImage: "house").tag("home")
-                Label("전체 카탈로그", systemImage: "square.grid.2x2").tag("catalog")
-                Label("검색·필터", systemImage: "magnifyingglass").tag("search")
-                Label("방영·추천", systemImage: "calendar").tag("airing")
-                Label("시청 기록", systemImage: "clock").tag("history")
-                Label("즐겨찾기", systemImage: "heart").tag("favorites")
-                Label("다운로드", systemImage: "arrow.down.circle").tag("downloads")
-                Label("로컬 영상", systemImage: "folder").tag("local")
-                Label("설정", systemImage: "gear").tag("settings")
+                NavigationLink(value: "home") { Label("홈", systemImage: "house") }.tag("home")
+                NavigationLink(value: "catalog") { Label("전체 카탈로그", systemImage: "square.grid.2x2") }.tag("catalog")
+                NavigationLink(value: "search") { Label("검색·필터", systemImage: "magnifyingglass") }.tag("search")
+                NavigationLink(value: "airing") { Label("방영·추천", systemImage: "calendar") }.tag("airing")
+                NavigationLink(value: "history") { Label("시청 기록", systemImage: "clock") }.tag("history")
+                NavigationLink(value: "favorites") { Label("즐겨찾기", systemImage: "heart") }.tag("favorites")
+                NavigationLink(value: "downloads") { Label("다운로드", systemImage: "arrow.down.circle") }.tag("downloads")
+                NavigationLink(value: "local") { Label("로컬 영상", systemImage: "folder") }.tag("local")
+                NavigationLink(value: "settings") { Label("설정", systemImage: "gear") }.tag("settings")
             }.navigationTitle("LilacAnime")
         } detail: {
             switch section {

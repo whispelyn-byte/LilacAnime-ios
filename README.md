@@ -18,7 +18,7 @@
   작품 탐색부터 회차 재생, 자막 검색·번역, 이어보기와 오프라인 감상까지 제공합니다.
 </p>
 
-현재 Android 원본과 같은 **0.4.0**을 기준으로 iOS 빌드 **32**을 사용합니다.
+현재 Android 원본과 같은 **0.4.0**을 기준으로 iOS 빌드 **32**를 사용합니다.
 
 ## 주요 기능
 
@@ -42,6 +42,10 @@ PC 창 버튼·설치 프로그램·CUDA·외장 폴더 직접 지정은 iOS의 
   <img src="docs/screenshots/home-dark.png" width="230" alt="홈">
   <img src="docs/screenshots/detail-dark.png" width="230" alt="작품 상세">
   <img src="docs/screenshots/player-dark.png" width="230" alt="플레이어">
+</p>
+<p align="center">
+  <img src="docs/screenshots/catalog-dark.png" width="230" alt="전체 카탈로그">
+  <img src="docs/screenshots/models-dark.png" width="230" alt="로컬 AI 모델 관리">
 </p>
 <p align="center">
   <img src="docs/screenshots/workspace-ipad-dark.png" width="700" alt="iPad 데스크탑 작업 공간">

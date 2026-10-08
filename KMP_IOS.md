@@ -44,7 +44,13 @@ SideStore의 인증 갱신과 새 버전 설치는 별개입니다. 기존 앱�
 ## 검증 기록
 
 이전 안정 빌드: [37733189254](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37733189254), 34db062, 앱 0.4.0/build 31; JVM 24개·KMP iOS·네이티브 8개·device arm64·IPA.
-전체 데스크탑 기능 이식 빌드는 현재 Actions에서 검증 중입니다. 최종 통과 실행과 IPA 검증 결과를 이 항목에 기록합니다.
+전체 데스크탑 기능 이식 빌드: [37751485817](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37751485817), eae4aad, 앱 **0.4.0/build 32**. JVM **33개**, KMP iOS 테스트, Swift/C++ 네이티브 **19개**가 통과했고 simulator/device arm64 앱 및 unsigned IPA를 생성했습니다.
+
+네이티브 검증에는 실제 tiny GGUF CPU 추론 2회와 실행 정보, 실제 Gemma 4 및 ChatML Jinja, 한글 ZIP/7z/RAR·CP949 파일명과 추출 경로, 이전 설정 JSON·4a 회차 순서·HLS 내보내기·LAN 검사가 포함됩니다.
+생성된 IPA의 Info.plist·arm64 Mach-O·iPhoneOS 플랫폼·모델 프리셋 10개·라이선스 고지 및 테스트용 모델 미포함을 확인했습니다. 예시 UI 캡처는 실제 영상 서비스 재생 검증과 구분합니다.
+
+이미 빌드한 simulator 앱만 다시 실행하는 Capture verified iOS app 워크플로도 제공합니다. iPhone/iPad 작업 공간을 실행 후 5/15/30초에 캡처하고 앱 로그를 저장하며, 앱을 다시 컴파일하지 않습니다.
+[작업 공간 재캡처 37756362510](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37756362510)에서 iPad 사이드바/본문과 iPhone 메뉴 복귀 버튼을 확인했습니다. README에는 앱 첫 실행을 기다린 30초 캡처를 사용합니다.
 
 ## 실제 기기 확인이 남은 부분
 

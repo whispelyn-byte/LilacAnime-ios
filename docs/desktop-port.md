@@ -68,7 +68,7 @@
 ## 검증
 
 공통 JVM 테스트 33개: 파서·자막 타이밍/스타일·시즌/누적 회차·이름/호칭·모델 프롬프트·번역 모델 대체·OpenAI 과금 quota·캐시.
-네이티브 테스트: 이전 설정 JSON, 시청 기록/회차 suffix, 실제 Gemma 4/ChatML Jinja, 실제 tiny GGUF CPU 추론·재사용·metrics, ZIP/7z/RAR/CP949·추출 경로, 폴더 이전의 HLS 자산 및 resume 제외, 기존 LAN/HLS 테스트.
+네이티브 테스트 19개: 이전 설정 JSON, 시청 기록/회차 suffix, 실제 Gemma 4/ChatML Jinja, 실제 tiny GGUF CPU 추론·재사용·metrics, ZIP/7z/RAR/CP949·추출 경로, 폴더 이전의 HLS 자산 및 resume 제외, 기존 LAN/HLS 테스트.
 Actions는 KMP iOS 테스트·iPhone 테스트·iPhone/iPad 예시 캡처와 unsigned arm64 IPA를 생성합니다. 최신 통과 실행 링크는 [KMP_IOS.md](../KMP_IOS.md)에 기록합니다.
 
 대형 Gemma/Aya/Hy-MT2의 실기기 Metal 추론, 번역 품질·메모리, 외부 사이트의 실제 영상/첨부·로그인/캡차, SideStore 설치/폴더 앱 제공자/백그라운드 복귀, Chromecast 실물 동작은 아직 실기기 확인이 필요합니다. tiny GGUF는 런타임 동작 검증이며 대형 모델 성능 검증이 아닙니다.

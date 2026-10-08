@@ -17,16 +17,44 @@ final class CatalogModel: ObservableObject {
     @Published var studio = ""
     @Published var sort = ""
     @Published var filters: SourceFilters?
-    func loadFilters() { service.filters(sourceKey: source) { [weak self] filters, _ in self?.filters = filters } }
+    @Published var filterError: String?
+    @Published var filtersLoading = false
+    private let filterService = IosServices()
+    func loadFilters() {
+        filters = nil; filterError = nil; filtersLoading = true; let requestedSource = source
+        if UIShowcase.enabled {
+            filters = SourceFilters(genres: ["Fantasy", "Adventure"], years: ["2026"], formats: ["TV", "MOVIE"], statuses: [], seasons: ["WINTER", "SPRING", "SUMMER", "FALL"], studios: [], supportsYear: true, supportsSeason: true, sorts: ["popular", "year", "score"], note: "", seasonValues: [])
+            filtersLoading = false; return
+        }
+        filterService.cancel()
+        filterService.filters(sourceKey: source) { [weak self] filters, error in
+            guard let self, self.source == requestedSource else { return }
+            self.filters = filters; self.filterError = error; self.filtersLoading = false
+        }
+    }
     private var page: Int32 = 1
     @Published var canLoadMore = true
     private let service = IosServices()
     private var generation = UUID()
+    private var catalogSignature: String?
     func load(reset: Bool = true) {
-        if reset { service.cancel(); generation = UUID(); page = 1; items = []; canLoadMore = true }
+        if reset { service.cancel(); generation = UUID(); page = 1; items = []; canLoadMore = true; catalogSignature = nil }
         else if loading || !canLoadMore { return }
         loading = true; error = nil
         let token = generation
+        if mode == "catalog" {
+            service.catalog(sourceKey: source, query: query, page: page,
+                filter: AnimeSnapshot.shared.sortedFilter(genre: genre, year: year, season: season, format: format, status: status, studio: studio, sort: sort)) { [weak self] result, failure in
+                guard let self, token == self.generation else { return }
+                self.loading = false; self.error = failure
+                guard let result else { return }
+                let known = Set(self.items.map(\.id))
+                self.items += result.items.filter { !known.contains($0.id) }
+                self.canLoadMore = result.hasMore && result.signature != self.catalogSignature
+                self.catalogSignature = result.signature; self.page += 1
+            }
+            return
+        }
         let indexed = [genre, year, format, status, season, studio].allSatisfy(\.isEmpty) ? DesktopCatalog.shared.search(query, source: source) : []
         let callback: ([Anime]?, String?) -> Void = { [weak self] result, error in
             guard let self, token == self.generation else { return }
@@ -64,7 +92,7 @@ final class CatalogModel: ObservableObject {
                 filter: AnimeSnapshot.shared.sortedFilter(genre: genre, year: year, season: season, format: format, status: status, studio: studio, sort: sort), completion: searched)
         }
     }
-    deinit { service.close() }
+    deinit { service.close(); filterService.close() }
 }
 struct CatalogView: View {
     @EnvironmentObject private var library: LibraryStore

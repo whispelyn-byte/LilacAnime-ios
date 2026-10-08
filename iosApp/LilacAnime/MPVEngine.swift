@@ -17,6 +17,11 @@ final class MPVEngine: ObservableObject {
     @Published var muted = false
     @Published var subtitlesVisible = true
     @Published var fit = "contain"
+    @Published var aspect: PlayerAspect = .original
+    @Published var speed = 1.0
+    @Published var speedBoosted = false
+    private var spaceHold: SpaceHoldSession?
+    private var spaceTimer: Task<Void, Never>?
     @Published var paused = true
     @Published var buffering = false
     @Published var tracks: [MediaTrack] = []
@@ -57,8 +62,9 @@ final class MPVEngine: ObservableObject {
     }
     func configure(_ settings: AppPreferences) {
         preferences = settings
+        aspect = PlayerAspect(rawValue: settings.playerAspect ?? "original") ?? .original
         setFit(settings.playerFit ?? "contain")
-        set("speed", settings.speed.description)
+        setSpeed(settings.speed)
         set("sub-scale", (settings.subtitleSize / 100).description)
         set("sub-delay", settings.subtitleOffset.description)
         set("sub-font", settings.subtitleFont.isEmpty ? "sans-serif" : settings.subtitleFont)
@@ -66,10 +72,13 @@ final class MPVEngine: ObservableObject {
         set("sub-border-size", settings.outlineWidth.description)
         set("sub-bold", settings.subtitleBold ? "yes" : "no")
         set("sub-pos", (100 - settings.subtitlePadding).description)
+        set("sub-margin-x", "36")
+        set("sub-font-size", "36")
         set("sub-ass", settings.assEffects ? "yes" : "no")
         set("sub-fonts-dir", SubtitleFiles.fontDirectory.path)
     }
     func load(_ stream: ResolvedStream, resume: Double = 0) {
+        finishSpaceHold()
         pendingStream = stream; resumePosition = resume; pendingSubtitle = nil
         guard handle != nil else { return }
         error = nil; fileLoaded = false
@@ -80,10 +89,32 @@ final class MPVEngine: ObservableObject {
     func setVolume(_ value: Double) { volume = max(0, min(100, value)); set("volume", String(volume)) }
     func toggleMute() { muted.toggle(); set("mute", muted ? "yes" : "no") }
     func setFit(_ value: String) {
-        fit = value; set("keepaspect", value == "stretch" ? "no" : "yes"); set("panscan", value == "cover" ? "1" : "0")
+        fit = value; set("keepaspect", aspect != .original || value == "stretch" ? "no" : "yes"); set("panscan", aspect == .original && value == "cover" ? "1" : "0")
     }
-    func play() { set("pause", "no") }
-    func pause() { set("pause", "yes") }
+    func setAspect(_ value: PlayerAspect) { aspect = value; setFit(fit) }
+    func setSpeed(_ value: Double) { speed = value; set("speed", value.description) }
+    func beginSpaceHold() {
+        guard spaceHold == nil else { return }
+        spaceHold = SpaceHoldSession(originalSpeed: speed)
+        spaceTimer = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds: 400_000_000) } catch { return }
+            guard let self, self.spaceHold != nil, !self.paused else { return }
+            self.boostTouchHold()
+        }
+    }
+    func boostTouchHold() {
+        guard !paused, spaceHold?.boosted != true else { return }
+        if spaceHold == nil { spaceHold = SpaceHoldSession(originalSpeed: speed) }
+        spaceHold?.boosted = true; speedBoosted = true; setSpeed(2)
+    }
+    func finishSpaceHold(toggle: Bool = false) {
+        spaceTimer?.cancel(); spaceTimer = nil
+        guard let hold = spaceHold else { return }; spaceHold = nil; speedBoosted = false
+        if hold.boosted { setSpeed(hold.restoredSpeed(current: speed)) }
+        else if toggle { self.toggle() }
+    }
+    func play() { paused = false; set("pause", "no") }
+    func pause() { finishSpaceHold(); paused = true; set("pause", "yes") }
     func toggle() { paused ? play() : pause() }
     func seek(_ seconds: Double) { command(["seek", max(0, seconds).description, "absolute+exact"]) }
     func skip(_ delta: Double) { seek(position + delta) }
@@ -123,6 +154,7 @@ final class MPVEngine: ObservableObject {
                 if let pendingSubtitle { command(["sub-add", pendingSubtitle.path, "select"]) }
                 updateTracks(); play()
             case MPV_EVENT_END_FILE:
+                finishSpaceHold()
                 fileLoaded = false
                 if let data = event.pointee.data {
                     let end = data.assumingMemoryBound(to: mpv_event_end_file.self).pointee
@@ -134,6 +166,7 @@ final class MPVEngine: ObservableObject {
         }
         position = double("time-pos"); duration = double("duration")
         paused = flag("pause"); buffering = flag("paused-for-cache"); volume = double("volume"); muted = flag("mute")
+        speed = double("speed"); if paused { finishSpaceHold() }
         if fileLoaded { onProgress?(position, duration) }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = [MPNowPlayingInfoPropertyElapsedPlaybackTime: position,
             MPMediaItemPropertyPlaybackDuration: duration, MPNowPlayingInfoPropertyPlaybackRate: paused ? 0 : double("speed")]
@@ -181,12 +214,14 @@ final class MPVEngine: ObservableObject {
             guard let self else { return }
             self.set("vid", "no"); if !self.preferences.backgroundAudio { self.pause() }
         })
+        notifications.append(NotificationCenter.default.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.finishSpaceHold() })
         notifications.append(NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in self?.set("vid", "auto") })
         notifications.append(NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
             if (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) == AVAudioSession.InterruptionType.began.rawValue { self?.pause() }
         })
     }
     func shutdown() {
+        finishSpaceHold()
         timer?.invalidate(); timer = nil
         notifications.forEach(NotificationCenter.default.removeObserver); notifications = []
         remoteTargets.forEach { $0.0.removeTarget($0.1) }; remoteTargets = []

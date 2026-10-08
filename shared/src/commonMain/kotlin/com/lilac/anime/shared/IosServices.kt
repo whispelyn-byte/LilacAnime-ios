@@ -26,6 +26,9 @@ class IosServices {
         scope.launch { call(completion) { source.detail(summary, sourceKey) } }
     }
     fun filters(sourceKey: String, completion: (SourceFilters?, String?) -> Unit) { scope.launch { call(completion) { source.filters(sourceKey) } } }
+    fun catalog(sourceKey: String, query: String, page: Int, filter: BrowseFilter, completion: (SourceCatalogPage?, String?) -> Unit) {
+        scope.launch { call(completion) { source.catalog(sourceKey, page, filter, query) } }
+    }
     fun desktopStreams(sourceKey: String, animeId: String, number: Int, url: String, completion: (List<DesktopPlaybackStream>?, String?) -> Unit) {
         scope.launch { call(completion) { source.desktopStreams(sourceKey, animeId, number, url) } }
     }

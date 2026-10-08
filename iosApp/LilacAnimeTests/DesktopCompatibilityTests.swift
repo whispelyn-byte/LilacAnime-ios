@@ -8,13 +8,14 @@ final class DesktopCompatibilityTests: XCTestCase {
         let original = AppPreferences()
         let encoded = try JSONEncoder().encode(original)
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
-        for key in ["playerFit", "titleLanguage", "desktopWorkspace", "preferredServer", "modelSampling", "pretranslateNext", "downloadSubtitles", "translationModels", "cloudFallback", "localGPU", "translateDownloads"] { object.removeValue(forKey: key) }
+        for key in ["playerFit", "playerAspect", "titleLanguage", "desktopWorkspace", "preferredServer", "modelSampling", "pretranslateNext", "downloadSubtitles", "translationModels", "cloudFallback", "localGPU", "translateDownloads"] { object.removeValue(forKey: key) }
         object["selectedGGUF"] = "existing.gguf"; object["source"] = "miruro"; object["subtitleOffset"] = 1.7
         let restored = try JSONDecoder().decode(AppPreferences.self, from: JSONSerialization.data(withJSONObject: object))
         XCTAssertEqual(restored.selectedGGUF, "existing.gguf")
         XCTAssertEqual(restored.source, "miruro"); XCTAssertEqual(restored.subtitleOffset, 1.7)
         XCTAssertNil(restored.desktopWorkspace); XCTAssertNil(restored.titleLanguage)
         XCTAssertNil(restored.playerFit)
+        XCTAssertNil(restored.playerAspect)
     }
     func testActualGemma4TemplateKeepsSystemAndUserAndDisablesThinking() throws {
         let file = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "gemma4-template", withExtension: "txt"))

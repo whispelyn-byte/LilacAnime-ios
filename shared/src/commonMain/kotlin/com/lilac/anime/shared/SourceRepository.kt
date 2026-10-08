@@ -13,13 +13,17 @@ enum class AnimeSource(val key: String) { LINKKF("linkkf"), REANIME("reanime"), 
 data class BrowseFilter(val genres: List<String> = emptyList(), val year: String = "", val season: String = "", val format: String = "", val status: String = "", val studio: String = "", val sort: String = "")
 data class SourceFilters(val genres: List<String> = emptyList(), val years: List<String> = emptyList(),
     val formats: List<String> = emptyList(), val statuses: List<String> = emptyList(),
-    val seasons: List<String> = emptyList(), val studios: List<String> = emptyList())
+    val seasons: List<String> = emptyList(), val studios: List<String> = emptyList(),
+    val supportsYear: Boolean = false, val supportsSeason: Boolean = false,
+    val sorts: List<String> = listOf("default"), val note: String = "", val seasonValues: List<String> = emptyList())
+data class SourceCatalogPage(val items: List<Anime>, val hasMore: Boolean, val signature: String)
 
 data class SourceDetail(val anime: Anime, val servers: List<EpisodeServer>)
 data class PlaybackTrack(val label: String, val url: String, val referer: String = "", val language: String = "", val kind: String = "video")
 class SourceRepository(private val client: HttpClient = newSharedClient()) {
     private val linkkf = LinkkfRepository(client)
     private val desktop = DesktopSourceRepository(client)
+    private val filterCache = mutableMapOf<String, SourceFilters>()
     suspend fun browse(source: String, query: String = "", page: Int = 1, filter: BrowseFilter = BrowseFilter()): List<Anime> {
         require(page > 0)
         return when (source) {
@@ -27,15 +31,25 @@ class SourceRepository(private val client: HttpClient = newSharedClient()) {
             "reanime" -> ReAnimeHarParser.parseSearch(getText("https://reanime.to/api/v1/search", buildMap {
                 put("limit", "36"); put("offset", ((page - 1) * 36).toString())
                 if (query.isNotBlank()) put("q", query.trim())
-                if (filter.sort.isNotBlank()) put("sort", when (filter.sort) { "popular" -> "popularity"; "year" -> "year"; else -> "score" })
+                if (filter.sort.isNotBlank()) put("sort", when (filter.sort) { "popular" -> "popularity_desc"; "year" -> "year_desc"; else -> "score_desc" })
                 if (filter.genres.isNotEmpty()) put("genre", filter.genres.joinToString(","))
                 listOf("year" to filter.year, "season" to filter.season, "format" to filter.format, "status" to filter.status, "studio" to filter.studio).forEach { (key, value) -> if (value.isNotBlank()) put(key, value) }
             }))
             "animenosub" -> {
                 val base = "https://animenosub.to"
-                val filtered = query.isBlank() && (filter.sort.isNotBlank() || filter.status.isNotBlank() || filter.season.isNotBlank())
+                val filtered = query.isBlank() && (filter.sort.isNotBlank() || filter.status.isNotBlank() || filter.season.isNotBlank() || filter.year.isNotBlank() || filter.genres.isNotEmpty() || filter.format.isNotBlank())
                 val path = if (filtered) "$base/anime/" else if (page == 1) "$base/" else "$base/page/$page/"
-                val document = Ksoup.parse(getText(path, buildMap { if (filtered) put("page", "$page"); if (filter.sort.isNotBlank()) put("order", when(filter.sort) { "year" -> "latest"; "score" -> "rating"; else -> "popular" }); if (query.isNotBlank()) put("s", query); if (filter.status == "RELEASING") put("status", "ongoing"); if (filter.season.isNotBlank() && filter.year.isNotBlank()) put("season[0]", filter.season.lowercase() + "-" + filter.year) }), path)
+                val seasonValues = if (filter.year.isNotBlank()) filters("animenosub").seasonValues.filter { it.endsWith("-" + filter.year) && (filter.season.isBlank() || it == filter.season.lowercase() + "-" + filter.year) } else emptyList()
+                if (filter.year.isNotBlank() && seasonValues.isEmpty()) return emptyList()
+                val document = Ksoup.parse(getText(path, buildMap {
+                    if (filtered) put("page", "$page")
+                    if (filter.sort.isNotBlank()) put("order", when(filter.sort) { "year" -> "latest"; "score" -> "rating"; else -> "popular" })
+                    if (query.isNotBlank()) put("s", query)
+                    if (filter.status == "RELEASING") put("status", "ongoing")
+                    filter.genres.forEachIndexed { index, genre -> put("genre[$index]", genre) }
+                    if (filter.format.isNotBlank()) put("type", filter.format)
+                    seasonValues.forEachIndexed { index, season -> put("season[$index]", season) }
+                }), path)
                 if (filter.status.isNotBlank() || filter.season.isNotBlank()) document.select("article.bs").filter { it.select(".ans-status-ribbon").text().contains("upcoming", true) }.forEach { it.remove() }
                 AnimenosubParser.parseAnimeList(if(filtered) Ksoup.parse(document.select("article.bs").joinToString("\n") { it.outerHtml() }, path) else document)
             }
@@ -77,10 +91,19 @@ class SourceRepository(private val client: HttpClient = newSharedClient()) {
             }
         }
     }
-    suspend fun filters(source: String): SourceFilters = when (source) {
-        "reanime" -> facets().let { SourceFilters(it.genres, it.years, it.formats, it.statuses, it.seasons, it.studios) }
-        "linkkf" -> linkkf.filters()
+    suspend fun filters(source: String): SourceFilters = filterCache[source] ?: when (source) {
+        "reanime" -> facets().let { SourceFilters(it.genres, it.years, it.formats, it.statuses, listOf("WINTER", "SPRING", "SUMMER", "FALL"), it.studios, supportsYear = true, supportsSeason = true, sorts = listOf("popular", "year", "score")) }
+        "linkkf" -> linkkf.filters().let { it.copy(supportsYear = it.years.isNotEmpty(), note = "연도는 Linkkf 분류를 따릅니다. 별도의 분기 정보는 제공하지 않습니다.") }
+        "animenosub" -> DesktopCatalogTaxonomy.animenosub(getText("https://animenosub.to/anime/"))
+        "miruro" -> SourceFilters(supportsYear = true, supportsSeason = true, seasons = listOf("WINTER", "SPRING", "SUMMER", "FALL"), sorts = listOf("popular", "year", "score"), note = "Miruro는 연도·분기로 모아 볼 수 있습니다.")
+        "linkani" -> SourceFilters(formats = listOf("TV", "Movie"), supportsYear = true, note = "링크애니는 작품 형태·연도로 모아 볼 수 있습니다. 장르·분기 정보는 제공하지 않습니다.")
+        "ohli24" -> SourceFilters(formats = listOf("TV", "Movie"), note = "애니24는 TV 애니·극장판으로 모아 볼 수 있습니다. 연도·분기 정보는 제공하지 않습니다.")
         else -> SourceFilters()
+    }.also { filterCache[source] = it }
+    suspend fun catalog(source: String, page: Int, filter: BrowseFilter, query: String = ""): SourceCatalogPage {
+        val raw = browse(source, query = query, page = page, filter = filter)
+        val items = if (source in listOf("ohli24", "linkani") && filter.format.isNotBlank()) raw.filter { it.format.equals(filter.format, true) } else raw
+        return SourceCatalogPage(items, if (source == "miruro") desktop.hasNextCatalogPage(page, filter, query) else raw.isNotEmpty(), raw.joinToString("|") { it.id })
     }
     suspend fun desktopStreams(source: String, animeId: String, number: Int, url: String) = desktop.streams(source, animeId, number, url)
     suspend fun top(period: String) = ReAnimeHarParser.parseTop(getText("https://reanime.to/api/v1/top/anime", mapOf("period" to period, "limit" to "20")))

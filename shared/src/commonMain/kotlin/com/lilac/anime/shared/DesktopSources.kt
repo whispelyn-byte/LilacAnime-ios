@@ -210,6 +210,7 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
         }
         return SourceDetail(anime.copy(episodes = episodes, reAnimeRelated = relations), listOf(EpisodeServer(1, "Miruro", episodes)))
     }
+    fun hasNextCatalogPage(page: Int, filter: BrowseFilter, query: String): Boolean = cursors[query + filter.toString()]?.containsKey(page + 1) == true
     suspend fun homeShows(source: String, season: Boolean): List<Anime> {
         val date = currentCatalogDate(); val year = date.take(4)
         val quarter = listOf("WINTER", "SPRING", "SUMMER", "FALL")[(date.substring(5, 7).toInt() - 1) / 3]

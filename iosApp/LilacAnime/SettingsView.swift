@@ -42,6 +42,7 @@ struct SettingsView: View {
                     Picker("영상 소스", selection: $store.preferences.source) { ForEach(ContentSources.keys, id: \.self) { Text(ContentSources.name($0)).tag($0) } }
                     Picker("기본 화질", selection: $store.preferences.quality) { ForEach(["Auto", "480p", "720p", "1080p"], id: \.self) { Text($0) } }
                     Picker("화면 맞춤", selection: Binding(get: { store.preferences.playerFit ?? "contain" }, set: { store.preferences.playerFit = $0 })) { Text("맞춤").tag("contain"); Text("채움").tag("cover"); Text("늘림").tag("stretch") }
+                    Picker("화면 비율", selection: Binding(get: { store.preferences.playerAspect ?? "original" }, set: { store.preferences.playerAspect = $0 })) { ForEach(PlayerAspect.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) } }
                     Toggle("다운로드 자막도 자동 번역", isOn: Binding(get: { store.preferences.translateDownloads ?? true }, set: { store.preferences.translateDownloads = $0 }))
                     Toggle("다운로드에 자막 포함", isOn: Binding(get: { store.preferences.downloadSubtitles ?? true }, set: { store.preferences.downloadSubtitles = $0 }))
                     Slider(value: $store.preferences.speed, in: 0.25...2, step: 0.25) { Text("배속") }
@@ -72,7 +73,8 @@ struct SettingsView: View {
                     Toggle("굵은 글씨", isOn: $store.preferences.subtitleBold)
                     Toggle("ASS 효과", isOn: $store.preferences.assEffects)
                     Slider(value: $store.preferences.subtitlePadding, in: 0...40)
-                    Stepper("싱크 \(store.preferences.subtitleOffset, specifier: "%.1f")초", value: $store.preferences.subtitleOffset, in: -120...120, step: 0.1)
+                    Stepper("싱크 \(store.preferences.subtitleOffset, specifier: "%.1f")초", value: $store.preferences.subtitleOffset, step: 0.1)
+                    SubtitleSyncInput(value: store.preferences.subtitleOffset) { store.preferences.subtitleOffset = $0 }
                     NavigationLink("저장 자막·캐시 관리") { SubtitleStorageView() }
                 }
                 }

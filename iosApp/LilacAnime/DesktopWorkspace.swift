@@ -2,23 +2,33 @@ import SwiftUI
 import LilacShared
 import UniformTypeIdentifiers
 
+struct DesktopCatalogSelection {
+    var genre = ""
+    var format = ""
+    var year = ""
+    var season = ""
+    var active: Bool { [genre, format, year, season].contains { !$0.isEmpty } }
+}
 struct DesktopFullCatalog: View {
     @EnvironmentObject private var library: LibraryStore
     @ObservedObject private var catalog = DesktopCatalog.shared
     @StateObject private var remote = CatalogModel()
     @State private var query = ""
     @State private var sort = "popular"
-    private var sorts: [String] { switch library.preferences.source { case "linkkf": return ["default", "year"]; case "linkani": return ["default", "popular"]; case "ohli24": return ["default"]; default: return ["popular", "year", "score"] } }
-    private var remoteSource: Bool { ["miruro", "animenosub", "linkani"].contains(library.preferences.source) }
-    @State private var format = ""
-    @State private var year = ""
+    @State private var draft = DesktopCatalogSelection()
+    @State private var applied = DesktopCatalogSelection()
+    @State private var validationError: String?
+    private var sorts: [String] {
+        if applied.active { return remote.filters?.sorts ?? ["default"] }
+        switch library.preferences.source { case "linkkf": return ["default", "year"]; case "linkani": return ["default", "popular"]; case "ohli24": return ["default"]; default: return ["popular", "year", "score"] }
+    }
+    private var remoteSource: Bool { applied.active || ["miruro", "animenosub", "linkani"].contains(library.preferences.source) }
     private var values: [SavedAnime] {
         let wanted = DesktopTitleRules.shared.key(title: query)
         let items = UIShowcase.enabled ? UIShowcase.items.map { SavedAnime($0, source: library.preferences.source) } : remoteSource ? remote.items.map { SavedAnime($0, source: library.preferences.source) } : (catalog.catalogs[library.preferences.source] ?? [])
         let result = items.filter { item in
-            (format.isEmpty || item.anime.format == format) && (year.isEmpty || item.anime.year == year) &&
-            (remoteSource || wanted.isEmpty || ([item.title, catalog.record(item)?.korean ?? "", catalog.record(item)?.english ?? ""] + (catalog.record(item)?.aliases ?? []))
-                .contains { DesktopTitleRules.shared.key(title: $0).contains(wanted) })
+            (!UIShowcase.enabled || ((applied.format.isEmpty || item.anime.format.caseInsensitiveCompare(applied.format) == .orderedSame) && (applied.year.isEmpty || item.anime.year == applied.year) && (applied.genre.isEmpty || item.anime.genres.contains(applied.genre)))) &&
+            (remoteSource || wanted.isEmpty || ([item.title, catalog.record(item)?.korean ?? "", catalog.record(item)?.english ?? ""] + (catalog.record(item)?.aliases ?? [])).contains { DesktopTitleRules.shared.key(title: $0).contains(wanted) })
         }
         if sort == "default" || remoteSource { return result }
         return result.sorted { a, b in
@@ -28,8 +38,7 @@ struct DesktopFullCatalog: View {
             case "popular": if a.anime.popularity != b.anime.popularity { return a.anime.popularity > b.anime.popularity }
             default: break
             }
-            return catalog.title(a.anime, source: a.source, language: library.preferences.titleLanguage)
-                .localizedStandardCompare(catalog.title(b.anime, source: b.source, language: library.preferences.titleLanguage)) == .orderedAscending
+            return catalog.title(a.anime, source: a.source, language: library.preferences.titleLanguage).localizedStandardCompare(catalog.title(b.anime, source: b.source, language: library.preferences.titleLanguage)) == .orderedAscending
         }
     }
     var body: some View {
@@ -38,53 +47,78 @@ struct DesktopFullCatalog: View {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         Picker("소스", selection: $library.preferences.source) { ForEach(ContentSources.keys, id: \.self) { Text(ContentSources.name($0)).tag($0) } }
-                        Picker("정렬", selection: $sort) {
-                            ForEach(sorts, id: \.self) { value in Text(value == "popular" ? "인기순" : value == "year" ? "최신순" : value == "score" ? "평점순" : "기본 순서").tag(value) }
-                        }
+                        Picker("정렬", selection: $sort) { ForEach(sorts, id: \.self) { Text($0 == "popular" ? "인기순" : $0 == "year" ? "최신순" : $0 == "score" ? "평점순" : "기본 순서").tag($0) } }
                         NavigationLink { CatalogIndexView() } label: { Image(systemName: "arrow.triangle.2.circlepath") }
                     }
-                    HStack {
-                        Picker("형식", selection: $format) {
-                            Text("모든 형식").tag("")
-                            ForEach(Array(Set((catalog.catalogs[library.preferences.source] ?? []).map { $0.anime.format }.filter { !$0.isEmpty })).sorted(), id: \.self) { Text($0).tag($0) }
-                        }
-                        Picker("연도", selection: $year) {
-                            Text("모든 연도").tag("")
-                            ForEach(Array(Set((catalog.catalogs[library.preferences.source] ?? []).map { $0.anime.year }.filter { !$0.isEmpty })).sorted(by: >), id: \.self) { Text($0).tag($0) }
-                        }
-                    }
-                    Text("\(values.count)개 · " + (UIShowcase.enabled ? "UI PREVIEW · 예시 데이터" : catalog.status)).font(.caption).foregroundStyle(.secondary)
-                    if let error = catalog.error { Text(error).foregroundStyle(.red) }
+                    filterPanel
+                    Text("\(values.count)개 · " + (UIShowcase.enabled ? "UI PREVIEW · 예시 데이터" : remoteSource ? "선택한 소스의 전체 목록" : catalog.status)).font(.caption).foregroundStyle(.secondary)
+                    if !remoteSource, let error = catalog.error { Text(error).foregroundStyle(.red) }
                     if let error = remote.error, remoteSource { Text(error).foregroundStyle(.red); Button("다시 시도") { reloadRemote() } }
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 145))], spacing: 18) {
-                        ForEach(values) { item in
-                            NavigationLink { DetailView(summary: item.anime, source: item.source) } label: { AnimePosterCard(anime: item.anime) }.buttonStyle(.plain)
-                        }
+                        ForEach(values) { item in NavigationLink { DetailView(summary: item.anime, source: item.source) } label: { AnimePosterCard(anime: item.anime) }.buttonStyle(.plain) }
                     }
                     if remoteSource && !UIShowcase.enabled {
                         if remote.loading { ProgressView() }
                         else if remote.canLoadMore { Button("더 보기") { remote.load(reset: false) } }
+                        else if values.isEmpty && remote.error == nil { Text("선택한 조건의 작품이 없습니다.").foregroundStyle(.secondary) }
                     }
                 }.padding()
             }.background(LilacStyle.background).navigationTitle("전체")
                 .onChange(of: sort) { value in UserDefaults.standard.set(value, forKey: "allSort:" + library.preferences.source); reloadRemote() }
-                .onChange(of: format) { _ in reloadRemote() }.onChange(of: year) { _ in reloadRemote() }
-                .searchable(text: $query, prompt: "한국어·원제·영어 검색")
-                .onSubmit(of: .search) { reloadRemote() }
+                .searchable(text: $query, prompt: "한국어·원제·영어 검색").onSubmit(of: .search) { reloadRemote() }
                 .task(id: library.preferences.source) {
+                    draft = DesktopCatalogSelection(); applied = draft; validationError = nil
+                    remote.source = library.preferences.source; remote.loadFilters()
                     let remembered = UserDefaults.standard.string(forKey: "allSort:" + library.preferences.source) ?? ""
-                    sort = sorts.contains(remembered) ? remembered : sorts[0]
-                    reloadRemote()
+                    sort = sorts.contains(remembered) ? remembered : sorts[0]; reloadRemote()
                     if !UIShowcase.enabled && (catalog.catalogs[library.preferences.source] ?? []).isEmpty { catalog.start(library.preferences.source) }
                 }
         }
     }
+    @ViewBuilder private var filterPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if remote.filtersLoading { ProgressView("분류를 불러오는 중") }
+            if let facets = remote.filters {
+                if !facets.genres.isEmpty { picker("장르", value: $draft.genre, options: facets.genres) }
+                if !facets.formats.isEmpty { picker("형태", value: $draft.format, options: facets.formats) }
+                if facets.supportsYear {
+                    if facets.years.isEmpty { TextField("방영 연도", text: $draft.year).keyboardType(.numberPad).accessibilityIdentifier("catalog-year") }
+                    else { picker("연도", value: $draft.year, options: facets.years) }
+                }
+                if facets.supportsSeason { picker("분기", value: $draft.season, options: facets.seasons) }
+                Text(facets.note.isEmpty ? "장르·형태·연도·분기를 함께 선택할 수 있습니다." : facets.note).font(.caption).foregroundStyle(.secondary)
+            }
+            if let error = remote.filterError { Text(error).font(.caption).foregroundStyle(.red); Button("분류 다시 불러오기") { remote.loadFilters() } }
+            if let validationError { Text(validationError).font(.caption).foregroundStyle(.red) }
+            HStack {
+                Button("초기화") { draft = DesktopCatalogSelection(); applied = draft; validationError = nil; if !sorts.contains(sort) { sort = sorts[0] }; reloadRemote() }.accessibilityIdentifier("catalog-filter-reset")
+                Spacer()
+                Button("필터 적용", action: applyFilters).buttonStyle(.borderedProminent).disabled(remote.filters == nil).accessibilityIdentifier("catalog-filter-apply")
+            }
+        }.padding(16).background(LilacStyle.card, in: RoundedRectangle(cornerRadius: 16))
+    }
+    private func picker(_ name: String, value: Binding<String>, options: [String]) -> some View {
+        Picker(name, selection: value) { Text("전체 " + name).tag(""); ForEach(options, id: \.self) { Text(label($0)).tag($0) } }
+    }
+    private func label(_ value: String) -> String {
+        ["TV": "TV 애니", "TV_SHORT": "단편 TV", "MOVIE": "극장판", "Movie": "극장판", "ONA": "웹 애니", "SPECIAL": "스페셜", "MUSIC": "뮤직비디오", "WINTER": "1분기", "SPRING": "2분기", "SUMMER": "3분기", "FALL": "4분기", "Action": "액션", "Adventure": "모험", "Fantasy": "판타지", "Romance": "로맨스", "Comedy": "코미디" ][value] ?? value
+    }
+    private func applyFilters() {
+        guard let facets = remote.filters else { remote.loadFilters(); return }
+        var next = draft; next.year = next.year.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !next.season.isEmpty && next.year.isEmpty { next.year = String(Calendar.current.component(.year, from: Date())) }
+        if !next.year.isEmpty && (facets.years.isEmpty ? (Int(next.year) ?? 0) <= 0 : !facets.years.contains(next.year)) { validationError = "지원하는 연도를 선택하세요."; return }
+        draft = next; applied = next; validationError = nil
+        if !sorts.contains(sort) { sort = sorts[0] }; reloadRemote()
+    }
     private func reloadRemote() {
         guard remoteSource && !UIShowcase.enabled else { return }
-        remote.source = library.preferences.source; remote.query = query; remote.sort = sort == "default" ? "" : sort
-        remote.format = format; remote.year = year; remote.load()
+        remote.source = library.preferences.source; remote.query = query; remote.mode = "catalog"
+        remote.sort = sort == "default" ? "" : sort; remote.genre = applied.genre; remote.format = applied.format; remote.year = applied.year; remote.season = applied.season
+        remote.load()
     }
 }
+
 @MainActor
 final class DesktopSourceModel: ObservableObject {
     @Published var sections: [SourceSection] = []

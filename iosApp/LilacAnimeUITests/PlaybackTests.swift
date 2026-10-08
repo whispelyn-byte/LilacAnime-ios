@@ -1,6 +1,16 @@
 import XCTest
 
 final class PlaybackTests: XCTestCase {
+    func testWorkspaceMenuCanReachCatalog() {
+        let app = XCUIApplication(); app.launchArguments = ["--ui-preview", "workspace"]; app.launch()
+        let menu = app.buttons["workspace-menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 15)); XCTAssertTrue(menu.isHittable)
+        menu.tap()
+        let catalog = app.buttons["전체"].firstMatch
+        if !catalog.isHittable { menu.tap() }
+        XCTAssertTrue(catalog.waitForExistence(timeout: 5)); catalog.tap()
+        XCTAssertTrue(app.buttons["catalog-filter-apply"].waitForExistence(timeout: 10))
+    }
     func testEpisodeOpensFullscreenAndBackReturnsToDetail() {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-preview", "detail"]

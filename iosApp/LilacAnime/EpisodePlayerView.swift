@@ -326,7 +326,11 @@ struct EpisodePlayerView: View {
                 LinearGradient(colors: [Color(red: 0.18, green: 0.12, blue: 0.3), .black], startPoint: .topLeading, endPoint: .bottomTrailing)
                 Text("UI PREVIEW · 예시 데이터").font(.caption).foregroundStyle(.white.opacity(0.4))
             } else {
-                MPVPlayerView(engine: model.engine)
+                GeometryReader { geometry in
+                    let size = model.engine.aspect.stageSize(in: geometry.size)
+                    MPVPlayerView(engine: model.engine).frame(width: size.width, height: size.height)
+                        .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+                }
                 ProviderPlayerView(resolver: model.resolver).opacity(showWeb ? 1 : 0.001).allowsHitTesting(showWeb)
             }
             if model.systemPlayback, let stream = model.systemStream {
@@ -345,7 +349,8 @@ struct EpisodePlayerView: View {
                     settings: { settings = true },
                     chapter: model.chapters.first(where: { model.engine.position >= $0.start && model.engine.position < $0.end }),
                     skipChapter: { if let chapter = model.chapters.first(where: { model.engine.position >= $0.start && model.engine.position < $0.end }) { model.engine.seek(chapter.end) } },
-                    adjustSubtitle: { model.shiftSubtitle($0, library: library) })
+                    adjustSubtitle: { model.shiftSubtitle($0, library: library) },
+                    keyboardEnabled: !settings && !subtitleSheet && !importer)
             } else {
                 VStack { HStack { Button { dismiss() } label: { Image(systemName: "arrow.left") }; Spacer(); Button { settings = true } label: { Image(systemName: "gearshape") } }.font(.title3).padding(20).background(.black.opacity(0.65)); Spacer() }.foregroundStyle(.white)
             }
@@ -404,7 +409,13 @@ struct EpisodePlayerView: View {
             Button(showWeb ? "네이티브 플레이어" : "웹 플레이어") { showWeb.toggle(); settings = false }
         }
         Section("재생") {
-            Picker("재생 속도", selection: $library.preferences.speed) { ForEach([0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2], id: \.self) { Text(String(format: "%.2fx", $0)).tag($0) } }.onChange(of: library.preferences.speed) { model.engine.set("speed", String($0)) }
+            Picker("재생 속도", selection: $library.preferences.speed) { ForEach([0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2], id: \.self) { Text(String(format: "%.2fx", $0)).tag($0) } }.onChange(of: library.preferences.speed) { model.engine.finishSpaceHold(); model.engine.setSpeed($0) }
+            Picker("화면 비율", selection: Binding(get: { library.preferences.playerAspect ?? "original" }, set: {
+                library.preferences.playerAspect = $0
+                if $0 == "original" { library.preferences.playerFit = "contain"; model.engine.setFit("contain") }
+                model.engine.setAspect(PlayerAspect(rawValue: $0) ?? .original)
+            })) { ForEach(PlayerAspect.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) } }
+                .accessibilityIdentifier("player-aspect")
             Toggle("다음 화 자동 재생", isOn: $library.preferences.autoPlay)
             Toggle("OP/ED 자동 스킵", isOn: $library.preferences.autoSkip)
             Picker("화면 맞춤", selection: Binding(get: { library.preferences.playerFit ?? "contain" }, set: { library.preferences.playerFit = $0; model.engine.setFit($0) })) { Text("맞춤").tag("contain"); Text("채움").tag("cover"); Text("늘림").tag("stretch") }
@@ -474,6 +485,8 @@ struct EpisodePlayerView: View {
             Slider(value: $library.preferences.outlineWidth, in: 0...6, step: 0.5)
             Slider(value: $library.preferences.subtitlePadding, in: 0...40)
             HStack { Button("빠르게 −0.5초") { model.shiftSubtitle(-0.5, library: library) }; Text("\(model.subtitleOffset, specifier: "%.1f")초"); Button("늦게 +0.5초") { model.shiftSubtitle(0.5, library: library) } }
+            SubtitleSyncInput(value: model.subtitleOffset) { model.shiftSubtitle($0 - model.subtitleOffset, library: library) }
+            Button("싱크 초기화") { model.shiftSubtitle(-model.subtitleOffset, library: library) }
         }.onChange(of: library.preferences) { _ in model.applyPreferences(library) }
     }
     private var subtitleList: some View {
@@ -530,6 +543,8 @@ struct PlayerControls: View {
     let chapter: OfflineChapter?
     let skipChapter: () -> Void
     let adjustSubtitle: (Double) -> Void
+    let keyboardEnabled: Bool
+    @GestureState private var holdingSpeed = false
     @State private var dragging = false
     @State private var value = 0.0
     @State private var visible = true
@@ -589,6 +604,7 @@ struct PlayerControls: View {
                 }
                 if !feedback.isEmpty { Text(feedback).font(.headline).padding(14).background(.black.opacity(0.7), in: Capsule()).allowsHitTesting(false) }
                 if engine.buffering { ProgressView().tint(.white).allowsHitTesting(false) }
+                if engine.speedBoosted { VStack { Text("2배속").font(.headline).padding(.horizontal, 18).padding(.vertical, 8).background(.black.opacity(0.75), in: Capsule()).accessibilityIdentifier("speed-boost"); Spacer() }.padding(.top, 72).allowsHitTesting(false) }
                 if let chapter, !locked {
                     VStack { Spacer(); HStack { Spacer(); Button(action: skipChapter) { Label(chapter.type.uppercased() + " 건너뛰기", systemImage: "forward.fill").font(.caption.bold()).padding(12).background(.black.opacity(0.65), in: Capsule()) } }.padding(.bottom, visible ? 70 : 18).padding(.trailing, 18) }
                 }
@@ -596,7 +612,6 @@ struct PlayerControls: View {
         }.foregroundStyle(.white).buttonStyle(.plain)
             .background {
                 Group {
-                    Button("") { engine.toggle() }.keyboardShortcut(.space, modifiers: [])
                     Button("") { engine.skip(-seek) }.keyboardShortcut(.leftArrow, modifiers: [])
                     Button("") { engine.skip(seek) }.keyboardShortcut(.rightArrow, modifiers: [])
                     Button("") { engine.setVolume(engine.volume + 5) }.keyboardShortcut(.upArrow, modifiers: [])
@@ -614,8 +629,12 @@ struct PlayerControls: View {
                         Button("") { if canPrevious { previous() } }.keyboardShortcut(.pageUp, modifiers: [])
                         ForEach(0..<10) { digit in Button("") { engine.seek(engine.duration * Double(digit) / 10) }.keyboardShortcut(KeyEquivalent(Character(String(digit))), modifiers: []) }
                     }
-                }.frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
+                }.disabled(locked).frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
             }
+            .background(SpaceHoldKeyboard(enabled: keyboardEnabled && !locked,
+                began: engine.beginSpaceHold, ended: { engine.finishSpaceHold(toggle: true); touch() }, cancelled: { engine.finishSpaceHold() }).frame(width: 0, height: 0))
+            .onChange(of: holdingSpeed) { holding in if !holding { engine.finishSpaceHold() } }
+            .onDisappear { engine.finishSpaceHold() }
             .task(id: interaction) {
                 guard !UIShowcase.enabled, !engine.paused, !locked, !dragging else { return }
                 do { try await Task.sleep(nanoseconds: 4_000_000_000) } catch { return }
@@ -628,7 +647,7 @@ struct PlayerControls: View {
     }
     private func changeSpeed(_ delta: Double) {
         library.preferences.speed = max(0.25, min(2, library.preferences.speed + delta))
-        engine.set("speed", library.preferences.speed.description)
+        engine.finishSpaceHold(); engine.setSpeed(library.preferences.speed)
     }
     private func tapZone(_ delta: Double) -> some View {
         Color.clear.contentShape(Rectangle()).onTapGesture(count: 2) {
@@ -637,6 +656,11 @@ struct PlayerControls: View {
             touch()
             Task { try? await Task.sleep(nanoseconds: 700_000_000); feedback = "" }
         }.onTapGesture { guard !locked else { return }; withAnimation { visible.toggle() }; touch() }
+            .simultaneousGesture(LongPressGesture(minimumDuration: 0.4, maximumDistance: 24)
+                .sequenced(before: DragGesture(minimumDistance: 0))
+                .updating($holdingSpeed) { value, state, _ in if case .second(true, _) = value { state = true } }
+                .onChanged { value in if case .second(true, _) = value, !locked, keyboardEnabled { engine.boostTouchHold() } }
+                .onEnded { _ in engine.finishSpaceHold(); touch() })
     }
     private func icon(_ name: String, size: CGFloat = 44) -> some View {
         Image(systemName: name).font(.system(size: 19)).frame(width: size, height: size)

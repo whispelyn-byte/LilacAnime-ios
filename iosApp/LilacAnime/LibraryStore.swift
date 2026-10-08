@@ -30,6 +30,7 @@ struct WatchEntry: Codable, Identifiable {
 struct SubtitleChoice: Codable { var relativeFile: String?; var offset: Double }
 struct AppPreferences: Codable, Equatable {
     var playerFit: String? = "contain"
+    var playerAspect: String? = nil
     var theme = "dark"
     var titleLanguage: String? = "ko"
     var desktopWorkspace: Bool? = false

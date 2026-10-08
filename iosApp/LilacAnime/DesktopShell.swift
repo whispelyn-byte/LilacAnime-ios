@@ -6,6 +6,7 @@ struct DesktopWorkspace: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @EnvironmentObject private var navigation: DesktopNavigation
     @State private var menu = false
+    @State private var columns: NavigationSplitViewVisibility = .all
     @State private var search = ""
     private let destinations: [(String, String, String)] = [
         ("home", "홈", "house"), ("catalog", "전체", "square.grid.2x2"),
@@ -15,7 +16,7 @@ struct DesktopWorkspace: View {
     var body: some View {
         Group {
             if sizeClass == .regular {
-                NavigationSplitView {
+                NavigationSplitView(columnVisibility: $columns) {
                     sidebar.navigationTitle("LilacAnime")
                         .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 240)
                 } detail: { page }
@@ -56,7 +57,11 @@ struct DesktopWorkspace: View {
     }
     private var searchBar: some View {
         HStack(spacing: 12) {
-            if sizeClass != .regular { Button { menu = true } label: { Image(systemName: "line.3.horizontal").frame(width: 36, height: 36) }.accessibilityLabel("메뉴") }
+            Button {
+                if sizeClass == .regular { withAnimation { columns = columns == .detailOnly ? .all : .detailOnly } }
+                else { menu = true }
+            } label: { Image(systemName: "line.3.horizontal").frame(width: 36, height: 36) }
+                .accessibilityLabel("메뉴").accessibilityIdentifier("workspace-menu")
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 TextField("보고 싶은 애니메이션을 검색해 보세요", text: $search)

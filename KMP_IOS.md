@@ -52,6 +52,9 @@ SideStore의 인증 갱신과 새 버전 설치는 별개입니다. 기존 앱�
 이미 빌드한 simulator 앱만 다시 실행하는 Capture verified iOS app 워크플로도 제공합니다. iPhone/iPad 작업 공간을 실행 후 5/15/30초에 캡처하고 앱 로그를 저장하며, 앱을 다시 컴파일하지 않습니다.
 [작업 공간 재캡처 37756362510](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37756362510)에서 iPad 사이드바/본문과 iPhone 메뉴 복귀 버튼을 확인했습니다. README에는 앱 첫 실행을 기다린 30초 캡처를 사용합니다.
 
+[릴리즈 패키징 37757654615](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37757654615)도 성공했습니다. 공개 [v0.4.0-ios.2](https://github.com/whispelyn-byte/LilacAnime-ios/releases/tag/v0.4.0-ios.2) IPA를 다시 내려받아 재패키징한 Info.plist 외 앱 파일 **445개**의 내용이 검증한 device 아티팩트와 동일함을 확인했습니다. IPA와 SideStore source.json의 버전·빌드·크기·최소 iOS가 일치하며 공개 다운로드는 HTTP 200입니다.
+릴리즈 IPA: **28,393,416 bytes**, SHA-256 **0f73d5ce8ce8d20920037a4c7dfdb2fdb3e4d2f1a255c68a3ae140ac2da7998d**.
+
 ## 실제 기기 확인이 남은 부분
 
 - tiny GGUF CPU와 실제 템플릿 검증은 대형 모델의 Metal 추론·메모리·번역 품질을 입증하지 않습니다.

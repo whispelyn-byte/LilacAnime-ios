@@ -83,3 +83,12 @@ Android SDK와 원본 네이티브 도구 체인이 필요합니다. 원본에�
 v로 시작하는 버전 태그를 푸시하면 공통·iOS 검증 후 Release에 LilacAnime-SideStore.ipa와 source.json을 게시합니다. source.json은 IPA 안의 버전·빌드 번호·최소 iOS·권한과 실제 파일 크기로 생성하며, 태그 버전이 IPA와 일치하지 않으면 게시하지 않습니다. SideStore Sources에 https://github.com/whispelyn-byte/LilacAnime-ios/releases/latest/download/source.json 을 등록합니다. 최신 버전 확인과 업데이트 버튼을 통한 설치를 위한 소스이며 완전한 무인 설치는 보장하지 않습니다. 실제 기기에서 소스 등록·업데이트는 아직 확인하지 않았습니다.
 
 Android 버전 정렬: 원본 최신 릴리스 및 app/module.toml의 versionName 0.4.0, versionCode 30을 iOS에 적용했습니다. 검증된 unsigned arm64 앱의 Info.plist 버전 정보만 변경해 Actions 37723637550에서 재패키징했고, v0.4.0을 최신 공개 릴리스로 게시했습니다. IPA 내부와 소스 JSON의 버전 0.4.0 / 빌드 30, ZIP 무결성, 로그인 없는 최신 source.json HTTP 200을 확인했습니다. 임시 v1.0 릴리스·원격 태그는 삭제했습니다. 기존 1.0 설치자는 앱을 삭제하지 말고 0.4.0 IPA를 SideStore에 다시 가져와 덮어 설치합니다.
+
+
+## 데스크탑 기능 이식 (2026-10-08)
+
+기준 데스크탑 커밋: 4cf110427cf46de1f926554fbfdd0968d2821a61. Ohli24/Linkani/Miruro, Anissia와 제공 한국어 자막 자동 선택, 서버 회차 일괄 다운로드·제공 자막 오프라인 저장, 재생 위치 우선 번역·부분 캐시 재개·로컬 대체·사용자 용어집을 이식했습니다. 범위와 차이는 [desktop-port.md](docs/desktop-port.md)에 정리했습니다.
+
+최신 코드 검증: 34db062, https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37733189254 . JVM 테스트 24개, KMP iOS 테스트, 네이티브 iOS 테스트 8개, 시뮬레이터 캡처와 unsigned iPhoneOS arm64 빌드가 통과했습니다. IPA ZIP 무결성, 앱 버전 0.4.0 / 빌드 31 및 arm64 실행 파일을 확인했습니다. Miruro 목록·상세·회차·재생 트랙 API와 Anissia 검색 API 응답 형식도 확인했습니다. 외부 영상 재생, 자막 첨부 다운로드, 실기기 설치·Cast·로컬 AI 추론은 별도 확인이 필요합니다.
+
+앱 버전은 Android versionName을 유지하며, iOS 빌드는 Android versionCode + iosApp/revision.txt입니다. 이번 태그는 v0.4.0-ios.1입니다. 공개 IPA·SideStore 소스 주소는 기존 releases/latest 경로를 유지합니다.

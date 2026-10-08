@@ -414,7 +414,7 @@ struct DownloadsView: View {
                     }
                 }
                 Section("다운로드 관리") {
-                    HStack { Button("모두 일시 중지") { downloads.pauseAll() }; Button("모두 이어받기") { downloads.resumeAll() } }
+                    HStack { Button("모두 일시 중지") { downloads.pauseAll() }; Button("모두 이어받기") { downloads.resumeAll() } }.buttonStyle(.borderless)
                     NavigationLink("다운로드 폴더 내보내기·가져오기") { DownloadTransferView() }
                     Button("다운로드 전체 삭제", role: .destructive) { confirmClear = true }.disabled(downloads.clearing)
                     if downloads.clearing { ProgressView("중단 후 삭제 중") }
@@ -436,7 +436,7 @@ struct DownloadsView: View {
                             if entry.status == "다운로드 중" { Button("중단") { downloads.cancel(entry.id) } }
                             else if entry.localFile == nil { Button("다시 시도") { downloads.retry(entry) } }
                             Button("삭제", role: .destructive) { downloads.delete(entry.id) }
-                        }
+                        }.buttonStyle(.borderless)
                     }
                 }
                   }

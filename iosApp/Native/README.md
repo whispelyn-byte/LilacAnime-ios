@@ -21,3 +21,5 @@ The Xcode project pins okferret/libarchive at b84d41ea6ecd1ab0b0cec6d60baa806808
 verify.sh downloads stories260K.gguf from a fixed ggml-org model commit with a SHA-256 check into the **test bundle only**. It checks actual CPU model loading, two generation requests and metrics. This tiny model is a runtime smoke test; it does not measure subtitle quality or prove that multi-gigabyte presets fit every iPhone.
 
 The simulator also evaluates Google's full Gemma 4 chat template and reads ZIP/7z/RAR fixtures. Fixture captions are authored test data.
+
+UTF8Locale.cpp applies and restores a per-thread UTF-8 CTYPE locale during synchronous libarchive extraction. This lets 7z UTF-16 and legacy CP949 ZIP filenames convert correctly when iOS starts in the C locale; the process-wide locale remains untouched.

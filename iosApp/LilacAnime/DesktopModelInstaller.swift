@@ -107,7 +107,7 @@ struct DesktopModelsSection: View {
                         HStack {
                             Button(library.preferences.selectedGGUF == model.file ? "사용 중" : "사용") { library.preferences.selectedGGUF = model.file }
                             Button("삭제", role: .destructive) { installer.remove(model); if library.preferences.selectedGGUF == model.file { library.preferences.selectedGGUF = "" } }
-                        }
+                        }.buttonStyle(.borderless)
                     } else { Button("받기 / 이어받기") { installer.install(model) } }
                 }
             }

@@ -15,6 +15,8 @@ char *lilac_generate(LilacModel *model, const char *prompt, int max_tokens, floa
 void lilac_cancel(LilacModel *model);
 const char *lilac_error(LilacModel *model);
 void lilac_string_free(char *text);
+void *lilac_utf8_locale_begin(void);
+void lilac_utf8_locale_end(void *token);
 char *lilac_format_prompt(const char *chat_template, const char *prompt, const char *bos, const char *eos, char **error);
 #ifdef __cplusplus
 }

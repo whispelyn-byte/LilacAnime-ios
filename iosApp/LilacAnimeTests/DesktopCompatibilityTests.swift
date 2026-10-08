@@ -83,6 +83,8 @@ final class DesktopCompatibilityTests: XCTestCase {
         }
         let current = entry("4", 4)
         XCTAssertEqual(current.following([entry("5", 5), current, entry("4a", 4)]).map(\.episodeID), ["4a", "5"])
+        XCTAssertEqual(entry("5", 5).preceding([entry("5", 5), current, entry("4a", 4)]).map(\.episodeID), ["4", "4a"])
+        XCTAssertTrue(entry("5", 5).preceding([entry("5", 5), current]).allSatisfy { $0.directURL?.isFileURL == true })
     }
     func testPortableExportIncludesNestedHLSAndExcludesResumeSecrets() throws {
         let anime = SavedAnime(AnimeSnapshot.shared.decode(content: "{\"id\":\"a\",\"title\":\"보존\"}"), source: "reanime")

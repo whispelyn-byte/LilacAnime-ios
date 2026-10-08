@@ -32,7 +32,8 @@ final class DesktopSubtitlePreparer {
         offsets = offsetValues.map { $0.intValue }
         var providers = ["kairan", "csora", "anissia"]
         if let preferred = preferences.subtitleProvider, let index = providers.firstIndex(of: preferred) { providers.remove(at: index); providers.insert(preferred, at: 0) }
-        if preferences.autoTranslation { providers.append("jimaku") }
+        if preferences.subtitleProvider == "jimaku" { providers.insert("jimaku", at: 0) }
+        else if preferences.autoTranslation { providers.append("jimaku") }
         for provider in providers {
             try Task.checkCancellation()
             let results: [SubtitleAsset] = await withCheckedContinuation { continuation in

@@ -34,17 +34,27 @@ struct DownloadEntry: Codable, Identifiable {
             position: 0, duration: 0, updatedAt: date))
         item.localSubtitles = (subtitleFiles ?? []).map { DownloadStore.directory.appendingPathComponent(id).appendingPathComponent($0) }
         item.next = following(DownloadStore.shared.entries)
+        item.preceding = preceding(DownloadStore.shared.entries)
         return item
     }
     func following(_ entries: [DownloadEntry]) -> [PlaybackItem] {
+        let available = ordered(entries)
+        guard let current = available.firstIndex(where: { $0.id == id }) else { return [] }
+        return available.dropFirst(current + 1).map { $0.singlePlayback }
+    }
+    func preceding(_ entries: [DownloadEntry]) -> [PlaybackItem] {
+        let available = ordered(entries)
+        guard let current = available.firstIndex(where: { $0.id == id }) else { return [] }
+        return available.prefix(current).map { $0.singlePlayback }
+    }
+    private func ordered(_ entries: [DownloadEntry]) -> [DownloadEntry] {
         let order = Dictionary(anime.anime.episodes.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { first, _ in first })
         let available = entries.filter { $0.anime.id == anime.id && $0.localFile != nil }.sorted {
             if let left = order[$0.episodeID], let right = order[$1.episodeID] { return left < right }
             if $0.number != $1.number { return $0.number < $1.number }
             return $0.episodeID.localizedStandardCompare($1.episodeID) == .orderedAscending
         }
-        guard let current = available.firstIndex(where: { $0.id == id }) else { return [] }
-        return available.dropFirst(current + 1).map { $0.singlePlayback }
+        return available
     }
     private var singlePlayback: PlaybackItem {
         var item = PlaybackItem(entry: WatchEntry(id: id, anime: anime, episodeID: episodeID, episodeTitle: title, number: number, watchURL: watchURL,

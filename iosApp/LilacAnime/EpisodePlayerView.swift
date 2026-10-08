@@ -43,7 +43,7 @@ final class EpisodePlayerModel: ObservableObject {
     private var subtitleRequest = UUID()
     private var observers: Set<AnyCancellable> = []
     init(item: PlaybackItem) {
-        self.item = item; searchTitle = item.anime.title
+        self.item = item; previous = item.preceding; searchTitle = item.anime.title
         resolver.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observers)
         translation.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observers)
     }
@@ -339,7 +339,7 @@ struct EpisodePlayerView: View {
                     title: DesktopCatalog.shared.title(model.item.anime.anime, source: model.item.anime.source, language: library.preferences.titleLanguage), episode: model.item.title,
                     canPrevious: !model.previous.isEmpty, canNext: !model.item.next.isEmpty,
                     back: { dismiss() },
-                    previous: { if let item = model.previous.popLast() { model.change(item, library: library, remember: false) } },
+                    previous: { if var item = model.previous.popLast() { item.next = [model.item] + model.item.next; model.change(item, library: library, remember: false) } },
                     next: nextEpisode,
                     settings: { settings = true },
                     chapter: model.chapters.first(where: { model.engine.position >= $0.start && model.engine.position < $0.end }),

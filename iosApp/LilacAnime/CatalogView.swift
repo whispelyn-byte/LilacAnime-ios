@@ -329,6 +329,7 @@ struct DetailView: View {
         let saved = SavedAnime(AnimeSnapshot.shared.withEpisodes(anime: anime, episodes: episodes), source: source)
         var item = PlaybackItem(anime: saved, episode: episodes[index])
         item.next = episodes.dropFirst(index + 1).map { PlaybackItem(anime: saved, episode: $0) }
+        item.preceding = episodes.prefix(index).map { PlaybackItem(anime: saved, episode: $0) }
         return item
     }
 }

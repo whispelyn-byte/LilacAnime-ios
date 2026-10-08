@@ -27,6 +27,7 @@ struct PlaybackItem {
     let watchURL: URL
     let directURL: URL?
     var next: [PlaybackItem] = []
+    var preceding: [PlaybackItem] = []
     var localSubtitles: [URL] = []
     init(anime: SavedAnime, episode: Episode) {
         self.anime = anime; episodeID = episode.id; title = episode.title; number = Int(episode.number)
@@ -40,6 +41,7 @@ struct PlaybackItem {
         let episodes = entry.anime.anime.episodes
         if let index = episodes.firstIndex(where: { $0.id == entry.episodeID }) {
             next = episodes.dropFirst(index + 1).map { PlaybackItem(anime: entry.anime, episode: $0) }
+            preceding = episodes.prefix(index).map { PlaybackItem(anime: entry.anime, episode: $0) }
         }
     }
 }

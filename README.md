@@ -18,6 +18,8 @@
   작품 탐색부터 회차 재생, 자막 검색·번역, 이어보기와 오프라인 감상까지 제공합니다.
 </p>
 
+현재 Android 원본과 같은 **0.4.0 (빌드 30)**을 사용합니다.
+
 ## 주요 기능
 
 - **작품 탐색:** Linkkf · ReAnime · Animenosub 검색과 필터, ReAnime 인기 목록·방영표.
@@ -108,7 +110,7 @@ sh iosApp/scripts/verify.sh
 
 GitHub Actions는 공통 테스트, KMP iOS 테스트, 네이티브 iOS 테스트, 시뮬레이터 캡처, unsigned arm64 IPA 패키징을 실행합니다. **App Store 배포용 서명 빌드가 아닙니다.**
 
-새 버전을 배포하려면 main의 변경 사항을 확인하고 **v1.0.1**처럼 버전 태그를 푸시합니다. 태그 버전은 앱 버전에 반영되고, 모든 빌드·테스트가 성공하면 Release에 IPA와 실제 IPA 메타데이터로 생성한 SideStore source.json을 게시합니다. 최신 소스 주소는 그대로 유지됩니다.
+새 버전을 배포하려면 main의 변경 사항을 확인하고 Android와 같은 **v0.4.0** 형태의 버전 태그를 푸시합니다. 앱 버전·빌드 번호는 app/module.toml의 Android versionName·versionCode를 사용하며 태그와 일치하는지 확인합니다., 모든 빌드·테스트가 성공하면 Release에 IPA와 실제 IPA 메타데이터로 생성한 SideStore source.json을 게시합니다. 최신 소스 주소는 그대로 유지됩니다.
 
 | 경로 | 내용 |
 |---|---|

@@ -5,10 +5,14 @@ on:
       build_run_id:
         description: Successful KMP and iOS build run containing ios-app-builds
         required: true
-        default: '37702875269'
+        default: '37710922796'
+      publish_release:
+        description: Publish IPA and SideStore source with the Android version
+        type: boolean
+        default: false
 permissions:
   actions: read
-  contents: read
+  contents: write
 jobs:
   package:
     runs-on: macos-15
@@ -24,9 +28,22 @@ jobs:
         run: |
           mkdir -p build/device
           ditto -x -k build/source/LilacAnime-device-unsigned.zip build/device
+          python3 iosApp/scripts/android-version.py --app build/device/LilacAnime.app
           sh iosApp/scripts/package-ipa.sh build/device/LilacAnime.app build/LilacAnime-SideStore.ipa
       - uses: actions/upload-artifact@v4
         with:
           name: LilacAnime-SideStore
           path: build/LilacAnime-SideStore.ipa
           if-no-files-found: error
+      - name: Publish Android-aligned release
+        if: inputs.publish_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REPO: ${{ github.repository }}
+        run: |
+          TAG="v$(python3 iosApp/scripts/android-version.py --version)"
+          python3 iosApp/scripts/generate-source.py build/LilacAnime-SideStore.ipa --tag "$TAG" --repo "$RELEASE_REPO" --output build/source.json
+          if ! gh release view "$TAG" --repo "$RELEASE_REPO" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$RELEASE_REPO" --target "$GITHUB_SHA" --title "LilacAnime iOS $TAG" --notes-file docs/release-notes.md --latest
+          fi
+          gh release upload "$TAG" build/LilacAnime-SideStore.ipa build/source.json --repo "$RELEASE_REPO" --clobber

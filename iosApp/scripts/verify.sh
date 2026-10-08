@@ -9,12 +9,12 @@ fi
 command -v xcodegen >/dev/null
 sh ./gradlew :shared:iosSimulatorArm64Test
 cd iosApp
-APP_VERSION="1.0"
-APP_BUILD="1"
+APP_VERSION="$(python3 scripts/android-version.py --version)"
+APP_BUILD="$(python3 scripts/android-version.py --build)"
 if [ "${GITHUB_REF_TYPE:-}" = tag ]; then
   APP_VERSION="${GITHUB_REF_NAME#v}"
   python3 -c 'import re,sys; assert re.fullmatch(r"\d+\.\d+(?:\.\d+)?", sys.argv[1]), "Invalid release version"' "$APP_VERSION"
-  APP_BUILD="${GITHUB_RUN_NUMBER:-1}"
+  test "$APP_VERSION" = "$(python3 scripts/android-version.py --version)"
 fi
 xcodegen generate
 mkdir -p build

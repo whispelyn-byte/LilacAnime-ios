@@ -1,0 +1,51 @@
+name: Build Intel iPhone Simulator app
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Branch or commit to build
+        required: true
+        default: main
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Select Xcode
+        run: |
+          if [ -d /Applications/Xcode_26.3.app ]; then
+            sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+          fi
+          xcodebuild -version
+      - run: brew install xcodegen
+      - uses: actions/cache@v4
+        with:
+          path: iosApp/build/DerivedData-Intel/SourcePackages
+          key: swiftpm-intel-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('iosApp/Native/Package.swift') }}
+      - uses: actions/cache/restore@v4
+        id: native-cache
+        with:
+          path: iosApp/Native/Frameworks
+          key: llama-ios-b11490-universal-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('iosApp/scripts/build-native.sh') }}
+      - run: sh iosApp/scripts/build-native.sh
+      - uses: actions/cache/save@v4
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        with:
+          path: iosApp/Native/Frameworks
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
+      - run: sh iosApp/scripts/build-intel-simulator.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LilacAnime-Intel-Simulator
+          path: iosApp/build/LilacAnime-simulator-intel.zip
+          if-no-files-found: error

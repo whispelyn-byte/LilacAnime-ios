@@ -9,6 +9,7 @@ import LilacShared
 @MainActor
 final class EpisodePlayerModel: ObservableObject {
     @Published var item: PlaybackItem
+    @Published var previous: [PlaybackItem] = []
     @Published var active: ResolvedStream?
     @Published var error: String?
     @Published var assets: [SubtitleAsset] = []
@@ -80,7 +81,8 @@ final class EpisodePlayerModel: ObservableObject {
         chapters = OfflineAnalyzer.chapters(animeID: item.anime.id, episodeID: item.episodeID)
         resolver.resolve(item)
     }
-    func change(_ item: PlaybackItem, library: LibraryStore) {
+    func change(_ item: PlaybackItem, library: LibraryStore, remember: Bool = true) {
+        if remember { previous.append(self.item) }
         save(library: library); engine.pause(); proxy?.stop(); proxy = nil; translation.cancel(); cast.stop()
         generation = UUID(); titleLookup.cancel(); searchTitle = item.anime.title; self.item = item; active = nil; subtitle = nil; sourceSubtitle = nil; assets = []; subtitleFiles = []; chapters = []
         loadedSkip = false; lastSave = 0; lastSkipped = ""; systemPlayback = false
@@ -186,6 +188,7 @@ struct EpisodePlayerView: View {
     @State private var subtitleSheet = false
     @State private var directURL = ""
     @State private var fullscreen = false
+    @Environment(\.dismiss) private var dismiss
     init(item: PlaybackItem) { _model = StateObject(wrappedValue: EpisodePlayerModel(item: item)) }
     var body: some View {
         VStack(spacing: 0) {
@@ -204,7 +207,15 @@ struct EpisodePlayerView: View {
                 }
                 if showWeb { ProviderPlayerView(resolver: model.resolver) }
                 if !showWeb && !model.systemPlayback {
-                    PlayerControls(engine: model.engine, seek: library.preferences.seekSeconds)
+                    PlayerControls(engine: model.engine, seek: library.preferences.seekSeconds,
+                        title: model.item.anime.title, episode: model.item.title, fullscreen: fullscreen,
+                        canPrevious: !model.previous.isEmpty, canNext: !model.item.next.isEmpty,
+                        back: { if fullscreen { fullscreen = false; OrientationController.portrait() } else { dismiss() } },
+                        expand: { fullscreen.toggle(); if fullscreen { OrientationController.landscape() } else { OrientationController.portrait() } },
+                        previous: { if let item = model.previous.popLast() { model.change(item, library: library, remember: false) } },
+                        next: { let remaining = model.item.next; guard !remaining.isEmpty else { return }; var item = remaining[0]; item.next = Array(remaining.dropFirst()); model.change(item, library: library) },
+                        subtitles: { subtitleSheet = true }, chapter: model.chapters.first(where: { model.engine.position >= $0.start && model.engine.position < $0.end }),
+                        skipChapter: { if let chapter = model.chapters.first(where: { model.engine.position >= $0.start && model.engine.position < $0.end }) { model.engine.seek(chapter.end) } })
                 }
             }.frame(maxWidth: .infinity).frame(height: fullscreen ? nil : 255).background(.black)
             if !fullscreen {
@@ -258,8 +269,6 @@ struct EpisodePlayerView: View {
                         EngineError(engine: model.engine)
                     }.padding(20)
                 }.background(LilacStyle.background)
-            } else {
-                Button("전체 화면 닫기") { fullscreen = false; OrientationController.portrait() }.padding(8)
             }
         }.navigationTitle(model.item.title).navigationBarTitleDisplayMode(.inline)
             .toolbar(fullscreen ? .hidden : .visible, for: .navigationBar)
@@ -302,37 +311,111 @@ struct EpisodePlayerView: View {
 struct PlayerControls: View {
     @ObservedObject var engine: MPVEngine
     let seek: Double
+    let title: String
+    let episode: String
+    let fullscreen: Bool
+    let canPrevious: Bool
+    let canNext: Bool
+    let back: () -> Void
+    let expand: () -> Void
+    let previous: () -> Void
+    let next: () -> Void
+    let subtitles: () -> Void
+    let chapter: OfflineChapter?
+    let skipChapter: () -> Void
     @State private var dragging = false
     @State private var value = 0.0
+    @State private var visible = true
+    @State private var locked = false
+    @State private var interaction = UUID()
+    @State private var feedback = ""
     var body: some View {
-        VStack(spacing: 12) {
-            Spacer()
-            HStack(spacing: 38) {
-                Button { engine.skip(-seek) } label: { Image(systemName: "gobackward").font(.title) }
-                Button { engine.toggle() } label: { Image(systemName: engine.paused ? "play.fill" : "pause.fill").font(.system(size: 34)).frame(width: 64, height: 64).background(.white.opacity(0.15), in: Circle()) }
-                Button { engine.skip(seek) } label: { Image(systemName: "goforward").font(.title) }
+        GeometryReader { geometry in
+            ZStack {
+                HStack(spacing: 0) {
+                    tapZone(-seek)
+                    tapZone(0)
+                    tapZone(seek)
+                }
+                if visible && !locked {
+                    LinearGradient(colors: [.black.opacity(0.55), .clear, .black.opacity(0.5)], startPoint: .top, endPoint: .bottom).allowsHitTesting(false)
+                    VStack(spacing: 0) {
+                        HStack(spacing: 10) {
+                            control("arrow.left", label: "뒤로", action: back)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                                Text(episode).font(.system(size: 11)).foregroundStyle(.white.opacity(0.65)).lineLimit(1)
+                            }.padding(.horizontal, 12).padding(.vertical, 8).background(.black.opacity(0.4), in: RoundedRectangle(cornerRadius: 14))
+                            Spacer(minLength: 0)
+                            Menu {
+                                Button("자막 선택", action: subtitles)
+                                Button("자막 끄기") { engine.disableSubtitles() }
+                                ForEach(engine.tracks) { track in Button(track.title) { engine.selectTrack(track) } }
+                                ForEach([0.5, 1, 1.25, 1.5, 2], id: \.self) { speed in Button("\(speed)x") { engine.set("speed", String(speed)); touch() } }
+                            } label: { icon("gearshape", size: 44) }
+                        }
+                        Spacer(minLength: 4)
+                        HStack(spacing: 12) {
+                            control("backward.end.fill", label: "이전 회차", enabled: canPrevious, action: previous)
+                            control("backward.fill", label: "\(Int(seek))초 뒤로") { engine.skip(-seek) }
+                            Button { engine.toggle(); touch() } label: {
+                                Image(systemName: engine.paused ? "play.fill" : "pause.fill").font(.system(size: 30)).foregroundStyle(.black)
+                                    .frame(width: 64, height: 64).background(.white.opacity(0.92), in: Circle())
+                            }.accessibilityLabel(engine.paused ? "재생" : "일시정지")
+                            control("forward.fill", label: "\(Int(seek))초 앞으로") { engine.skip(seek) }
+                            control("forward.end.fill", label: "다음 회차", enabled: canNext, action: next)
+                        }
+                        Spacer(minLength: 4)
+                        HStack(spacing: 8) {
+                            HStack(spacing: 8) {
+                                Text(clock(dragging ? value : engine.position)).monospacedDigit()
+                                Slider(value: Binding(get: { dragging ? value : min(max(engine.position, 0), max(engine.duration, 1)) }, set: { value = $0 }),
+                                    in: 0...max(engine.duration, 1), onEditingChanged: { editing in
+                                        if editing { value = engine.position }; dragging = editing
+                                        if !editing { engine.seek(value) }; touch()
+                                    }).tint(LilacStyle.accent)
+                                Text(clock(engine.duration)).monospacedDigit().foregroundStyle(.white.opacity(0.65))
+                            }.font(.system(size: 11)).padding(.horizontal, 12).padding(.vertical, 2)
+                                .background(.black.opacity(0.52), in: RoundedRectangle(cornerRadius: 20))
+                            control("lock.fill", label: "화면 잠금") { locked = true; visible = false }
+                            control(fullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right", label: "전체 화면", action: expand)
+                        }
+                    }.padding(.horizontal, fullscreen ? 24 : 12).padding(.vertical, 12)
+                }
+                if locked {
+                    VStack { Spacer(); HStack { Spacer(); control("lock.open.fill", label: "잠금 해제") { locked = false; visible = true } }.padding(18) }
+                }
+                if !feedback.isEmpty { Text(feedback).font(.headline).padding(14).background(.black.opacity(0.7), in: Capsule()).allowsHitTesting(false) }
+                if engine.buffering { ProgressView().tint(.white).allowsHitTesting(false) }
+                if let chapter, !locked {
+                    VStack { Spacer(); HStack { Spacer(); Button(action: skipChapter) { Label(chapter.type.uppercased() + " 건너뛰기", systemImage: "forward.fill").font(.caption.bold()).padding(12).background(.black.opacity(0.65), in: Capsule()) } }.padding(.bottom, visible ? 70 : 18).padding(.trailing, 18) }
+                }
+            }.frame(width: geometry.size.width, height: geometry.size.height)
+        }.foregroundStyle(.white).buttonStyle(.plain)
+            .task(id: interaction) {
+                guard !UIShowcase.enabled, !engine.paused, !locked, !dragging else { return }
+                do { try await Task.sleep(nanoseconds: 4_000_000_000) } catch { return }
+                if !dragging { withAnimation { visible = false } }
             }
-            Spacer()
-            Slider(value: Binding(get: { dragging ? value : engine.position }, set: { value = $0 }),
-                   in: 0...max(engine.duration, 1), onEditingChanged: { editing in
-                if editing { value = engine.position }; dragging = editing; if !editing { engine.seek(value) }
-            })
-            HStack {
-                Text(clock(engine.position)).monospacedDigit(); Spacer()
-                Spacer(); Text(clock(engine.duration)).monospacedDigit()
-                Menu {
-                    Button("자막 끄기") { engine.disableSubtitles() }
-                    ForEach(engine.tracks) { track in Button(track.title) { engine.selectTrack(track) } }
-                    ForEach([0.5,1,1.25,1.5,2], id: \.self) { speed in Button("\(speed)x") { engine.set("speed", String(speed)) } }
-                } label: { Image(systemName: "gearshape") }
-            }
-
-            if engine.buffering { ProgressView() }
-        }.font(.caption).foregroundStyle(.white).tint(.white)
-            .padding(.horizontal, 20).padding(.vertical, 14)
-            .background(LinearGradient(colors: [.black.opacity(0.35), .clear, .black.opacity(0.8)], startPoint: .top, endPoint: .bottom))
+            .onChange(of: engine.paused) { paused in if paused { visible = true }; touch() }
     }
-    private func clock(_ seconds: Double) -> String { let value = max(0, Int(seconds)); return String(format: "%d:%02d", value / 60, value % 60) }
+    private func tapZone(_ delta: Double) -> some View {
+        Color.clear.contentShape(Rectangle()).onTapGesture(count: 2) {
+            guard !locked else { return }
+            if delta == 0 { engine.toggle() } else { engine.skip(delta); feedback = "\(delta > 0 ? "+" : "−")\(Int(abs(delta)))초" }
+            touch()
+            Task { try? await Task.sleep(nanoseconds: 700_000_000); feedback = "" }
+        }.onTapGesture { guard !locked else { return }; withAnimation { visible.toggle() }; touch() }
+    }
+    private func icon(_ name: String, size: CGFloat = 44) -> some View {
+        Image(systemName: name).font(.system(size: 19)).frame(width: size, height: size)
+            .background(.black.opacity(0.48), in: Circle()).overlay(Circle().stroke(.white.opacity(0.1), lineWidth: 1))
+    }
+    private func control(_ name: String, label: String, enabled: Bool = true, action: @escaping () -> Void) -> some View {
+        Button { action(); touch() } label: { icon(name).opacity(enabled ? 1 : 0.3) }.disabled(!enabled).accessibilityLabel(label)
+    }
+    private func touch() { interaction = UUID() }
+    private func clock(_ seconds: Double) -> String { let value = seconds.isFinite ? max(0, Int(seconds)) : 0; return String(format: "%d:%02d", value / 60, value % 60) }
 }
 struct EngineError: View {
     @ObservedObject var engine: MPVEngine

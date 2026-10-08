@@ -19,6 +19,7 @@ if [ "${GITHUB_REF_TYPE:-}" = tag ]; then
   test "$APP_VERSION" = "$(python3 scripts/android-version.py --version)"
 fi
 sh scripts/build-native.sh
+python3 scripts/prepare-test-model.py
 xcodegen generate
 mkdir -p build
 for ATTEMPT in 1 2 3; do

@@ -40,6 +40,49 @@ final class DesktopCompatibilityTests: XCTestCase {
         XCTAssertFalse(DownloadTransfer.safeName("../video.mp4")); XCTAssertFalse(DownloadTransfer.safeName("C:\\secret"))
         XCTAssertFalse(DownloadTransfer.safeName("https://example.test")); XCTAssertTrue(DownloadTransfer.safeName("subtitle-한국어.ass"))
     }
+    func testRealTinyGGUFCPUInferenceAndMetrics() throws {
+        let file = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "stories260K", withExtension: "gguf"))
+        let model = try XCTUnwrap(lilac_model_open_with_backend(file.path, 512, 2, 0))
+        defer { lilac_model_close(model) }
+        XCTAssertEqual(String(cString: lilac_backend(model)), "CPU")
+        let output = try XCTUnwrap(lilac_generate(model, "Once upon a time", 16, 0, 1, 40, 1), String(cString: lilac_error(model)))
+        defer { lilac_string_free(output) }
+        XCTAssertFalse(String(cString: output).isEmpty)
+        XCTAssertGreaterThan(lilac_output_tokens(model), 0)
+        XCTAssertGreaterThan(lilac_generation_seconds(model), 0)
+        let second = try XCTUnwrap(lilac_generate(model, "A little girl", 8, 0, 1, 40, 1))
+        defer { lilac_string_free(second) }
+        XCTAssertFalse(String(cString: second).isEmpty)
+    }
+    func testSubtitleArchivesRead7zRARAndLegacyKoreanZIPWithoutTraversal() throws {
+        for (name, ext) in [("subtitle", "7z"), ("subtitle", "rar"), ("subtitle-cp949", "zip")] {
+            let file = try XCTUnwrap(Bundle(for: Self.self).url(forResource: name, withExtension: ext))
+            let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: folder) }
+            let extracted = try SubtitleArchive.extract(file, into: folder)
+            XCTAssertTrue(extracted.contains { $0.lastPathComponent.hasSuffix("한국어.srt") }, "\(ext) filename")
+            for item in extracted {
+                XCTAssertEqual(item.deletingLastPathComponent().standardizedFileURL, folder.standardizedFileURL)
+                XCTAssertTrue(try String(contentsOf: item, encoding: .utf8).contains("테스트 자막"))
+            }
+            XCTAssertEqual(extracted.count, ext == "zip" ? 2 : 1)
+        }
+    }
+    func testPortableExportIncludesNestedHLSAndExcludesResumeSecrets() throws {
+        let anime = SavedAnime(AnimeSnapshot.shared.decode(content: "{\"id\":\"a\",\"title\":\"보존\"}"), source: "reanime")
+        let stream = ResolvedStream(label: "Auto", url: URL(string: "https://example.test/master.m3u8")!, referer: "", headers: [:], subtitles: [])
+        let entry = DownloadEntry(id: SubtitleFiles.key(anime.id + "#1"), anime: anime, episodeID: "1", title: "1화", number: 1,
+            watchURL: "https://example.test/watch", stream: stream, localFile: "root.m3u8", subtitleFiles: ["ko.srt"],
+            rootFile: "root.m3u8", parts: [DownloadPart(url: stream.url, name: "part.ts", done: true)], fontFiles: ["font.ttf"])
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nchild.m3u8\n".write(to: folder.appendingPathComponent("root.m3u8"), atomically: true, encoding: .utf8)
+        try "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\"\n#EXTINF:1,\npart.ts\n#EXT-X-ENDLIST\n".write(to: folder.appendingPathComponent("child.m3u8"), atomically: true, encoding: .utf8)
+        try Data("private cookies".utf8).write(to: folder.appendingPathComponent("part.ts.resume"))
+        XCTAssertEqual(try DownloadTransfer.files(entry, in: folder), Set(["root.m3u8", "child.m3u8", "part.ts", "key.bin", "ko.srt", "font.ttf"]))
+    }
     private func format(_ template: String, _ prompt: String) throws -> String {
         var error: UnsafeMutablePointer<CChar>?
         let result = lilac_format_prompt(template, prompt, "<bos>", "<eos>", &error)

@@ -13,3 +13,5 @@ iosApp/*.xcodeproj/
 .gradle/
 
 iosApp/Native/Frameworks/
+
+iosApp/LilacAnimeTests/Fixtures/stories260K.gguf

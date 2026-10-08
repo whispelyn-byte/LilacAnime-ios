@@ -30,6 +30,10 @@ struct DesktopWorkspace: View {
             case "settings": SettingsView()
             default: HomeView { section = "search" }
             }
+        }.task(id: library.preferences.source) {
+            if !UIShowcase.enabled && !DesktopCatalog.shared.running && (DesktopCatalog.shared.catalogs[library.preferences.source] ?? []).isEmpty {
+                DesktopCatalog.shared.start(library.preferences.source)
+            }
         }
     }
 }

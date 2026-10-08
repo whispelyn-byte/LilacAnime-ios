@@ -18,7 +18,7 @@ enum OfflineAnalyzer {
         return (try? JSONDecoder().decode([OfflineChapter].self, from: data)) ?? []
     }
     static func analyze(_ entries: [DownloadEntry]) async throws -> Int {
-        try await Task.detached(priority: .utility) {
+        let work = Task.detached(priority: .utility) {
             var count = 0
             for group in Dictionary(grouping: entries, by: { $0.anime.id }).values where group.count >= 2 {
                 var fingerprints: [(DownloadEntry, KotlinFloatArray)] = []
@@ -52,7 +52,8 @@ enum OfflineAnalyzer {
                 }
             }
             return count
-        }.value
+        }
+        return try await withTaskCancellationHandler(operation: { try await work.value }, onCancel: { work.cancel() })
     }
     private static func pcm(_ url: URL) async throws -> [Float] {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

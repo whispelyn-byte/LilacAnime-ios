@@ -14,7 +14,15 @@ enum DownloadTransfer {
                     try Task.checkCancellation()
                     guard valid(entry) else { throw SubtitleFiles.failure("다운로드 목록에 잘못된 파일 경로가 있습니다.") }
                     let source = DownloadStore.directory.appendingPathComponent(entry.id)
-                    try FileManager.default.copyItem(at: source, to: folder.appendingPathComponent(entry.id))
+                    let target = folder.appendingPathComponent(entry.id)
+                    try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+                    let resources = try files(entry, in: source)
+                    for name in resources {
+                        let file = source.appendingPathComponent(name)
+                        let attributes = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+                        guard attributes.isRegularFile == true, attributes.isSymbolicLink != true else { throw SubtitleFiles.failure("다운로드 파일을 읽을 수 없습니다.") }
+                        try FileManager.default.copyItem(at: file, to: target.appendingPathComponent(name))
+                    }
                 }
                 try JSONEncoder().encode(entries).write(to: folder.appendingPathComponent("index.json"), options: .atomic)
                 return folder
@@ -45,7 +53,7 @@ enum DownloadTransfer {
                     guard attributes.isRegularFile == true, attributes.isSymbolicLink != true, safeName(file.lastPathComponent) else { throw SubtitleFiles.failure("다운로드 폴더에는 일반 파일만 넣을 수 있습니다.") }
                 }
                 guard FileManager.default.fileExists(atPath: source.appendingPathComponent(root).path),
-                      (entry.subtitleFiles ?? []).allSatisfy({ FileManager.default.fileExists(atPath: source.appendingPathComponent($0).path) }) else { throw SubtitleFiles.failure("영상 또는 자막 파일이 빠져 있습니다.") }
+                      ((entry.subtitleFiles ?? []) + (entry.fontFiles ?? [])).allSatisfy({ FileManager.default.fileExists(atPath: source.appendingPathComponent($0).path) }) else { throw SubtitleFiles.failure("영상 또는 자막 파일이 빠져 있습니다.") }
                 for manifest in resources where manifest.pathExtension == "m3u8" {
                     let content = try String(contentsOf: manifest, encoding: .utf8)
                     let lines = content.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty && !$0.hasPrefix("#") }
@@ -67,9 +75,28 @@ enum DownloadTransfer {
     static func safeName(_ name: String) -> Bool {
         !name.isEmpty && name != "." && name != ".." && !name.contains("/") && !name.contains("\\") && !name.contains(":") && !name.contains("\0")
     }
+    static func files(_ entry: DownloadEntry, in source: URL) throws -> Set<String> {
+        var result = Set([entry.localFile, entry.rootFile].compactMap { $0 } + (entry.parts ?? []).map(\.name) + (entry.subtitleFiles ?? []) + (entry.fontFiles ?? []))
+        var pending = Array(result.filter { $0.hasSuffix(".m3u8") })
+        var visited: Set<String> = []
+        let regex = try NSRegularExpression(pattern: "URI=\"([^\"]+)\"", options: .caseInsensitive)
+        while let name = pending.popLast() {
+            guard safeName(name), visited.insert(name).inserted else { continue }
+            let content = try String(contentsOf: source.appendingPathComponent(name), encoding: .utf8)
+            let lines = content.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty && !$0.hasPrefix("#") }
+            let uri = regex.matches(in: content, range: NSRange(content.startIndex..., in: content)).compactMap { Range($0.range(at: 1), in: content).map { String(content[$0]) } }
+            for resource in lines + uri {
+                guard safeName(resource) else { throw SubtitleFiles.failure("오프라인 HLS 파일 경로가 잘못되었습니다.") }
+                result.insert(resource)
+                if resource.hasSuffix(".m3u8") && !visited.contains(resource) { pending.append(resource) }
+            }
+            guard result.count <= 11000 else { throw SubtitleFiles.failure("한 회차의 파일이 너무 많습니다.") }
+        }
+        return result
+    }
     static func valid(_ entry: DownloadEntry) -> Bool {
         entry.id == SubtitleFiles.key(entry.anime.id + "#" + entry.episodeID) && entry.localFile.map(safeName) == true &&
-        (entry.rootFile == nil || entry.rootFile.map(safeName) == true) && (entry.subtitleFiles ?? []).allSatisfy(safeName) && (entry.parts ?? []).allSatisfy { safeName($0.name) }
+        (entry.rootFile == nil || entry.rootFile.map(safeName) == true) && ((entry.subtitleFiles ?? []) + (entry.fontFiles ?? [])).allSatisfy(safeName) && (entry.parts ?? []).allSatisfy { safeName($0.name) }
     }
 }
 struct DownloadTransferView: View {

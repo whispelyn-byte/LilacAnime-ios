@@ -67,6 +67,7 @@ final class DownloadStore: ObservableObject {
     nonisolated static let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Downloads")
     static let shared = DownloadStore()
     @Published private(set) var entries: [DownloadEntry] = []
+    private var savedManifests: [String: Data] = [:]
     weak var library: LibraryStore? { didSet { translateSavedDownloads(); analyzeCompletedDownloads() } }
     @Published var translationStatus: String?
     private let downloadTranslator = TranslationCoordinator()
@@ -318,6 +319,8 @@ final class DownloadStore: ObservableObject {
     func clearCompleted() { for entry in entries where entry.localFile != nil { delete(entry.id) } }
     func clearList() {
         let removable = Set(entries.filter { !["대기", "준비 중", "다운로드 중"].contains($0.status) && !busy($0.id) }.map(\.id))
+        // Older versions only kept the central index; keep recovery metadata before hiding those entries.
+        guard persist() else { return }
         entries.removeAll { removable.contains($0.id) }
         persist()
     }
@@ -419,15 +422,21 @@ final class DownloadStore: ObservableObject {
         guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
         change(&entries[index]); persist()
     }
-    private func persist() {
+    @discardableResult private func persist() -> Bool {
         do {
+            let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
             try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
-            try JSONEncoder().encode(entries).write(to: file, options: .atomic)
+            try encoder.encode(entries).write(to: file, options: .atomic)
             for entry in entries where entry.localFile != nil {
                 let folder = Self.directory.appendingPathComponent(entry.id)
-                if FileManager.default.fileExists(atPath: folder.path) { try JSONEncoder().encode(entry).write(to: folder.appendingPathComponent("download-entry.json"), options: .atomic) }
+                let data = try encoder.encode(entry)
+                if savedManifests[entry.id] != data && FileManager.default.fileExists(atPath: folder.path) {
+                    try data.write(to: folder.appendingPathComponent("download-entry.json"), options: .atomic)
+                    savedManifests[entry.id] = data
+                }
             }
-        } catch { self.error = error.localizedDescription }
+            return true
+        } catch { self.error = error.localizedDescription; return false }
     }
 }
 struct DownloadsView: View {

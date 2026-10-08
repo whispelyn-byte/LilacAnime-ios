@@ -110,7 +110,7 @@ sh iosApp/scripts/verify.sh
 
 GitHub Actions는 공통 테스트, KMP iOS 테스트, 네이티브 iOS 테스트, 시뮬레이터 캡처, unsigned arm64 IPA 패키징을 실행합니다. **App Store 배포용 서명 빌드가 아닙니다.**
 
-새 버전을 배포하려면 main의 변경 사항을 확인하고 Android와 같은 **v0.4.0** 형태의 버전 태그를 푸시합니다. 앱 버전·빌드 번호는 app/module.toml의 Android versionName·versionCode를 사용하며 태그와 일치하는지 확인합니다., 모든 빌드·테스트가 성공하면 Release에 IPA와 실제 IPA 메타데이터로 생성한 SideStore source.json을 게시합니다. 최신 소스 주소는 그대로 유지됩니다.
+앱 버전은 app/module.toml의 Android versionName을 사용합니다. iOS 빌드 번호는 Android versionCode에 iosApp/revision.txt의 값을 더합니다. 배포 태그는 `python3 iosApp/scripts/android-version.py --tag`로 확인합니다(현재 **v0.4.0-ios.1**). 해당 태그를 푸시하면 모든 테스트·빌드가 성공한 뒤 IPA와 실제 메타데이터로 생성한 SideStore source.json을 릴리스에 게시합니다. 최신 소스 주소는 그대로 유지됩니다.
 
 | 경로 | 내용 |
 |---|---|
@@ -118,6 +118,7 @@ GitHub Actions는 공통 테스트, KMP iOS 테스트, 네이티브 iOS 테스�
 | iosApp/LilacAnime/ | SwiftUI UI·mpv·다운로드·Cast·번역 연결 |
 | iosApp/scripts/ | 검증·IPA 패키징·소스 생성 |
 | .github/workflows/kmp.yml | 테스트·빌드·태그 릴리스 |
+| [docs/desktop-port.md](docs/desktop-port.md) | 데스크탑 이식 범위·차이 |
 | [KMP_IOS.md](KMP_IOS.md) | 이식 상세·검증 결과·남은 제한 |
 
 ## 크레딧
@@ -125,7 +126,7 @@ GitHub Actions는 공통 테스트, KMP iOS 테스트, 네이티브 iOS 테스�
 - 원본 Android: [dream150/LilacAnime](https://github.com/dream150/LilacAnime)
 - 데스크톱 포트 및 README 구성 참고: [whispelyn-byte/LilacAnime-desktop](https://github.com/whispelyn-byte/LilacAnime-desktop)
 - 재생: [mpv](https://github.com/mpv-player/mpv) · [MPVKit](https://github.com/mpvkit/MPVKit)
-- 자막: Kairan · Csora · [Jimaku](https://jimaku.cc)
+- 자막: Kairan · Csora · Anissia · [Jimaku](https://jimaku.cc)
 - 로컬 AI: [llama.cpp](https://github.com/ggml-org/llama.cpp)
 - OP/ED 타임스탬프: [AniSkip](https://aniskip.com)
 - This product uses the TMDB API but is not endorsed or certified by TMDB.

@@ -163,7 +163,7 @@ final class EpisodePlayerModel: ObservableObject {
                 guard token == generation, request == subtitleRequest else { return }
                 subtitleFiles = files
                 if let first = preferredSubtitle(subtitleFiles) { selectSubtitle(first, library: library, translate: translate) }
-            } catch { self.error = error.localizedDescription }
+            } catch { if token == generation, request == subtitleRequest { self.error = error.localizedDescription } }
         }
     }
     func selectSubtitle(_ url: URL, library: LibraryStore, translate: Bool = true) {

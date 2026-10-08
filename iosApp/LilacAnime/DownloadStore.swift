@@ -142,11 +142,19 @@ final class DownloadStore: ObservableObject {
                 }
                 var subtitles = entry.subtitleFiles ?? []
                 if subtitles.isEmpty {
-                    for (index, track) in entry.stream.subtitles.enumerated() {
+                    let tracks = entry.stream.subtitles.sorted { lhs, rhs in
+                        func rank(_ track: RemoteSubtitle) -> Int {
+                            let name = track.label.lowercased()
+                            return track.language.lowercased().hasPrefix("ko") || name.contains("한국") || name.contains("korean") ? 0 : 1
+                        }
+                        return rank(lhs) < rank(rhs)
+                    }
+                    for (index, track) in tracks.enumerated() {
                         do {
                             let prepared = try await SubtitleFiles.prepare(track.url, headers: track.headers ?? [:])
                             for (part, file) in prepared.enumerated() {
-                                let name = "subtitle-\(index)-\(part)." + file.pathExtension
+                                let label = track.label.replacingOccurrences(of: "[^\\p{L}\\p{N}_-]", with: "_", options: .regularExpression)
+                                let name = "subtitle-\(index)-\(part)-" + String(label.prefix(60)) + "." + file.pathExtension
                                 let destination = folder.appendingPathComponent(name)
                                 if !FileManager.default.fileExists(atPath: destination.path) { try FileManager.default.copyItem(at: file, to: destination) }
                                 subtitles.append(name)

@@ -15,6 +15,21 @@ xcodebuild -resolvePackageDependencies -project LilacAnime.xcodeproj -scheme Lil
 SIMULATOR_ID="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); phones=[v for group in d["devices"].values() for v in group if v.get("isAvailable") and "iPhone" in v["name"]]; assert phones, "No available iPhone simulator"; print(phones[0]["udid"])')"
 RESULT="build/Tests-$(date +%Y%m%d-%H%M%S).xcresult"
 xcodebuild -project LilacAnime.xcodeproj -scheme LilacAnime -configuration Debug -derivedDataPath build/DerivedData -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -resultBundlePath "$RESULT" CODE_SIGNING_ALLOWED=NO test
+mkdir -p build/screenshots
+xcrun simctl bootstatus "$SIMULATOR_ID" -b
+xcrun simctl install "$SIMULATOR_ID" build/DerivedData/Build/Products/Debug-iphonesimulator/LilacAnime.app
+xcrun simctl status_bar "$SIMULATOR_ID" override --time '9:41' --batteryState charged --batteryLevel 100
+for SCREEN in home detail player; do
+  xcrun simctl ui "$SIMULATOR_ID" appearance dark
+  xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" com.lilac.anime.ios --ui-preview "$SCREEN"
+  sleep 3
+  xcrun simctl io "$SIMULATOR_ID" screenshot "build/screenshots/$SCREEN-dark.png"
+done
+xcrun simctl ui "$SIMULATOR_ID" appearance light
+xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" com.lilac.anime.ios --ui-preview home
+sleep 3
+xcrun simctl io "$SIMULATOR_ID" screenshot build/screenshots/home-light.png
+xcrun simctl terminate "$SIMULATOR_ID" com.lilac.anime.ios
 xcodebuild -project LilacAnime.xcodeproj -scheme LilacAnime -configuration Debug -derivedDataPath build/DerivedData -destination "generic/platform=iOS" CODE_SIGNING_ALLOWED=NO build
 
 ditto -c -k --sequesterRsrc --keepParent build/DerivedData/Build/Products/Debug-iphonesimulator/LilacAnime.app build/LilacAnime-simulator.zip

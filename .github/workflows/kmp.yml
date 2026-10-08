@@ -56,3 +56,9 @@ jobs:
           name: LilacAnime-SideStore
           path: iosApp/build/LilacAnime-SideStore.ipa
           if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-ui-preview
+          path: iosApp/build/screenshots/*.png

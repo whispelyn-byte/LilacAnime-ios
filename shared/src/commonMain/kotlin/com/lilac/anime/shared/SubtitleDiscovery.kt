@@ -12,6 +12,9 @@ class SubtitleDiscovery(private val repository: SourceRepository = SourceReposit
             "anissia" -> AnissiaDiscovery(repository).search(title, episode, episodeKey)
             else -> blog(provider, title, episode, episodeKey)
         }
+    suspend fun makers(title: String) = AnissiaDiscovery(repository).makers(title)
+    suspend fun makerSubtitles(title: String, episode: Int, episodeKey: String, website: String) =
+        AnissiaDiscovery(repository).search(title, episode, episodeKey, website)
     private suspend fun blog(provider: String, title: String, episode: Int, episodeKey: String): List<SubtitleAsset> {
         require(provider in listOf("kairan", "csora"))
         val base = if (provider == "kairan") "https://kairan03.blogspot.com" else "https://csora556.blogspot.com"
@@ -63,7 +66,7 @@ class SubtitleDiscovery(private val repository: SourceRepository = SourceReposit
             val extra = runCatching { JSONObject(it.attr("data-extra")) }.getOrNull()
             val name = extra?.optString("name").orEmpty().ifBlank { it.selectFirst("a.file-name")?.text().orEmpty() }
             val link = extra?.optString("url").orEmpty().ifBlank { it.selectFirst("a.file-name")?.absUrl("href").orEmpty() }
-            if (name.substringAfterLast('.').lowercase() !in listOf("ass", "ssa", "srt", "vtt", "smi", "zip", "ttml", "sub")) return@mapNotNull null
+            if (name.substringAfterLast('.').lowercase() !in listOf("ass", "ssa", "srt", "vtt", "smi", "zip", "7z", "rar", "ttml", "sub")) return@mapNotNull null
             SubtitleAsset(name, if (link.startsWith("http")) link else "$base/" + link.trimStart('/'), "jimaku", if (SubtitleEpisodeMatcher.matches(name, episode)) 1.0 else 0.0)
         }.sortedByDescending { it.score }.distinctBy { it.url }
     }

@@ -11,8 +11,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
                      completionHandler: @escaping () -> Void) {
         if identifier == "com.lilac.downloads" {
-            BackgroundEvents.completion = completionHandler
+            BackgroundEvents.completions[identifier] = completionHandler
             _ = DownloadStore.shared
+        } else if identifier == "com.lilac.model-downloads" {
+            BackgroundEvents.completions[identifier] = completionHandler
+            _ = DesktopModelInstaller.shared
         } else { completionHandler() }
     }
 }

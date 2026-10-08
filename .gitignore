@@ -11,3 +11,5 @@ iosApp/*.xcodeproj/
 .kotlin/
 
 .gradle/
+
+iosApp/Native/Frameworks/

@@ -31,8 +31,8 @@ final class DesktopCatalog: ObservableObject {
             if let data = try? Data(contentsOf: directory.appendingPathComponent(key + ".json")), let saved = try? JSONDecoder().decode([SavedAnime].self, from: data) { catalogs[key] = saved }
         }
     }
-    func title(_ anime: Anime, language: String?) -> String {
-        let cached = names[anime.source + ":" + anime.id] ?? names.first { $0.key.hasSuffix(":" + anime.id) }?.value
+    func title(_ anime: Anime, source: String, language: String?) -> String {
+        let cached = names[source + ":" + anime.id]
         if language == "ko", let title = cached?.korean, !title.isEmpty { return title }
         if language == "en" { return cached?.english.isEmpty == false ? cached!.english : (anime.english.isEmpty ? anime.title : anime.english) }
         return anime.title
@@ -55,8 +55,9 @@ final class DesktopCatalog: ObservableObject {
                 service.desktopMetadata(anime: anime, credential: SecureKeys.load("tmdb"), includeCast: cast) { value, _ in continuation.resume(returning: value) }
             }
             guard let result, !Task.isCancelled else { return }
-            names[key] = CatalogName(korean: result.korean, english: result.english, overview: result.overview, aliases: result.aliases,
-                cast: result.characters.map { CastCharacter(name: $0.name, native: $0.native, first: $0.first, last: $0.last, gender: $0.gender) },
+            let old = names[key]
+            names[key] = CatalogName(korean: result.korean.isEmpty ? (old?.korean ?? "") : result.korean, english: result.english, overview: result.overview.isEmpty ? (old?.overview ?? "") : result.overview, aliases: result.aliases,
+                cast: result.characters.isEmpty ? (old?.cast ?? []) : result.characters.map { CastCharacter(name: $0.name, native: $0.native, first: $0.first, last: $0.last, gender: $0.gender) },
                 anilist: Int(result.anilistId), mal: Int(result.malId), updated: Date(), credential: credential)
             saveNames()
         }
@@ -135,10 +136,10 @@ struct AnimeDisplayTitle: View {
     @EnvironmentObject private var library: LibraryStore
     @ObservedObject private var catalog = DesktopCatalog.shared
     var body: some View {
-        Text(catalog.title(anime, language: library.preferences.titleLanguage))
+        Text(catalog.title(anime, source: source ?? (anime.source.isEmpty ? library.preferences.source : anime.source), language: library.preferences.titleLanguage))
             .task(id: anime.id) {
                 if library.preferences.titleLanguage != nil && library.preferences.titleLanguage != "original" && !UIShowcase.enabled {
-                    await catalog.enrich(anime, source: source ?? anime.source)
+                    await catalog.enrich(anime, source: source ?? (anime.source.isEmpty ? library.preferences.source : anime.source))
                 }
             }
     }

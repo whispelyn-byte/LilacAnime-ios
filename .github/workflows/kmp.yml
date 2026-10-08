@@ -43,6 +43,10 @@ jobs:
         with:
           path: iosApp/build/DerivedData/SourcePackages
           key: swiftpm-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('iosApp/Native/Package.swift') }}
+      - uses: actions/cache@v4
+        with:
+          path: iosApp/Native/Frameworks
+          key: llama-ios-b11490-arm64-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('iosApp/scripts/build-native.sh') }}
       - run: sh iosApp/scripts/verify.sh
       - uses: actions/upload-artifact@v4
         if: always()

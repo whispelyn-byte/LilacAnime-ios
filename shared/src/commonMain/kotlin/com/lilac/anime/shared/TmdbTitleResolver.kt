@@ -97,5 +97,16 @@ class TmdbTitleResolver(private val client: HttpClient = HttpClient {
         }
         return ""
     }
+    suspend fun variants(query: String, credential: String): List<String> {
+        if (credential.isBlank()) return emptyList()
+        val rows = request("search/multi", credential, query).optJSONArray("results") ?: return emptyList()
+        return (0 until rows.length()).mapNotNull(rows::optJSONObject).filter { row ->
+            val genres = row.optJSONArray("genre_ids")
+            genres != null && (0 until genres.length()).any { genres.optInt(it) == 16 } &&
+                similarity(query, row.optString("name").ifBlank { row.optString("title") }) >= 0.2
+        }.take(4).flatMap { row ->
+            listOf(row.optString("original_name"), row.optString("original_title"), row.optString("name"), row.optString("title"))
+        }.filter(String::isNotBlank).distinct()
+    }
     fun close() { client.close() }
 }

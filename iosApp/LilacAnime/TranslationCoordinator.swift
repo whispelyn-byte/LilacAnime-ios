@@ -36,7 +36,7 @@ final class TranslationCoordinator: ObservableObject {
                     "context": preferences.contextSize, "maxTokens": preferences.maxTokens,
                     "temperature": preferences.temperature, "topP": preferences.topP, "topK": preferences.topK,
                     "repetition": preferences.repetitionPenalty, "before": preferences.contextCues,
-                    "after": preferences.prefetchAhead, "thinking": preferences.thinking, "prompt": preferences.prompt,
+                    "modelSampling": preferences.modelSampling ?? true, "after": preferences.prefetchAhead, "thinking": preferences.thinking, "prompt": preferences.prompt,
                     "glossary": (preferences.translationGlossary ?? "") + AnimeGlossary.shared.characterTerms(characters: characters), "fallback": preferences.translationFallback ?? true
                 ]
                 let configuration = try JSONSerialization.data(withJSONObject: settings, options: [.sortedKeys])

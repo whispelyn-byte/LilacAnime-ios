@@ -10,6 +10,19 @@ import kotlinx.coroutines.CancellationException
 /** Anissia maker discovery and linked/RSS post lookup, following Desktop's community flow. */
 data class SubtitleMaker(val name: String, val website: String, val status: String)
 internal class AnissiaDiscovery(private val repository: SourceRepository) {
+    suspend fun makers(title: String): List<SubtitleMaker> {
+        val rows = api("/anime/list/0", mapOf("q" to title)).optJSONObject("data")?.optJSONArray("content") ?: return emptyList()
+        val anime = (0 until rows.length()).mapNotNull(rows::optJSONObject)
+            .filter { DesktopTitleRules.season(it.optString("subject")) == DesktopTitleRules.season(title) }
+            .maxByOrNull { HangulSimilarityMatcher.similarity(title, it.optString("subject")) } ?: return emptyList()
+        if (HangulSimilarityMatcher.similarity(title, anime.optString("subject")) < 0.52) return emptyList()
+        val captions = api("/anime/caption/animeNo/" + anime.optInt("animeNo")).optJSONArray("data") ?: return emptyList()
+        return (0 until captions.length()).mapNotNull { index ->
+            val row = captions.optJSONObject(index) ?: return@mapNotNull null
+            val website = row.optString("website")
+            if (!website.startsWith("https://")) null else SubtitleMaker(row.optString("name"), website, row.optString("status"))
+        }.distinctBy { it.website }
+    }
     suspend fun search(title: String, episode: Int, episodeKey: String, makerWebsite: String = ""): List<SubtitleAsset> {
         val query = title.replace(Regex("[!?！？.,:;·'\"“”‘’♡♥☆★]"), " ").replace(Regex("\\s+"), " ").trim()
         val root = api("/anime/list/0", mapOf("q" to query)).optJSONObject("data") ?: return emptyList()
@@ -110,7 +123,7 @@ internal class AnissiaDiscovery(private val repository: SourceRepository) {
             if (!link.startsWith("https://")) return@mapNotNull null
             val driveId = Regex("/file/d/([^/?]+)").find(link)?.groupValues?.get(1) ?: runCatching { Url(link).parameters["id"] }.getOrNull().takeIf { Url(link).host in listOf("drive.google.com", "docs.google.com") }
             val suffix = Url(link).encodedPath.substringAfterLast('.').lowercase()
-            if (driveId == null && suffix !in listOf("ass", "ssa", "srt", "vtt", "smi", "zip", "ttml", "sub") && !link.contains("attach", true)) return@mapNotNull null
+            if (driveId == null && suffix !in listOf("ass", "ssa", "srt", "vtt", "smi", "zip", "7z", "rar", "ttml", "sub") && !link.contains("attach", true)) return@mapNotNull null
             SubtitleAsset("Anissia · " + maker + " · " + name.ifBlank { link.substringAfterLast('/') },
                 if (driveId != null) "https://drive.google.com/uc?export=download&id=" + driveId else link, "anissia",
                 if (SubtitleEpisodeMatcher.matches(name, episode)) 1.0 else 0.6)

@@ -34,6 +34,11 @@ class IosServices {
     fun sourceExtras(anime: Anime, completion: (SourceExtras?, String?) -> Unit) { scope.launch { call(completion) { source.extras(anime) } } }
     fun top(period: String, completion: (List<Anime>?, String?) -> Unit) { scope.launch { call(completion) { source.top(period) } } }
     fun schedule(week: Int, completion: (List<Anime>?, String?) -> Unit) { scope.launch { call(completion) { source.schedule(week) } } }
+    fun subtitleMakers(title: String, completion: (List<SubtitleMaker>?, String?) -> Unit) { scope.launch { call(completion) { discovery.makers(title) } } }
+    fun makerSubtitles(title: String, episode: Int, episodeKey: String, website: String, completion: (List<SubtitleAsset>?, String?) -> Unit) {
+        scope.launch { call(completion) { discovery.makerSubtitles(title, episode, episodeKey, website) } }
+    }
+    fun titleVariants(query: String, credential: String, completion: (List<String>?, String?) -> Unit) { scope.launch { call(completion) { tmdb.variants(query, credential) } } }
     fun findSubtitles(provider: String, title: String, episode: Int, episodeKey: String, anilistId: Int, completion: (List<SubtitleAsset>?, String?) -> Unit) {
         scope.launch { call(completion) { discovery.search(provider, title, episode, episodeKey, anilistId) } }
     }

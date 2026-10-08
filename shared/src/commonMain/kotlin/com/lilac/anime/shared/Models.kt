@@ -9,6 +9,8 @@ data class Anime(
     /** MyAnimeList ID supplied directly by a source, when available. */
     val malId: Int? = null,
     val title: String = "",
+    val score: Double = 0.0,
+    val popularity: Int = 0,
     val poster: String = "",
     val backdrop: String = "",
     val genres: List<String> = emptyList(),

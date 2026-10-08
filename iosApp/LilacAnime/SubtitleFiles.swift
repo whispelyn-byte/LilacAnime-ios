@@ -42,20 +42,11 @@ enum SubtitleFiles {
         let ext = URL(fileURLWithPath: name).pathExtension.lowercased()
         let file = folder.appendingPathComponent("source." + (ext.isEmpty ? "ass" : ext))
         try data.write(to: file, options: .atomic)
-        if data.starts(with: [0x50, 0x4b, 0x03, 0x04]) {
-            let archive = try Archive(url: file, accessMode: .read)
+        if ["zip", "7z", "rar"].contains(ext) || data.starts(with: [0x50, 0x4b, 0x03, 0x04]) || data.starts(with: [0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c]) || data.starts(with: [0x52, 0x61, 0x72, 0x21]) {
             var results: [URL] = []
-            var totalBytes: UInt64 = 0
-            var totalFiles = 0
-            for entry in archive where entry.type == .file {
-                let suffix = URL(fileURLWithPath: entry.path).pathExtension.lowercased()
-                guard ["ass","ssa","srt","vtt","smi","sbv","sub","mpl2","ttml","xml","ttf","otf","ttc"].contains(suffix) else { continue }
-                totalBytes += entry.uncompressedSize; totalFiles += 1
-                guard entry.uncompressedSize < 50_000_000, totalBytes <= 100_000_000, totalFiles <= 250 else { throw failure("압축된 자막 파일이 너무 큽니다.") }
-                // Flatten paths; never follow archive symlinks or traverse outside this folder.
-                let target = folder.appendingPathComponent(String(key(entry.path).prefix(8)) + "_" + URL(fileURLWithPath: entry.path).lastPathComponent)
-                if !FileManager.default.fileExists(atPath: target.path) { _ = try archive.extract(entry, to: target) }
-                if ["ttf","otf","ttc"].contains(suffix) { _ = try importFont(target) } else { results.append(try normalize(target)) }
+            for extracted in try SubtitleArchive.extract(file, into: folder) {
+                if ["ttf","otf","ttc"].contains(extracted.pathExtension.lowercased()) { _ = try importFont(extracted) }
+                else { results.append(try normalize(extracted)) }
             }
             guard !results.isEmpty else { throw failure("압축 파일에 지원하는 자막이 없습니다.") }
             return results

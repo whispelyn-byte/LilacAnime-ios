@@ -66,6 +66,7 @@ struct LocalModelsView: View {
     @State private var error: String?
     var body: some View {
         List {
+            DesktopModelsSection()
             Section("GGUF 모델") {
                 ForEach(files, id: \.path) { file in
                     Button {

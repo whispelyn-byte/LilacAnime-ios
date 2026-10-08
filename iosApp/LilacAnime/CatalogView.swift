@@ -30,14 +30,16 @@ final class CatalogModel: ObservableObject {
         let callback: ([Anime]?, String?) -> Void = { [weak self] result, error in
             guard let self, token == self.generation else { return }
             self.loading = false; self.error = error
-            if let result {
+            if result != nil || !indexed.isEmpty {
+                let result = result ?? []
+                if !indexed.isEmpty { self.error = nil }
                 let known = Set(self.items.map(\.id))
                 self.items += (indexed + result).filter { !known.contains($0.id) }.reduce(into: [Anime]()) { list, anime in if !list.contains(where: { $0.id == anime.id }) { list.append(anime) } }
                 self.canLoadMore = !result.isEmpty && self.mode == "browse"; self.page += 1
             }
         }
         if mode == "top" { service.top(period: "week", completion: callback) }
-        else if mode == "schedule" { service.schedule(week: 0, completion: callback) }
+        else if mode == "schedule" { service.sourceSchedule(sourceKey: source, day: 0, completion: callback) }
         else {
             service.browse(sourceKey: source, query: query, page: page,
                 filter: AnimeSnapshot.shared.fullFilter(genre: genre, year: year, season: season, format: format, status: status, studio: studio), completion: callback)
@@ -134,7 +136,7 @@ struct DetailView: View {
     @State private var selectedTab = 0
     @State private var serverID: Int32 = 0
     private var anime: Anime { model.anime ?? summary }
-    private var server: EpisodeServer? { model.servers.first { $0.id == serverID } ?? model.servers.first }
+    private var server: EpisodeServer? { model.servers.first { $0.id == serverID } ?? model.servers.first { $0.name == library.preferences.preferredServer } ?? model.servers.first }
     private var resume: (EpisodeServer, Int)? {
         for entry in library.history where entry.anime.id == source + ":" + anime.id {
             for server in model.servers {
@@ -208,7 +210,7 @@ struct DetailView: View {
                 Spacer()
                 if !model.servers.isEmpty {
                     Menu {
-                        ForEach(model.servers, id: \.id) { server in Button(server.name) { serverID = server.id } }
+                        ForEach(model.servers, id: \.id) { server in Button(server.name) { serverID = server.id; library.preferences.preferredServer = server.name } }
                     } label: { Label(server?.name ?? "서버", systemImage: "chevron.down").font(.caption.bold()) }
                 }
             }

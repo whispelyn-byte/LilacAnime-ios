@@ -3,7 +3,7 @@ import UIKit
 
 @MainActor
 enum BackgroundEvents {
-    static var completion: (() -> Void)?
+    static var completions: [String: () -> Void] = [:]
 }
 final class BackgroundDownloadDelegate: NSObject, URLSessionDownloadDelegate {
     weak var owner: DownloadStore?
@@ -36,7 +36,7 @@ final class BackgroundDownloadDelegate: NSObject, URLSessionDownloadDelegate {
     }
     func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
         Task { @MainActor in
-            let completion = BackgroundEvents.completion; BackgroundEvents.completion = nil; completion?()
+            if let id = session.configuration.identifier { BackgroundEvents.completions.removeValue(forKey: id)?() }
         }
     }
 }

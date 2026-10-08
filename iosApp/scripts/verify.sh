@@ -18,6 +18,7 @@ if [ "${GITHUB_REF_TYPE:-}" = tag ]; then
   python3 -c 'import re,sys; assert re.fullmatch(r"\d+\.\d+(?:\.\d+)?", sys.argv[1]), "Invalid release version"' "$APP_VERSION"
   test "$APP_VERSION" = "$(python3 scripts/android-version.py --version)"
 fi
+sh scripts/build-native.sh
 xcodegen generate
 mkdir -p build
 for ATTEMPT in 1 2 3; do

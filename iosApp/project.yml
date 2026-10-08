@@ -7,6 +7,9 @@ packages:
   MPVKit:
     url: https://github.com/mpvkit/MPVKit.git
     exactVersion: 1.0.0
+  libarchive:
+    url: https://github.com/okferret/libarchive.git
+    revision: b84d41ea6ecd1ab0b0cec6d60baa806808589cd5
   ZIPFoundation:
     url: https://github.com/weichsel/ZIPFoundation.git
     exactVersion: 0.9.19
@@ -48,6 +51,10 @@ targets:
     dependencies:
       - package: MPVKit
         product: MPVKit
+      - package: libarchive
+        product: libarchive
+      - sdk: libz.tbd
+      - sdk: libbz2.tbd
       - package: ZIPFoundation
       - package: GoogleCast
         product: GoogleCastDynamic

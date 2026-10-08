@@ -6,6 +6,14 @@ import io.ktor.client.engine.mock.*
 import io.ktor.http.*
 
 class DesktopHomeTest {
+    @Test fun linkaniPopularityUsesItsRankingPage() = runTest {
+        val client = HttpClient(MockEngine { request ->
+            assertEquals("/label/topday/page/2/", request.url.encodedPath)
+            respond("<html></html>", headers = headersOf(HttpHeaders.ContentType, "text/html"))
+        })
+        val repository = SourceRepository(client)
+        try { repository.browse("linkani", page = 2, filter = BrowseFilter(sort = "popular")) } finally { repository.close() }
+    }
     @Test fun reanimeSeasonExcludesShowsWithoutEpisodes() = runTest {
         val client = HttpClient(MockEngine { request ->
             assertEquals("100", request.url.parameters["limit"])

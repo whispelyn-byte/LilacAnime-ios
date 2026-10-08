@@ -76,7 +76,7 @@ struct HomeView: View {
                     }
                     if model.source == "linkkf" && !items.isEmpty { AnimeRail(title: "최신 애니메이션", items: items, source: model.source) { navigation.section = "catalog" } }
                     if model.source != "linkkf" && !home.airing.isEmpty { AnimeRail(title: "방영 중", items: home.airing, source: model.source) { navigation.browse("schedule") } }
-                    if UIShowcase.enabled { AnimeRail(title: "이번 시즌 신작", items: items, source: model.source) { navigation.browse("season") }; AnimeRail(title: "인기 작품", items: items.reversed(), source: model.source) { navigation.browse("top") } }
+                    if UIShowcase.enabled { AnimeRail(title: "이번 시즌 신작", items: items, source: model.source) { navigation.browse("season") }; AnimeRail(title: "인기 작품", items: Array(items.reversed()), source: model.source) { navigation.browse("top") } }
                     if !library.favorites.isEmpty {
                         VStack(alignment: .leading, spacing: 14) {
                             Text("내 목록").font(.title3.bold()).padding(.horizontal, 20)

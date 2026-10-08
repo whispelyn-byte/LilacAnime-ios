@@ -15,6 +15,7 @@ final class CatalogModel: ObservableObject {
     @Published var status = ""
     @Published var season = ""
     @Published var studio = ""
+    @Published var sort = ""
     @Published var filters: SourceFilters?
     func loadFilters() { service.filters(sourceKey: source) { [weak self] filters, _ in self?.filters = filters } }
     private var page: Int32 = 1
@@ -60,7 +61,7 @@ final class CatalogModel: ObservableObject {
         else if mode == "schedule" { service.sourceSchedule(sourceKey: source, day: Int32((Calendar.current.component(.weekday, from: Date()) + 5) % 7), completion: callback) }
         else {
             service.browse(sourceKey: source, query: query, page: page,
-                filter: AnimeSnapshot.shared.fullFilter(genre: genre, year: year, season: season, format: format, status: status, studio: studio), completion: searched)
+                filter: AnimeSnapshot.shared.sortedFilter(genre: genre, year: year, season: season, format: format, status: status, studio: studio, sort: sort), completion: searched)
         }
     }
     deinit { service.close() }

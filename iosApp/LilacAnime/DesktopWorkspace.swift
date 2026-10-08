@@ -5,20 +5,22 @@ import UniformTypeIdentifiers
 struct DesktopFullCatalog: View {
     @EnvironmentObject private var library: LibraryStore
     @ObservedObject private var catalog = DesktopCatalog.shared
+    @StateObject private var remote = CatalogModel()
     @State private var query = ""
     @State private var sort = "popular"
     private var sorts: [String] { switch library.preferences.source { case "linkkf": return ["default", "year"]; case "linkani": return ["default", "popular"]; case "ohli24": return ["default"]; default: return ["popular", "year", "score"] } }
+    private var remoteSource: Bool { ["miruro", "animenosub", "linkani"].contains(library.preferences.source) }
     @State private var format = ""
     @State private var year = ""
     private var values: [SavedAnime] {
         let wanted = DesktopTitleRules.shared.key(title: query)
-        let items = UIShowcase.enabled ? UIShowcase.items.map { SavedAnime($0, source: library.preferences.source) } : (catalog.catalogs[library.preferences.source] ?? [])
+        let items = UIShowcase.enabled ? UIShowcase.items.map { SavedAnime($0, source: library.preferences.source) } : remoteSource ? remote.items.map { SavedAnime($0, source: library.preferences.source) } : (catalog.catalogs[library.preferences.source] ?? [])
         let result = items.filter { item in
             (format.isEmpty || item.anime.format == format) && (year.isEmpty || item.anime.year == year) &&
-            (wanted.isEmpty || ([item.title, catalog.record(item)?.korean ?? "", catalog.record(item)?.english ?? ""] + (catalog.record(item)?.aliases ?? []))
+            (remoteSource || wanted.isEmpty || ([item.title, catalog.record(item)?.korean ?? "", catalog.record(item)?.english ?? ""] + (catalog.record(item)?.aliases ?? []))
                 .contains { DesktopTitleRules.shared.key(title: $0).contains(wanted) })
         }
-        if sort == "default" { return result }
+        if sort == "default" || remoteSource { return result }
         return result.sorted { a, b in
             switch sort {
             case "year": if a.anime.year != b.anime.year { return a.anime.year > b.anime.year }
@@ -53,21 +55,34 @@ struct DesktopFullCatalog: View {
                     }
                     Text("\(values.count)개 · " + (UIShowcase.enabled ? "UI PREVIEW · 예시 데이터" : catalog.status)).font(.caption).foregroundStyle(.secondary)
                     if let error = catalog.error { Text(error).foregroundStyle(.red) }
+                    if let error = remote.error, remoteSource { Text(error).foregroundStyle(.red); Button("다시 시도") { reloadRemote() } }
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 145))], spacing: 18) {
                         ForEach(values) { item in
                             NavigationLink { DetailView(summary: item.anime, source: item.source) } label: { AnimePosterCard(anime: item.anime) }.buttonStyle(.plain)
                         }
                     }
+                    if remoteSource && !UIShowcase.enabled {
+                        if remote.loading { ProgressView() }
+                        else if remote.canLoadMore { Button("더 보기") { remote.load(reset: false) } }
+                    }
                 }.padding()
             }.background(LilacStyle.background).navigationTitle("전체")
-                .onChange(of: sort) { value in UserDefaults.standard.set(value, forKey: "allSort:" + library.preferences.source) }
+                .onChange(of: sort) { value in UserDefaults.standard.set(value, forKey: "allSort:" + library.preferences.source); reloadRemote() }
+                .onChange(of: format) { _ in reloadRemote() }.onChange(of: year) { _ in reloadRemote() }
                 .searchable(text: $query, prompt: "한국어·원제·영어 검색")
+                .onSubmit(of: .search) { reloadRemote() }
                 .task(id: library.preferences.source) {
                     let remembered = UserDefaults.standard.string(forKey: "allSort:" + library.preferences.source) ?? ""
                     sort = sorts.contains(remembered) ? remembered : sorts[0]
+                    reloadRemote()
                     if !UIShowcase.enabled && (catalog.catalogs[library.preferences.source] ?? []).isEmpty { catalog.start(library.preferences.source) }
                 }
         }
+    }
+    private func reloadRemote() {
+        guard remoteSource && !UIShowcase.enabled else { return }
+        remote.source = library.preferences.source; remote.query = query; remote.sort = sort == "default" ? "" : sort
+        remote.format = format; remote.year = year; remote.load()
     }
 }
 @MainActor

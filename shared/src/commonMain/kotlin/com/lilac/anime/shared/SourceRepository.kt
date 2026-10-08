@@ -37,7 +37,7 @@ class SourceRepository(private val client: HttpClient = newSharedClient()) {
                 val path = if (filtered) "$base/anime/" else if (page == 1) "$base/" else "$base/page/$page/"
                 val document = Ksoup.parse(getText(path, buildMap { if (filtered) put("page", "$page"); if (filter.sort.isNotBlank()) put("order", when(filter.sort) { "year" -> "latest"; "score" -> "rating"; else -> "popular" }); if (query.isNotBlank()) put("s", query); if (filter.status == "RELEASING") put("status", "ongoing"); if (filter.season.isNotBlank() && filter.year.isNotBlank()) put("season[0]", filter.season.lowercase() + "-" + filter.year) }), path)
                 if (filter.status.isNotBlank() || filter.season.isNotBlank()) document.select("article.bs").filter { it.select(".ans-status-ribbon").text().contains("upcoming", true) }.forEach { it.remove() }
-                AnimenosubParser.parseAnimeList(document)
+                AnimenosubParser.parseAnimeList(if(filtered) Ksoup.parse(document.select("article.bs").joinToString("\n") { it.outerHtml() }, path) else document)
             }
             else -> if (query.isNotBlank()) linkkf.search(query, page, filter)
                     else if (filter.genres.isNotEmpty() || filter.year.isNotBlank() || filter.format.isNotBlank()) linkkf.filtered(page, filter)

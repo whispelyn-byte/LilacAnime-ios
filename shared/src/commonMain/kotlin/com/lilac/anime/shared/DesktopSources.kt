@@ -173,9 +173,17 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
             if (filter.format.isNotBlank()) params["format"] = filter.format
             if (filter.season.isNotBlank()) params["season"] = filter.season
             if (filter.status.isNotBlank()) params["status"] = filter.status
-            val root = miruro("anime", params)
-            root.text("next_cursor").ifBlank { root.obj("pagination").text("next_cursor") }.takeIf(String::isNotBlank)?.let { pages[page + 1] = it }
-            return root.list("data").filterIsInstance<JsonObject>().map(DesktopSourceParser::miruroAnime)
+            val values = mutableListOf<JsonObject>()
+            repeat(if(filter.sort == "year") 20 else 1) {
+                val root = miruro("anime", params)
+                values += root.list("data").filterIsInstance<JsonObject>().filter { raw -> filter.sort != "year" ||
+                    (raw.text("status") != "NOT_YET_RELEASED" && (raw.number("season_year") ?: 0) in 1..currentCatalogDate().take(4).toInt()) }
+                val next = root.text("next_cursor").ifBlank { root.obj("pagination").text("next_cursor") }
+                if (next.isBlank()) { pages.remove(page + 1); return values.map(DesktopSourceParser::miruroAnime) }
+                pages[page + 1] = next; params["cursor"] = next
+                if (values.size >= 15) return values.map(DesktopSourceParser::miruroAnime)
+            }
+            return values.map(DesktopSourceParser::miruroAnime)
         }
         if (source == "ohli24") {
             if (query.isNotBlank() && page > 1) return emptyList()

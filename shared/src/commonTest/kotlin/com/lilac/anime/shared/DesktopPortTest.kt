@@ -7,6 +7,17 @@ import io.ktor.client.engine.mock.*
 import io.ktor.http.*
 
 class DesktopPortTest {
+    @Test fun glossaryPrefersCustomNamesAndLongestPhrase() {
+        val hints = TranslationTerminology.hints("先生、よろしくお願いいたします。", "先生=스승님")
+        assertTrue(hints.contains("先生 = 스승님"))
+        assertFalse(hints.contains("先生 = 선생님"))
+        assertEquals("ごちそうさまでした = 잘 먹었습니다", TranslationTerminology.hints("ごちそうさまでした！", ""))
+    }
+    @Test fun greetingMustBeStandaloneInsteadOfPartOfAWord() {
+        assertEquals("", TranslationTerminology.hints("おかえり道", ""))
+        assertEquals("おかえり = 어서 와", TranslationTerminology.hints("「おかえり！」", ""))
+    }
+
     @Test fun gzipCatalogDecodesOnEveryTarget() {
         assertEquals("{\"data\":[]}", inflateCatalogGzip(byteArrayOf(31,-117,8,0,0,0,0,0,2,10,-85,86,74,73,44,73,84,-78,-118,-114,-83,5,0,-108,100,-78,94,11,0,0,0)).decodeToString())
         assertFails { inflateCatalogGzip(byteArrayOf(1,2,3)) }

@@ -94,6 +94,7 @@ final class EpisodePlayerModel: ObservableObject {
         begin(library: library)
     }
     func play(_ stream: ResolvedStream, library: LibraryStore) {
+        subtitleRequest = UUID()
         let token = generation
         Task {
             do {

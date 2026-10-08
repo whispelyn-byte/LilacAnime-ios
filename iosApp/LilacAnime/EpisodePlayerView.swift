@@ -186,7 +186,6 @@ struct EpisodePlayerView: View {
     @State private var showWeb = true
     @State private var importer = false
     @State private var subtitleSheet = false
-    @State private var directURL = ""
     @State private var fullscreen = false
     @Environment(\.dismiss) private var dismiss
     init(item: PlaybackItem) { _model = StateObject(wrappedValue: EpisodePlayerModel(item: item)) }
@@ -258,13 +257,6 @@ struct EpisodePlayerView: View {
                         TranslationStatus(coordinator: model.translation)
                         ForEach(model.chapters) { chapter in Button("\(chapter.type.uppercased()) 건너뛰기") { model.engine.seek(chapter.end) } }
                         if !model.item.next.isEmpty { Button("다음 회차") { let next = model.item.next; var item = next[0]; item.next = Array(next.dropFirst()); model.change(item, library: library) } }
-                        DisclosureGroup("직접 영상 URL") {
-                            TextField("https://…/video.m3u8", text: $directURL).textInputAutocapitalization(.never).keyboardType(.URL)
-                            Button("재생") {
-                                guard let url = URL(string: directURL), url.scheme == "https", url.host != nil else { model.error = "HTTPS 영상 주소를 입력하세요."; return }
-                                model.play(ResolvedStream(label: "직접 URL", url: url, referer: model.item.watchURL.absoluteString, headers: [:]), library: library); showWeb = false
-                            }
-                        }
                         if let error = model.error ?? model.resolver.error { Text(error).foregroundStyle(.red) }
                         EngineError(engine: model.engine)
                     }.padding(20)

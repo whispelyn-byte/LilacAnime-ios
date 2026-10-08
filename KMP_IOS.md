@@ -69,3 +69,9 @@ sh ./gradlew -PincludeAndroid=true :app:assembleDebug
 ~~~
 
 Android SDK와 원본 네이티브 도구 체인이 필요합니다. 원본에는 app/src/main/cpp/CMakeLists.txt가 없고 Gradle의 ass/ass-kt 의존성이 누락되어 있습니다(module.toml에는 존재). 위 명령은 검증된 APK 생성 절차가 아닙니다. Android는 공통 모델을 shared typealias로 참조하며 기존 플랫폼 구현을 보존합니다. Desktop은 최상위 빌드에 포함하지 않았습니다.
+
+## iOS UI 개편 (2026-10-08)
+
+홈을 별도 탭으로 추가하고 추천 카드, 최신 작품 가로 목록, 이어보기, 즐겨찾기 목록을 배치했습니다. 상세 화면은 배경 이미지/포스터, 이어보기, 회차·작품 정보·관련 작품 탭으로 구성했습니다. 플레이어는 영상 위 재생/탐색/시간/트랙 조작과 자막·화질·다운로드·Cast 메뉴를 사용합니다. 원본 Android와 픽셀 단위로 같지는 않으며, 요일별 편성/PV 등 원본 홈 전용 콘텐츠는 이번 UI 변경에 포함하지 않았습니다.
+
+검증 커밋 58a708d: https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37705598380 . 공통 JVM 테스트, KMP iOS 테스트, 네이티브 iOS 테스트 6개와 실기기 arm64 빌드가 통과했습니다. ios-ui-preview 아티팩트의 홈 밝음/어두움·상세·플레이어 캡처를 확인했습니다. 캡처는 예시 데이터이며 실제 외부 영상 재생 검증이 아닙니다. 최신 LilacAnime-SideStore IPA: https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37705598380/artifacts/11520020694 . ZIP을 한 번 풀고 IPA를 SideStore로 가져옵니다.

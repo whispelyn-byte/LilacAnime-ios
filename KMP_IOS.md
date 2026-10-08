@@ -2,7 +2,7 @@
 
 Android 원본 앱과 기능은 보존하고, 공통 모델·네트워크·소스·자막 로직을 shared Kotlin Multiplatform 모듈로 분리했습니다.
 iOS는 SwiftUI, MPVKit/libmpv, background URLSession, Keychain, llama.cpp 및 libarchive를 사용합니다.
-데스크탑 0.5.5 기준 기능 대응과 운영체제 차이는 [desktop-port.md](docs/desktop-port.md)에 있습니다.
+데스크탑 0.5.6 및 로컬 후속 커밋 5914a9b 기준 기능 대응과 운영체제 차이는 [desktop-port.md](docs/desktop-port.md)에 있습니다.
 
 ## 빌드
 
@@ -52,7 +52,7 @@ verify.sh는 KMP iOS 테스트, hash-pinned tiny GGUF test fixture, llama.cpp XC
 
 ## 버전과 배포
 
-Android app/module.toml의 versionName **0.4.0**을 유지합니다. iOS build = Android versionCode **30** + iosApp/revision.txt **3**, 즉 **33**이며 태그는 **v0.4.0-ios.3**입니다.
+Android app/module.toml의 versionName **0.4.0**을 유지합니다. iOS build = Android versionCode **30** + iosApp/revision.txt **4**, 즉 **34**이며 태그는 **v0.4.0-ios.4**입니다.
 모든 검사에 통과한 Actions의 실기기 앱 아티팩트를 Package SideStore IPA 워크플로로 다시 패키징하여 Release에 올립니다. APK 생성은 이번 iOS 검증 절차에 포함하지 않습니다.
 
 - [공개 저장소](https://github.com/whispelyn-byte/LilacAnime-ios)
@@ -64,7 +64,7 @@ SideStore의 인증 갱신과 새 버전 설치는 별개입니다. 기존 앱�
 
 ## 검증 기록
 
-현재 빌드 33: [37778376087](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37778376087), 앱 소스 ee08a08. JVM **39개**, KMP iOS, Swift/C++ 네이티브 **21개**, UI **1개**가 통과했고 iPhone/iPad 캡처와 simulator/device arm64 앱·IPA를 생성했습니다. UI 테스트는 상세에서 가로 전체 화면 진입, 확대/해제 버튼 부재, 자막 모양 설정, 뒤로 복귀를 확인합니다. README 캡처는 이 빌드의 원본 파일입니다.
+이전 빌드 33: [37778376087](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37778376087), 앱 소스 ee08a08. JVM **39개**, KMP iOS, Swift/C++ 네이티브 **21개**, UI **1개**가 통과했고 iPhone/iPad 캡처와 simulator/device arm64 앱·IPA를 생성했습니다. UI 테스트는 상세에서 가로 전체 화면 진입, 확대/해제 버튼 부재, 자막 모양 설정, 뒤로 복귀를 확인합니다.
 
 Intel 교차 빌드: [37782455600](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37782455600), 4b0ea11. iOS x86_64 KMP와 mpv/llama.cpp/libarchive 의존성을 포함한 앱이 빌드되었고 실행 파일과 디버그 dylib의 x86_64 아키텍처, iphonesimulator 플랫폼, 0.4.0/build 33, 테스트 GGUF 미포함 및 ZIP CRC를 확인했습니다. ZIP **36,478,872 bytes**, SHA-256 **aafe29cf0c2e8d1ee758f98ea7c17a13e2e9a11c0267a960738cd6f9d99fa524**. Intel/macOS VM에서의 실제 실행·속도는 CI 검증 범위에 포함하지 않습니다.
 

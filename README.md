@@ -18,11 +18,11 @@
   작품 탐색부터 회차 재생, 자막 검색·번역, 이어보기와 오프라인 감상까지 제공합니다.
 </p>
 
-현재 Android 원본과 같은 **0.4.0**을 기준으로 iOS 빌드 **33**을 사용합니다. 새 설치의 기본 영상 소스는 **ReAnime**이며, 기존에 선택한 소스는 유지합니다.
+현재 Android 원본과 같은 **0.4.0**을 기준으로 iOS 빌드 **34**을 사용합니다. 새 설치의 기본 영상 소스는 **ReAnime**이며, 기존에 선택한 소스는 유지합니다.
 
 ## 주요 기능
 
-[데스크탑 0.5.5](https://github.com/whispelyn-byte/LilacAnime-desktop/tree/4cf110427cf46de1f926554fbfdd0968d2821a61)의 콘텐츠·자막·번역·다운로드 기능을 KMP와 SwiftUI로 이식했습니다. 홈·전체·검색·시청기록·내 목록·설정을 데스크탑 기준으로 구성했습니다. 기존 즐겨찾기·시청 기록·자막 싱크·설정·수동 GGUF 가져오기는 유지하며, 이전 버전은 [기존 릴리즈](https://github.com/whispelyn-byte/LilacAnime-ios/releases)에서 받을 수 있습니다.
+[데스크탑 0.5.6](https://github.com/whispelyn-byte/LilacAnime-desktop/tree/d7d4ec4)의 콘텐츠·자막·번역·다운로드 기능과 로컬 후속 커밋 `5914a9b`의 상세 카탈로그 필터·자막 싱크 입력을 KMP와 SwiftUI로 이식했습니다. 홈·전체·검색·시청기록·내 목록·설정을 데스크탑 기준으로 구성했습니다. 기존 즐겨찾기·시청 기록·자막 싱크·설정·수동 GGUF 가져오기는 유지하며, 이전 버전은 [기존 릴리즈](https://github.com/whispelyn-byte/LilacAnime-ios/releases)에서 받을 수 있습니다.
 
 - **탐색:** Linkkf · Ohli24 · Linkani · Animenosub · ReAnime · Miruro, 소스별 검색·필터·방영표·추천, PV·극장판, 전체 카탈로그 수집·재개·한국어 검색.
 - **작품 정보:** 한국어·영어·원제 표시, TMDB → AniList → Wikidata 제목·별칭, 한국어 줄거리와 등장인물 표기, 관련 작품·서버·필러/총집편 표시.
@@ -82,7 +82,7 @@ https://github.com/whispelyn-byte/LilacAnime-ios/releases/latest/download/source
 3. 재생 화면의 자막 메뉴에서 검색하거나 파일을 가져옵니다.
 4. **설정 → 한국어 제목 검색**에 TMDB API Key 또는 Read Access Token을 넣으면 한국어 자막 검색 제목을 찾는 데 사용합니다.
 5. 자막 번역을 사용하려면 설정에서 번역 제공자·키 또는 지원 GGUF 모델을 준비합니다.
-6. iPhone은 상단 메뉴로 홈·전체·검색·시청기록·내 목록·설정을 전환합니다. iPad에서는 사이드바를 사용합니다.
+6. iPhone은 검색창 왼쪽 메뉴로 홈·전체·검색·시청기록·내 목록·설정을 전환합니다. iPad는 사이드바가 기본으로 열리며, 같은 메뉴 버튼으로 숨기거나 다시 엽니다. 좁은 창에서는 버튼이 메뉴를 띄웁니다.
 
 한국어 전체 카탈로그는 소스 목록을 모은 뒤 제목 인덱스를 채웁니다. 저장된 목록에서 재개할 수 있고, iOS가 앱을 중단하면 앱을 다시 열어 작업을 이어갑니다. 자막 자동 번역은 설정에서 켜며, 다음 화와 다운로드 번역도 개별 설정할 수 있습니다.
 
@@ -99,18 +99,21 @@ https://github.com/whispelyn-byte/LilacAnime-ios/releases/latest/download/source
 | 조작 | 동작 |
 |---|---|
 | 영상 한 번 탭 | 조작 버튼 표시·숨김 |
+| 재생 중 영상 0.4초 이상 꾹 누르기 | 누르는 동안 2배속, 손을 떼면 기존 배속 복원 |
 | 영상 왼쪽/오른쪽 더블탭 | 설정한 시간만큼 뒤로/앞으로 이동 |
 | 중앙 더블탭 또는 재생 버튼 | 재생·일시정지 |
 | 이전/다음 회차 버튼 | 이 재생 세션에서 시청한 이전 회차·다음 회차 이동 |
 | 잠금 버튼 | 터치 조작 잠금, 잠금 해제 버튼으로 복귀 |
-| 톱니바퀴 | 자막·재생 트랙·속도 선택 |
+| 톱니바퀴 | 자막·재생 트랙·속도·원본/16:9/21:9/4:3/화면 채움 선택 |
 | 회차 재생 | 가로 전체 화면으로 진입 |
 | 더보기 메뉴 | 다운로드·Cast·시스템 재생/PiP·웹 플레이어 |
-| 외부 키보드 Space / ← / → | 재생·일시정지 / 뒤로·앞으로 탐색 |
+| 외부 키보드 Space / ← / → | Space 짧게 누른 뒤 떼면 재생·일시정지, 길게 누르면 2배속 / 뒤로·앞으로 탐색 |
 | M / C | 음소거 / 자막 표시 |
 | Z / X / S | 회차 자막 싱크 -0.5/+0.5초 / 현재 OP·ED 스킵 |
 | 0–9 / [ / ] | 회차의 0–90% 이동 / 배속 감소·증가 |
 | PageUp / PageDown / Esc | 이전·다음 회차 / 재생 화면에서 나가기 |
+
+전체 카탈로그의 상세 필터는 소스가 지원하는 장르·형식·연도·분기를 표시하고 **적용**하면 소스 목록을 다시 조회합니다. 자막 모양 설정과 전역 자막 설정에서 싱크를 밀리초로 직접 입력·초기화할 수 있습니다.
 
 시스템 AVPlayer 및 웹 플레이어는 자체 조작 UI를 사용합니다. PiP/AirPlay 경로는 mpv의 외부 ASS·번역 자막을 그대로 표시하지 않습니다. Cast 자막은 VTT로 변환되어 ASS 스타일 효과가 유지되지 않습니다. iPhone LAN 중계가 필요한 Cast는 앱을 재생 화면의 전경에 유지합니다.
 
@@ -138,7 +141,7 @@ sh iosApp/scripts/verify.sh
 
 GitHub Actions는 공통 테스트, KMP iOS 테스트, 네이티브 iOS 테스트, 시뮬레이터 캡처, unsigned arm64 IPA 패키징을 실행합니다. 릴리즈에는 실기기용 IPA와 SideStore source.json을 게시합니다. 시뮬레이터 앱은 개발·검증용 Actions 아티팩트로만 제공합니다. **App Store 배포용 서명 빌드가 아닙니다.**
 
-앱 버전은 app/module.toml의 Android versionName을 사용합니다. iOS 빌드 번호는 Android versionCode에 iosApp/revision.txt의 값을 더합니다. 배포 태그는 `python3 iosApp/scripts/android-version.py --tag`로 확인합니다(현재 **v0.4.0-ios.3**). 해당 태그를 푸시하면 모든 테스트·빌드가 성공한 뒤 IPA와 실제 메타데이터로 생성한 SideStore source.json을 릴리스에 게시합니다. 최신 소스 주소는 그대로 유지됩니다.
+앱 버전은 app/module.toml의 Android versionName을 사용합니다. iOS 빌드 번호는 Android versionCode에 iosApp/revision.txt의 값을 더합니다. 배포 태그는 `python3 iosApp/scripts/android-version.py --tag`로 확인합니다(현재 **v0.4.0-ios.4**). 해당 태그를 푸시하면 모든 테스트·빌드가 성공한 뒤 IPA와 실제 메타데이터로 생성한 SideStore source.json을 릴리스에 게시합니다. 최신 소스 주소는 그대로 유지됩니다.
 
 | 경로 | 내용 |
 |---|---|

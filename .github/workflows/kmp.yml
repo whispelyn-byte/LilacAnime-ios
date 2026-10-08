@@ -50,7 +50,7 @@ jobs:
         id: native-cache
         with:
           path: iosApp/Native/Frameworks
-          key: llama-ios-b11490-arm64-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('iosApp/scripts/build-native.sh') }}
+          key: llama-ios-b11490-universal-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('iosApp/scripts/build-native.sh') }}
       - run: sh iosApp/scripts/build-native.sh
       - uses: actions/cache/save@v4
         if: steps.native-cache.outputs.cache-hit != 'true'
@@ -58,6 +58,8 @@ jobs:
           path: iosApp/Native/Frameworks
           key: ${{ steps.native-cache.outputs.cache-primary-key }}
       - run: sh iosApp/scripts/verify.sh
+      - name: Build Intel iPhone Simulator app
+        run: sh iosApp/scripts/build-intel-simulator.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:

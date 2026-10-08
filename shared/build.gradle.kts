@@ -7,6 +7,7 @@ kotlin {
     if (includeAndroid) androidTarget()
     iosArm64()
     iosSimulatorArm64()
+    iosX64()
     targets.withType<org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget>().configureEach {
         binaries.framework { baseName = "LilacShared"; isStatic = true }
     }

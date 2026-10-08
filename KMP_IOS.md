@@ -6,7 +6,28 @@ iOS는 SwiftUI, MPVKit/libmpv, background URLSession, Keychain, llama.cpp 및 li
 
 ## 빌드
 
-Apple Silicon Mac, Xcode, JDK 17, XcodeGen이 필요합니다. 최소 iOS 16, simulator/device arm64를 빌드합니다.
+Xcode 26.3, JDK 17, XcodeGen이 필요합니다. Xcode 26.3은 macOS 15.6 이상을 요구합니다. 최소 iOS 16, device arm64 및 simulator arm64/x86_64를 빌드합니다. 자동 실행 테스트는 Apple Silicon에서 진행하고, Intel 시뮬레이터는 교차 컴파일과 아키텍처 검사를 수행합니다.
+
+### Xcode에서 iPhone 화면 실행
+
+Xcode와 iOS Simulator를 설치한 macOS에서 다음을 실행합니다. Intel Mac은 Universal 시뮬레이터 런타임이 필요합니다. VM에서의 시뮬레이터 부팅과 그래픽 동작은 별도 확인이 필요합니다.
+
+~~~sh
+git clone https://github.com/whispelyn-byte/LilacAnime-ios.git
+cd LilacAnime-ios
+brew install xcodegen cmake openjdk@17
+export JAVA_HOME="$(brew --prefix openjdk@17)/libexec/openjdk.jdk/Contents/Home"
+sh iosApp/scripts/open-xcode.sh
+~~~
+
+스크립트는 로컬 AI 프레임워크와 Xcode 프로젝트를 준비해 엽니다. Xcode 상단에서 **LilacAnime → iPhone Simulator**를 선택하고 **Cmd+R**을 누릅니다. 실행 목적이 화면 확인이면 IPA나 Apple 개발자 서명은 필요하지 않습니다.
+
+이미 빌드한 Intel 시뮬레이터 앱도 Actions의 ios-app-builds 아티팩트에서 `LilacAnime-simulator-intel.zip`으로 제공합니다. ZIP을 풀어 나온 `.app`을 실행 중인 iPhone Simulator에 드래그하거나 아래 명령으로 설치합니다.
+
+~~~sh
+xcrun simctl install booted /path/to/LilacAnime.app
+xcrun simctl launch booted com.lilac.anime.ios
+~~~
 
 ~~~sh
 brew install xcodegen
@@ -31,7 +52,7 @@ verify.sh는 KMP iOS 테스트, hash-pinned tiny GGUF test fixture, llama.cpp XC
 
 ## 버전과 배포
 
-Android app/module.toml의 versionName **0.4.0**을 유지합니다. iOS build = Android versionCode **30** + iosApp/revision.txt **2**, 즉 **32**이며 태그는 **v0.4.0-ios.2**입니다.
+Android app/module.toml의 versionName **0.4.0**을 유지합니다. iOS build = Android versionCode **30** + iosApp/revision.txt **3**, 즉 **33**이며 태그는 **v0.4.0-ios.3**입니다.
 모든 검사에 통과한 Actions의 실기기 앱 아티팩트를 Package SideStore IPA 워크플로로 다시 패키징하여 Release에 올립니다. APK 생성은 이번 iOS 검증 절차에 포함하지 않습니다.
 
 - [공개 저장소](https://github.com/whispelyn-byte/LilacAnime-ios)

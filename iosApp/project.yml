@@ -18,6 +18,8 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
     ENABLE_USER_SCRIPT_SANDBOXING: NO
 targets:
   LilacAnime:
@@ -29,6 +31,8 @@ targets:
     info:
       path: LilacAnime/Info.plist
       properties:
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         CFBundleDisplayName: LilacAnime
         UILaunchScreen: {}
         UIApplicationSceneManifest:

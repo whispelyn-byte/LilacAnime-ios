@@ -9,12 +9,19 @@ fi
 command -v xcodegen >/dev/null
 sh ./gradlew :shared:iosSimulatorArm64Test
 cd iosApp
+APP_VERSION="1.0"
+APP_BUILD="1"
+if [ "${GITHUB_REF_TYPE:-}" = tag ]; then
+  APP_VERSION="${GITHUB_REF_NAME#v}"
+  python3 -c 'import re,sys; assert re.fullmatch(r"\d+\.\d+(?:\.\d+)?", sys.argv[1]), "Invalid release version"' "$APP_VERSION"
+  APP_BUILD="${GITHUB_RUN_NUMBER:-1}"
+fi
 xcodegen generate
 mkdir -p build
 xcodebuild -resolvePackageDependencies -project LilacAnime.xcodeproj -scheme LilacAnime
 SIMULATOR_ID="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); phones=[v for group in d["devices"].values() for v in group if v.get("isAvailable") and "iPhone" in v["name"]]; assert phones, "No available iPhone simulator"; print(phones[0]["udid"])')"
 RESULT="build/Tests-$(date +%Y%m%d-%H%M%S).xcresult"
-xcodebuild -project LilacAnime.xcodeproj -scheme LilacAnime -configuration Debug -derivedDataPath build/DerivedData -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -resultBundlePath "$RESULT" CODE_SIGNING_ALLOWED=NO test
+xcodebuild -project LilacAnime.xcodeproj -scheme LilacAnime -configuration Debug -derivedDataPath build/DerivedData -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -resultBundlePath "$RESULT" CODE_SIGNING_ALLOWED=NO MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$APP_BUILD" test
 mkdir -p build/screenshots
 xcrun simctl bootstatus "$SIMULATOR_ID" -b
 xcrun simctl install "$SIMULATOR_ID" build/DerivedData/Build/Products/Debug-iphonesimulator/LilacAnime.app
@@ -30,7 +37,7 @@ xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" com.lilac.anime.
 sleep 3
 xcrun simctl io "$SIMULATOR_ID" screenshot build/screenshots/home-light.png
 xcrun simctl terminate "$SIMULATOR_ID" com.lilac.anime.ios
-xcodebuild -project LilacAnime.xcodeproj -scheme LilacAnime -configuration Debug -derivedDataPath build/DerivedData -destination "generic/platform=iOS" CODE_SIGNING_ALLOWED=NO build
+xcodebuild -project LilacAnime.xcodeproj -scheme LilacAnime -configuration Debug -derivedDataPath build/DerivedData -destination "generic/platform=iOS" CODE_SIGNING_ALLOWED=NO MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$APP_BUILD" build
 
 ditto -c -k --sequesterRsrc --keepParent build/DerivedData/Build/Products/Debug-iphonesimulator/LilacAnime.app build/LilacAnime-simulator.zip
 ditto -c -k --sequesterRsrc --keepParent build/DerivedData/Build/Products/Debug-iphoneos/LilacAnime.app build/LilacAnime-device-unsigned.zip

@@ -2,6 +2,7 @@ name: KMP and iOS
 on:
   workflow_dispatch:
   push:
+    tags: ['v*']
     paths: ['shared/**', 'iosApp/**', '*gradle*', 'gradle/**', '.github/workflows/kmp.yml']
   pull_request:
     paths: ['shared/**', 'iosApp/**', '*gradle*', 'gradle/**', '.github/workflows/kmp.yml']
@@ -62,3 +63,27 @@ jobs:
         with:
           name: ios-ui-preview
           path: iosApp/build/screenshots/*.png
+
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [shared, ios]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: LilacAnime-SideStore
+          path: release
+      - name: Generate SideStore source and publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REPO: ${{ github.repository }}
+        run: |
+          python3 iosApp/scripts/generate-source.py release/LilacAnime-SideStore.ipa --tag "$RELEASE_TAG" --repo "$RELEASE_REPO" --output release/source.json
+          if ! gh release view "$RELEASE_TAG" --repo "$RELEASE_REPO" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --repo "$RELEASE_REPO" --verify-tag --title "LilacAnime iOS $RELEASE_TAG" --generate-notes
+          fi
+          gh release upload "$RELEASE_TAG" release/LilacAnime-SideStore.ipa release/source.json --repo "$RELEASE_REPO" --clobber

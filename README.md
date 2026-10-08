@@ -22,7 +22,7 @@
 
 ## 주요 기능
 
-[데스크탑 0.5.5](https://github.com/whispelyn-byte/LilacAnime-desktop/tree/4cf110427cf46de1f926554fbfdd0968d2821a61)의 콘텐츠·자막·번역·다운로드 기능을 KMP와 SwiftUI로 이식했습니다. 홈·전체·검색·시청기록·내 목록·설정을 데스크탑 기준으로 구성했습니다. 기존 즐겨찾기·시청 기록·자막 싱크·설정·수동 GGUF 가져오기는 유지하며, 이전 UI 코드는 [보존 브랜치](https://github.com/whispelyn-byte/LilacAnime-ios/tree/codex/preserved-ios-20261008)에 남겼습니다.
+[데스크탑 0.5.5](https://github.com/whispelyn-byte/LilacAnime-desktop/tree/4cf110427cf46de1f926554fbfdd0968d2821a61)의 콘텐츠·자막·번역·다운로드 기능을 KMP와 SwiftUI로 이식했습니다. 홈·전체·검색·시청기록·내 목록·설정을 데스크탑 기준으로 구성했습니다. 기존 즐겨찾기·시청 기록·자막 싱크·설정·수동 GGUF 가져오기는 유지하며, 이전 버전은 [기존 릴리즈](https://github.com/whispelyn-byte/LilacAnime-ios/releases)에서 받을 수 있습니다.
 
 - **탐색:** Linkkf · Ohli24 · Linkani · Animenosub · ReAnime · Miruro, 소스별 검색·필터·방영표·추천, PV·극장판, 전체 카탈로그 수집·재개·한국어 검색.
 - **작품 정보:** 한국어·영어·원제 표시, TMDB → AniList → Wikidata 제목·별칭, 한국어 줄거리와 등장인물 표기, 관련 작품·서버·필러/총집편 표시.

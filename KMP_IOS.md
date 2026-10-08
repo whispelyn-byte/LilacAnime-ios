@@ -81,3 +81,5 @@ Android SDK와 원본 네이티브 도구 체인이 필요합니다. 원본에�
 2026-10-08 사용자 요청으로 저장소를 Public으로 전환했습니다. README는 LilacAnime-desktop의 다운로드·설치·사용법 구성을 참고해 iOS 기능과 시뮬레이터 예시 화면으로 다시 작성했습니다.
 
 v로 시작하는 버전 태그를 푸시하면 공통·iOS 검증 후 Release에 LilacAnime-SideStore.ipa와 source.json을 게시합니다. source.json은 IPA 안의 버전·빌드 번호·최소 iOS·권한과 실제 파일 크기로 생성하며, 태그 버전이 IPA와 일치하지 않으면 게시하지 않습니다. SideStore Sources에 https://github.com/whispelyn-byte/LilacAnime-ios/releases/latest/download/source.json 을 등록합니다. 최신 버전 확인과 업데이트 버튼을 통한 설치를 위한 소스이며 완전한 무인 설치는 보장하지 않습니다. 실제 기기에서 소스 등록·업데이트는 아직 확인하지 않았습니다.
+
+Android 버전 정렬: 원본 최신 릴리스 및 app/module.toml의 versionName 0.4.0, versionCode 30을 iOS에 적용했습니다. 검증된 unsigned arm64 앱의 Info.plist 버전 정보만 변경해 Actions 37723637550에서 재패키징했고, v0.4.0을 최신 공개 릴리스로 게시했습니다. IPA 내부와 소스 JSON의 버전 0.4.0 / 빌드 30, ZIP 무결성, 로그인 없는 최신 source.json HTTP 200을 확인했습니다. 임시 v1.0 릴리스·원격 태그는 삭제했습니다. 기존 1.0 설치자는 앱을 삭제하지 말고 0.4.0 IPA를 SideStore에 다시 가져와 덮어 설치합니다.

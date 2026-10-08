@@ -16,7 +16,7 @@ struct SettingsView: View {
             Form {
                 Section("화면과 콘텐츠") {
                     Picker("테마", selection: $store.preferences.theme) { Text("시스템").tag("system"); Text("밝게").tag("light"); Text("어둡게").tag("dark") }
-                    Picker("영상 소스", selection: $store.preferences.source) { Text("Linkkf").tag("linkkf"); Text("ReAnime").tag("reanime"); Text("Animenosub").tag("animenosub") }
+                    Picker("영상 소스", selection: $store.preferences.source) { ForEach(ContentSources.keys, id: \.self) { Text(ContentSources.name($0)).tag($0) } }
                     Picker("기본 화질", selection: $store.preferences.quality) { ForEach(["Auto", "720p", "1080p"], id: \.self) { Text($0) } }
                 }
                 Section("재생") {
@@ -29,6 +29,12 @@ struct SettingsView: View {
                     Toggle("백그라운드 오디오", isOn: $store.preferences.backgroundAudio)
                 }
                 Section("자막") {
+                    Picker("기본 자막 소스", selection: Binding(get: { store.preferences.subtitleProvider ?? "auto" }, set: { store.preferences.subtitleProvider = $0 })) {
+                        Text("자동 (한국어 트랙 우선)").tag("auto")
+                        Text("Kairan 우선").tag("kairan"); Text("Csora 우선").tag("csora"); Text("Anissia 우선").tag("anissia")
+                        Text("직접 선택").tag("manual")
+                    }
+                    Text("한국어 트랙이 없으면 Kairan → Csora → Anissia 순서로 찾습니다.").font(.caption).foregroundStyle(.secondary)
                     Slider(value: $store.preferences.subtitleSize, in: 50...300, step: 10)
                     Text("크기 \(Int(store.preferences.subtitleSize))%")
                     TextField("글꼴 이름", text: $store.preferences.subtitleFont)

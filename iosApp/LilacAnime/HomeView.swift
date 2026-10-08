@@ -23,7 +23,7 @@ struct HomeView: View {
                         Label("LilacAnime", systemImage: "sparkles").font(.subheadline.bold()).foregroundStyle(LilacStyle.accent)
                         Spacer()
                         Menu {
-                            ForEach(["linkkf", "reanime", "animenosub"], id: \.self) { source in
+                            ForEach(ContentSources.keys, id: \.self) { source in
                                 Button(sourceName(source)) {
                                     library.preferences.source = source; model.source = source
                                     if !UIShowcase.enabled { model.load() }
@@ -101,6 +101,6 @@ struct HomeView: View {
         }
     }
     private func sourceName(_ source: String) -> String {
-        switch source { case "reanime": return "ReAnime"; case "animenosub": return "Animenosub"; default: return "Linkkf" }
+        ContentSources.name(source)
     }
 }

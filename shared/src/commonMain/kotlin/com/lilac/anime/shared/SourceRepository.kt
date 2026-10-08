@@ -7,7 +7,7 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.*
 import kotlinx.coroutines.*
-enum class AnimeSource(val key: String) { LINKKF("linkkf"), REANIME("reanime"), ANIMENOSUB("animenosub") }
+enum class AnimeSource(val key: String) { LINKKF("linkkf"), REANIME("reanime"), ANIMENOSUB("animenosub"), MIRURO("miruro"), OHLI24("ohli24"), LINKANI("linkani") }
 data class BrowseFilter(val genres: List<String> = emptyList(), val year: String = "", val season: String = "", val format: String = "", val status: String = "", val studio: String = "")
 data class SourceFilters(val genres: List<String> = emptyList(), val years: List<String> = emptyList(),
     val formats: List<String> = emptyList(), val statuses: List<String> = emptyList(),
@@ -17,9 +17,11 @@ data class SourceDetail(val anime: Anime, val servers: List<EpisodeServer>)
 data class PlaybackTrack(val label: String, val url: String, val referer: String = "", val language: String = "", val kind: String = "video")
 class SourceRepository(private val client: HttpClient = newSharedClient()) {
     private val linkkf = LinkkfRepository(client)
+    private val desktop = DesktopSourceRepository(client)
     suspend fun browse(source: String, query: String = "", page: Int = 1, filter: BrowseFilter = BrowseFilter()): List<Anime> {
         require(page > 0)
         return when (source) {
+            "miruro", "ohli24", "linkani" -> desktop.browse(source, query, page, filter)
             "reanime" -> ReAnimeHarParser.parseSearch(getText("https://reanime.to/api/v1/search", buildMap {
                 put("limit", "36"); put("offset", ((page - 1) * 36).toString())
                 if (query.isNotBlank()) put("q", query.trim())
@@ -38,6 +40,7 @@ class SourceRepository(private val client: HttpClient = newSharedClient()) {
     }
     suspend fun detail(summary: Anime, source: String): SourceDetail = coroutineScope {
         when (source) {
+            "miruro", "ohli24", "linkani" -> desktop.detail(summary, source)
             "reanime" -> {
                 val slug = summary.id.removePrefix("reanime:").substringBefore('/')
                 val detail = async { getText("https://reanime.to/anime/$slug/__data.json", mapOf("x-appkit-invalidated" to "001")) }
@@ -64,6 +67,7 @@ class SourceRepository(private val client: HttpClient = newSharedClient()) {
         "linkkf" -> linkkf.filters()
         else -> SourceFilters()
     }
+    suspend fun desktopStreams(source: String, animeId: String, number: Int, url: String) = desktop.streams(source, animeId, number, url)
     suspend fun top(period: String) = ReAnimeHarParser.parseTop(getText("https://reanime.to/api/v1/top/anime", mapOf("period" to period, "limit" to "20")))
     suspend fun schedule(week: Int) = ReAnimeHarParser.parseSchedule(getText("https://reanime.to/api/v1/schedule", mapOf("tz" to "Asia/Seoul", "week" to week.toString())))
     suspend fun facets() = ReAnimeHarParser.parseFacets(getText("https://reanime.to/api/v1/search", mapOf("facets" to "true", "limit" to "0")))

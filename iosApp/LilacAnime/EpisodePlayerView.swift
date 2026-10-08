@@ -102,6 +102,7 @@ final class EpisodePlayerModel: ObservableObject {
                 configure(library)
                 engine.load(playable, resume: library.resume(item.anime, episodeID: item.episodeID))
                 if let subtitle { engine.subtitle(subtitle) }
+                else { automaticSubtitle(stream, library: library, token: token) }
             } catch { if token == generation { self.error = error.localizedDescription } }
         }
     }
@@ -146,21 +147,64 @@ final class EpisodePlayerModel: ObservableObject {
                 self?.assets = assets ?? []; self?.error = error; self?.searching = false
             }
     }
-    func importSubtitle(_ url: URL, library: LibraryStore) {
+    func importSubtitle(_ url: URL, library: LibraryStore, headers: [String: String] = [:], translate: Bool = true) {
         let token = generation
         Task {
             do {
-                let files = try await SubtitleFiles.prepare(url)
+                let files = try await SubtitleFiles.prepare(url, headers: headers)
                 guard token == generation else { return }
                 subtitleFiles = files
-                if let first = subtitleFiles.first { selectSubtitle(first, library: library) }
+                if let first = preferredSubtitle(subtitleFiles) { selectSubtitle(first, library: library, translate: translate) }
             } catch { self.error = error.localizedDescription }
         }
     }
-    func selectSubtitle(_ url: URL, library: LibraryStore) {
+    func selectSubtitle(_ url: URL, library: LibraryStore, translate: Bool = true) {
         sourceSubtitle = url; subtitle = url; engine.subtitle(url)
         library.saveSubtitle(animeID: item.anime.id, episodeID: item.episodeID, file: url, offset: subtitleOffset)
-        if library.preferences.autoTranslation { translate(library: library) }
+        if translate && library.preferences.autoTranslation { self.translate(library: library) }
+    }
+    private func preferredSubtitle(_ files: [URL]) -> URL? {
+        files.first { SubtitleEpisodeMatcher.shared.matches(name: $0.lastPathComponent, episodeNumber: Int32(item.number), expectedSeason: nil) } ?? (files.count == 1 ? files.first : nil)
+    }
+    private func automaticSubtitle(_ stream: ResolvedStream, library: LibraryStore, token: UUID) {
+        guard library.preferences.subtitleProvider != "manual", subtitle == nil else { return }
+        if let track = stream.subtitles.first(where: { $0.language.lowercased().hasPrefix("ko") || $0.label.contains("한국") || $0.label.lowercased().contains("korean") }) {
+            importSubtitle(track.url, library: library, headers: track.headers ?? [:], translate: false)
+            return
+        }
+        guard !["linkkf", "ohli24", "linkani"].contains(item.anime.source) else { return }
+        Task {
+            let names = [item.anime.title, item.anime.anime.native, item.anime.anime.romaji, item.anime.anime.english]
+            let korean = names.first { TitleCandidates.shared.isKorean(title: $0) }
+            let found: String?
+            if let korean { found = korean } else { found = await titleLookup.resolve(item.anime.title, aliases: Array(names.dropFirst())) }
+            guard token == generation, subtitle == nil, let found else { return }
+            searchTitle = found
+            var providers = ["kairan", "csora", "anissia"]
+            if let preferred = library.preferences.subtitleProvider, let index = providers.firstIndex(of: preferred) { providers.remove(at: index); providers.insert(preferred, at: 0) }
+            findAutomaticSubtitle(providers, library: library, token: token)
+        }
+    }
+    private func findAutomaticSubtitle(_ providers: [String], library: LibraryStore, token: UUID) {
+        guard token == generation, subtitle == nil, let provider = providers.first else { return }
+        service.findSubtitles(provider: provider, title: searchTitle, episode: Int32(item.number), episodeKey: item.displayNumber,
+            anilistId: item.anime.anime.anilistId?.int32Value ?? 0) { [weak self] results, _ in
+            Task { @MainActor in
+                guard let self, token == self.generation, self.subtitle == nil else { return }
+                let files = (results ?? []).filter { $0.source != "post" }
+                for asset in files {
+                    guard let url = URL(string: asset.url) else { continue }
+                    do {
+                        let prepared = try await SubtitleFiles.prepare(url)
+                        guard token == self.generation, self.subtitle == nil else { return }
+                        if let selected = self.preferredSubtitle(prepared) {
+                            self.subtitleFiles = prepared; self.selectSubtitle(selected, library: library, translate: false); return
+                        }
+                    } catch { /* Continue with the next file/provider. */ }
+                }
+                self.findAutomaticSubtitle(Array(providers.dropFirst()), library: library, token: token)
+            }
+        }
     }
     func translate(library: LibraryStore) {
         guard let sourceSubtitle else { error = "먼저 자막을 선택하세요."; return }
@@ -228,7 +272,7 @@ struct EpisodePlayerView: View {
                                 Button("자막 검색") { subtitleSheet = true }
                                 Button("자막 가져오기") { importer = true }
                                 Button("AI 번역") { model.translate(library: library) }
-                                ForEach(model.resolver.subtitles) { subtitle in Button(subtitle.label) { model.importSubtitle(subtitle.url, library: library) } }
+                                ForEach(model.active?.subtitles ?? model.resolver.subtitles) { subtitle in Button(subtitle.label) { model.importSubtitle(subtitle.url, library: library, headers: subtitle.headers ?? [:]) } }
                                 ForEach(model.subtitleFiles, id: \.path) { file in Button(file.lastPathComponent) { model.selectSubtitle(file, library: library) } }
                             } label: { Image(systemName: "chevron.down").font(.caption.bold()) }
                             Spacer()
@@ -288,7 +332,7 @@ struct EpisodePlayerView: View {
                             Button("+0.1초") { model.shiftSubtitle(0.1, library: library) }
                         }
                         TextField("한국어 검색 제목", text: $model.searchTitle)
-                        HStack { ForEach(["kairan","csora","jimaku"], id: \.self) { provider in Button(provider) { model.search(provider) } } }
+                        HStack { ForEach(["kairan","csora","anissia","jimaku"], id: \.self) { provider in Button(provider) { model.search(provider) } } }
                         if model.searching { ProgressView() }
                         ForEach(Array(model.assets.enumerated()), id: \.offset) { _, asset in
                             if asset.source == "post", let url = URL(string: asset.url) { Link(asset.name, destination: url) }

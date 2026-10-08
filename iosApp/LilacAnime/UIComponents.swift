@@ -118,3 +118,10 @@ enum UIShowcase {
         }
     }
 }
+
+enum ContentSources {
+    static let keys = ["linkkf", "ohli24", "linkani", "animenosub", "reanime", "miruro"]
+    static func name(_ key: String) -> String {
+        switch key { case "ohli24": return "애니24"; case "linkani": return "링크애니"; case "reanime": return "RE:Anime"; case "miruro": return "Miruro"; case "animenosub": return "Animenosub"; default: return "Linkkf" }
+    }
+}

@@ -16,6 +16,7 @@ struct RemoteSubtitle: Codable, Identifiable, Hashable {
     var label: String
     var url: URL
     var language: String
+    var headers: [String: String]? = nil
 }
 struct PlaybackItem {
     let anime: SavedAnime
@@ -47,6 +48,7 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
     private var timeout: Task<Void, Never>?
     private var generation = UUID()
     private var currentItem: PlaybackItem?
+    private let desktop = IosServices()
     private let agent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1"
 
     override init() {
@@ -93,6 +95,25 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
         if let direct = item.directURL, direct.isFileURL || ["m3u8", "mp4", "mkv", "webm"].contains(direct.pathExtension.lowercased()) {
             streams = [ResolvedStream(label: "영상", url: direct, referer: "", headers: [:])]; loading = false; return
         }
+        if ["miruro", "linkani"].contains(item.anime.source) {
+            desktop.desktopStreams(sourceKey: item.anime.source, animeId: item.anime.anime.id, number: Int32(item.number), url: item.watchURL.absoluteString) { [weak self] results, failure in
+                Task { @MainActor in
+                    guard let self, token == self.generation else { return }
+                    self.loading = false
+                    self.streams = (results ?? []).compactMap { stream in
+                        guard let url = URL(string: stream.url) else { return nil }
+                        let tracks = stream.subtitles.compactMap { track -> RemoteSubtitle? in
+                            guard let url = URL(string: track.url) else { return nil }
+                            return RemoteSubtitle(label: track.label, url: url, language: track.language, headers: stream.headers)
+                        }
+                        return ResolvedStream(label: stream.label, url: url, referer: stream.referer, headers: stream.headers, subtitles: tracks)
+                    }
+                    self.subtitles = self.streams.first?.subtitles ?? []
+                    if self.streams.isEmpty { self.error = failure ?? "이 회차의 영상 서버를 찾지 못했습니다." }
+                }
+            }
+            return
+        }
         var request = URLRequest(url: item.watchURL)
         request.setValue(item.watchURL.scheme! + "://" + (item.watchURL.host ?? "") + "/", forHTTPHeaderField: "Referer")
         webView.load(request)
@@ -103,7 +124,7 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
             if self.streams.isEmpty { self.error = "영상 URL을 찾지 못했습니다. 웹 플레이어에서 재생을 시작하거나 서버를 바꿔보세요." }
         }
     }
-    func cancel() { generation = UUID(); timeout?.cancel(); timeout = nil; webView.stopLoading(); loading = false }
+    func cancel() { desktop.cancel(); generation = UUID(); timeout?.cancel(); timeout = nil; webView.stopLoading(); loading = false }
     func shutdown() { cancel(); webView.configuration.userContentController.removeScriptMessageHandler(forName: "lilacMedia"); webView.navigationDelegate = nil; webView.loadHTMLString("", baseURL: nil) }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         guard webView.url?.host?.contains("flixcloud") == true,
@@ -166,23 +187,47 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
     private static let captureScript = """
     (() => {
       const seen = new Set();
-      const emit = (u, kind='video', label='', language='') => {
+      const emit = (u, kind='video', label='', language='', referer=location.href) => {
         try {
           const url = new URL(u, location.href).href;
           if (seen.has(url)) return;
           if (kind === 'video' && !/\\.(m3u8|mp4|mkv|webm)(?:[?#]|$)/i.test(url)) return;
           seen.add(url);
-          window.webkit.messageHandlers.lilacMedia.postMessage({url,kind,label,language,referer:location.href,pk:typeof window.__pk==='string'?window.__pk:''});
+          window.webkit.messageHandlers.lilacMedia.postMessage({url,kind,label,language,referer,pk:typeof window.__pk==='string'?window.__pk:''});
         } catch (_) {}
       };
       const scan = () => {
         document.querySelectorAll('video,source').forEach(v=>emit(v.currentSrc||v.src));
         document.querySelectorAll('track[src]').forEach(t=>emit(t.src,'subtitle',t.label,t.srclang));
       };
+      const master = (text, base) => {
+        if (!String(text).startsWith('#EXTM3U')) return;
+        const lines = String(text).split(/\\r?\\n/), variants = [];
+        for (let i=0;i<lines.length-1;i++) {
+          if (!lines[i].startsWith('#EXT-X-STREAM-INF:')) continue;
+          const bandwidth = Number((lines[i].match(/BANDWIDTH=(\\d+)/)||[])[1])||0;
+          let next=i+1; while(next<lines.length && (!lines[next].trim()||lines[next].startsWith('#'))) next++;
+          if(next<lines.length) variants.push({url:new URL(lines[next].trim(),base).href,bandwidth});
+        }
+        variants.sort((a,b)=>b.bandwidth-a.bandwidth).forEach(v=>emit(v.url,'video','','',''));
+      };
+      const isMaster = url => /\\/master\\.txt(?:[?#]|$)/i.test(String(url));
       const originalFetch = window.fetch;
-      window.fetch = function(input, init) { emit(typeof input==='string'?input:input.url); return originalFetch.apply(this,arguments); };
+      window.fetch = function(input, init) {
+        const url=typeof input==='string'?input:input.url; emit(url);
+        const response=originalFetch.apply(this,arguments);
+        if(isMaster(url)) response.then(r=>r.clone().text()).then(text=>master(text,url)).catch(()=>{});
+        return response;
+      };
       const open = XMLHttpRequest.prototype.open;
-      XMLHttpRequest.prototype.open = function(method,url) { emit(url); return open.apply(this,arguments); };
+      XMLHttpRequest.prototype.open = function(method,url) {
+        emit(url);
+        if(isMaster(url)) this.addEventListener('load',()=>{ try {
+          const text=this.responseType==='arraybuffer'?new TextDecoder().decode(this.response):this.responseText;
+          master(text,url);
+        } catch(_) {} });
+        return open.apply(this,arguments);
+      };
       try { new PerformanceObserver(list=>list.getEntries().forEach(e=>emit(e.name))).observe({entryTypes:['resource']}); } catch(_) {}
       document.addEventListener('DOMContentLoaded',()=>{ scan(); new MutationObserver(scan).observe(document.documentElement,{subtree:true,childList:true,attributes:true}); });
       setInterval(scan,1000);

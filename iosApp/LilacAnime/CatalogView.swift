@@ -53,8 +53,8 @@ struct CatalogView: View {
             ScrollView {
                 VStack(spacing: 16) {
                     Picker("소스", selection: $model.source) {
-                        Text("Linkkf").tag("linkkf"); Text("ReAnime").tag("reanime"); Text("Animenosub").tag("animenosub")
-                    }.pickerStyle(.segmented).onChange(of: model.source) { source in library.preferences.source = source; model.mode = "browse"; model.genre = ""; model.year = ""; model.format = ""; model.status = ""; model.season = ""; model.studio = ""; model.load(); model.loadFilters() }
+                        ForEach(ContentSources.keys, id: \.self) { Text(ContentSources.name($0)).tag($0) }
+                    }.pickerStyle(.menu).onChange(of: model.source) { source in library.preferences.source = source; model.mode = "browse"; model.genre = ""; model.year = ""; model.format = ""; model.status = ""; model.season = ""; model.studio = ""; model.load(); model.loadFilters() }
                     if model.source == "reanime" {
                         Picker("목록", selection: $model.mode) { Text("검색").tag("browse"); Text("인기").tag("top"); Text("방영표").tag("schedule") }
                             .pickerStyle(.segmented).onChange(of: model.mode) { _ in model.load() }
@@ -253,7 +253,7 @@ struct DetailView: View {
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 140))], spacing: 18) {
                     ForEach(anime.reAnimeRelated, id: \.id) { relation in
-                        NavigationLink { DetailView(summary: AnimeSnapshot.shared.related(relation: relation), source: "reanime") } label: {
+                        NavigationLink { DetailView(summary: AnimeSnapshot.shared.related(relation: relation), source: source == "miruro" ? "miruro" : "reanime") } label: {
                             VStack(alignment: .leading, spacing: 6) {
                                 AnimePosterCard(anime: AnimeSnapshot.shared.related(relation: relation))
                                 Text(relation.relationType).font(.caption).foregroundStyle(LilacStyle.accent)

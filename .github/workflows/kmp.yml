@@ -2,6 +2,7 @@ name: KMP and iOS
 on:
   workflow_dispatch:
   push:
+    branches: ['main']
     tags: ['v*']
     paths: ['shared/**', 'iosApp/**', '*gradle*', 'gradle/**', '.github/workflows/kmp.yml']
   pull_request:

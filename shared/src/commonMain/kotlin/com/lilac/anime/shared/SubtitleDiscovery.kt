@@ -4,11 +4,14 @@ import com.lilac.anime.shared.ported.*
 import com.lilac.anime.shared.compat.*
 import io.ktor.http.*
 data class SubtitleAsset(val name: String, val url: String, val source: String, val score: Double = 0.0)
-class SubtitleDiscovery {
-    private val repository = SourceRepository()
+class SubtitleDiscovery(private val repository: SourceRepository = SourceRepository()) {
     private val blogs = mutableMapOf<String, List<KairanPost>>()
     suspend fun search(provider: String, title: String, episode: Int, episodeKey: String, anilistId: Int): List<SubtitleAsset> =
-        if (provider == "jimaku") jimaku(anilistId, episode) else blog(provider, title, episode, episodeKey)
+        when (provider) {
+            "jimaku" -> jimaku(anilistId, episode)
+            "anissia" -> AnissiaDiscovery(repository).search(title, episode, episodeKey)
+            else -> blog(provider, title, episode, episodeKey)
+        }
     private suspend fun blog(provider: String, title: String, episode: Int, episodeKey: String): List<SubtitleAsset> {
         require(provider in listOf("kairan", "csora"))
         val base = if (provider == "kairan") "https://kairan03.blogspot.com" else "https://csora556.blogspot.com"

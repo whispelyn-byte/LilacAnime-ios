@@ -9,7 +9,7 @@ enum SubtitleFiles {
     static let fontDirectory = root.appendingPathComponent("Fonts")
     static let translations = root.appendingPathComponent("Translations")
     static func key(_ text: String) -> String { SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined() }
-    static func prepare(_ url: URL) async throws -> [URL] {
+    static func prepare(_ url: URL, headers: [String: String] = [:]) async throws -> [URL] {
         let data: Data
         var name = url.lastPathComponent
         if url.isFileURL {
@@ -17,7 +17,9 @@ enum SubtitleFiles {
             defer { if access { url.stopAccessingSecurityScopedResource() } }
             data = try Data(contentsOf: url)
         } else {
-            var (body, response) = try await URLSession.shared.data(from: url)
+            var request = URLRequest(url: url)
+            headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
+            var (body, response) = try await URLSession.shared.data(for: request)
             for _ in 0..<2 {
                 guard let http = response as? HTTPURLResponse, http.mimeType == "text/html",
                       let html = String(data: body, encoding: .utf8) else { break }

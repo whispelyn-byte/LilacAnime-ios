@@ -21,6 +21,9 @@ class IosServices {
         scope.launch { call(completion) { source.detail(summary, sourceKey) } }
     }
     fun filters(sourceKey: String, completion: (SourceFilters?, String?) -> Unit) { scope.launch { call(completion) { source.filters(sourceKey) } } }
+    fun desktopStreams(sourceKey: String, animeId: String, number: Int, url: String, completion: (List<DesktopPlaybackStream>?, String?) -> Unit) {
+        scope.launch { call(completion) { source.desktopStreams(sourceKey, animeId, number, url) } }
+    }
     fun top(period: String, completion: (List<Anime>?, String?) -> Unit) { scope.launch { call(completion) { source.top(period) } } }
     fun schedule(week: Int, completion: (List<Anime>?, String?) -> Unit) { scope.launch { call(completion) { source.schedule(week) } } }
     fun findSubtitles(provider: String, title: String, episode: Int, episodeKey: String, anilistId: Int, completion: (List<SubtitleAsset>?, String?) -> Unit) {

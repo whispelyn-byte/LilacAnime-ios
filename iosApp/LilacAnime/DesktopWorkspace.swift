@@ -98,10 +98,14 @@ struct DesktopFullCatalog: View {
         }.padding(16).background(LilacStyle.card, in: RoundedRectangle(cornerRadius: 16))
     }
     private func picker(_ name: String, value: Binding<String>, options: [String]) -> some View {
-        Picker(name, selection: value) { Text("전체 " + name).tag(""); ForEach(options, id: \.self) { Text(label($0)).tag($0) } }
+        Picker(name, selection: value) { Text("전체 " + name).tag(""); ForEach(options, id: \.self) { Text(label($0, field: name)).tag($0) } }
     }
-    private func label(_ value: String) -> String {
-        ["TV": "TV 애니", "TV_SHORT": "단편 TV", "MOVIE": "극장판", "Movie": "극장판", "ONA": "웹 애니", "SPECIAL": "스페셜", "MUSIC": "뮤직비디오", "WINTER": "1분기", "SPRING": "2분기", "SUMMER": "3분기", "FALL": "4분기", "Action": "액션", "Adventure": "모험", "Fantasy": "판타지", "Romance": "로맨스", "Comedy": "코미디" ][value] ?? value
+    private func label(_ value: String, field: String) -> String {
+        if field == "장르" {
+            let key = value.lowercased().replacingOccurrences(of: "-", with: " ")
+            return ["action": "액션", "adventure": "모험", "comedy": "코미디", "drama": "드라마", "fantasy": "판타지", "horror": "공포", "mystery": "미스터리", "romance": "로맨스", "sci fi": "SF", "slice of life": "일상", "sports": "스포츠", "supernatural": "초자연", "psychological": "심리", "thriller": "스릴러", "music": "음악", "mecha": "메카", "ecchi": "에치", "mahou shoujo": "마법소녀"][key] ?? value
+        }
+        return ["TV": "TV 애니", "TV_SHORT": "단편 TV", "MOVIE": "극장판", "ONA": "웹 애니", "SPECIAL": "스페셜", "MUSIC": "뮤직비디오", "LIVE ACTION": "실사", "BD": "BD", "WINTER": "1분기", "SPRING": "2분기", "SUMMER": "3분기", "FALL": "4분기"][value.uppercased()] ?? value
     }
     private func applyFilters() {
         guard let facets = remote.filters else { remote.loadFilters(); return }

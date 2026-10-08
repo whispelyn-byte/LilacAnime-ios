@@ -1,6 +1,15 @@
 import XCTest
 
 final class PlaybackTests: XCTestCase {
+    func testScreenHoldKeepsPlaybackRunningAfterRelease() {
+        let app = XCUIApplication(); app.launchArguments = ["--ui-preview", "player"]; app.launch()
+        let play = app.buttons["재생"]
+        XCTAssertTrue(play.waitForExistence(timeout: 15)); play.tap()
+        XCTAssertTrue(app.buttons["일시정지"].waitForExistence(timeout: 5))
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.35)).press(forDuration: 1)
+        XCTAssertTrue(app.buttons["일시정지"].exists)
+        XCTAssertFalse(app.staticTexts["speed-boost"].exists)
+    }
     func testWorkspaceMenuCanReachCatalog() {
         let app = XCUIApplication(); app.launchArguments = ["--ui-preview", "workspace"]; app.launch()
         let menu = app.buttons["workspace-menu"]

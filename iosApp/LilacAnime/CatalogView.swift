@@ -23,7 +23,7 @@ final class CatalogModel: ObservableObject {
     func loadFilters() {
         filters = nil; filterError = nil; filtersLoading = true; let requestedSource = source
         if UIShowcase.enabled {
-            filters = SourceFilters(genres: ["Fantasy", "Adventure"], years: ["2026"], formats: ["TV", "MOVIE"], statuses: [], seasons: ["WINTER", "SPRING", "SUMMER", "FALL"], studios: [], supportsYear: true, supportsSeason: true, sorts: ["popular", "year", "score"], note: "", seasonValues: [])
+            filters = SourceFilters(genres: ["판타지", "모험"], years: ["2026"], formats: ["TV", "MOVIE"], statuses: [], seasons: ["WINTER", "SPRING", "SUMMER", "FALL"], studios: [], supportsYear: true, supportsSeason: true, sorts: ["popular", "year", "score"], note: "", seasonValues: [])
             filtersLoading = false; return
         }
         filterService.cancel()

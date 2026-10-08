@@ -9,6 +9,8 @@
 - Gemini 일별/분당 quota, Qwen 무료 quota, busy/timeout 모델 전환 대기 시간을 데스크탑과 맞춤.
 - 기존 설정·즐겨찾기·시청기록·자막·API 키 보존. Android와 같은 0.4.0 버전, iOS 빌드 33.
 
+# 0.4.0 iOS 리비전 2
+
 Android와 같은 앱 버전 **0.4.0**, iOS 빌드 **32** (v0.4.0-ios.2)입니다.
 
 LilacAnime-desktop 0.5.5의 전체 기능군을 iOS 네이티브 구조로 이식했습니다.

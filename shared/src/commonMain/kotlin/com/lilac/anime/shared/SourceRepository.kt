@@ -1,6 +1,7 @@
 package com.lilac.anime.shared
 import com.fleeksoft.ksoup.Ksoup
 import com.lilac.anime.shared.ported.*
+import io.ktor.client.request.forms.submitForm
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.*
@@ -107,6 +108,13 @@ class SourceRepository(private val client: HttpClient = newSharedClient()) {
         if (source == "ohli24") return DesktopSourceParser.koreanList(getText("https://www.ohli24.net/ing"), source)
         if (source == "reanime") return schedule(0)
         return browse(source, filter = BrowseFilter(year = currentCatalogDate().take(4), status = "RELEASING"))
+    }
+    suspend fun recordView(anime: Anime): SourceExtras {
+        if (anime.source != "linkkf" || !Regex("^\\d+$").matches(anime.id)) return SourceExtras("", emptyList())
+        try { client.submitForm("https://linkkf1.5imgdarr.top/api/view.php",
+            parametersOf("action" to listOf("record"), "id" to listOf(anime.id))) { header("Referer", "https://linkkf.app/up/" + anime.id + "/") } }
+        catch (e: CancellationException) { throw e } catch (_: Exception) { }
+        return extras(anime)
     }
     suspend fun extras(anime: Anime): SourceExtras {
         if (anime.source != "linkkf" && anime.seriesTagIds.isEmpty()) return SourceExtras("", emptyList())

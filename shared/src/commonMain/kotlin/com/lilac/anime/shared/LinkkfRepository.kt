@@ -126,7 +126,7 @@ internal fun parseAnime(item: JsonObject?): Anime? {
         genres = item.text("postanigenres", "genres").split(',', '|', '/').map(String::trim).filter(String::isNotEmpty),
         year = item.text("postyear"), format = item.text("postseasontype"),
         airedDate = item.text("postdate", "datepub"), studios = item.text("poststudios").split(',', '|', '/').map(String::trim).filter(String::isNotBlank),
-        source = item.text("anisource"), romaji = item.text("romaji"), english = item.text("english"), native = item.text("native"),
+        source = "linkkf", romaji = item.text("romaji"), english = item.text("english"), native = item.text("native"),
         synonyms = item.text("anisynonyms"), note = item.text("postnote", "postnoti"),
         seasonTypeTagIds = item.text("postseasontypetagid").split(',').mapNotNull(String::toIntOrNull),
         studioTagIds = item.text("studiostagid").split(',').mapNotNull(String::toIntOrNull),

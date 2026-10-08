@@ -44,6 +44,9 @@ struct AnimePosterCard: View {
 }
 struct FeaturedAnimeCard: View {
     let anime: Anime
+    @EnvironmentObject private var library: LibraryStore
+    @ObservedObject private var names = DesktopCatalog.shared
+    private var saved: SavedAnime { SavedAnime(anime, source: anime.source.isEmpty ? library.preferences.source : anime.source) }
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             AnimeArtwork(url: anime.backdrop.isEmpty ? anime.poster : anime.backdrop, height: 320)
@@ -53,10 +56,14 @@ struct FeaturedAnimeCard: View {
                 AnimeDisplayTitle(anime: anime).font(.system(size: 27, weight: .bold)).lineLimit(2)
                 Text([anime.format, anime.year, anime.genres.prefix(2).joined(separator: " · ")].filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.caption).foregroundStyle(.white.opacity(0.8))
+                if let overview = names.record(saved)?.overview, !overview.isEmpty {
+                    Text(overview).font(.caption).lineLimit(2).foregroundStyle(.white.opacity(0.85))
+                }
                 Label("지금 보기", systemImage: "play.fill").font(.subheadline.bold())
                     .padding(.horizontal, 18).padding(.vertical, 12).background(LilacStyle.accent, in: Capsule())
             }.foregroundStyle(.white).padding(22)
         }.frame(height: 320).clipShape(RoundedRectangle(cornerRadius: 28))
+            .task(id: saved.id) { if !UIShowcase.enabled { await names.enrich(anime, source: saved.source, cast: true) } }
     }
 }
 struct AnimeRail: View {

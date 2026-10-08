@@ -146,6 +146,11 @@ final class DetailModel: ObservableObject {
             }
         }
     }
+    func recordView() async {
+        guard let anime, anime.source == "linkkf" else { return }
+        do { try await Task.sleep(nanoseconds: 9_000_000_000); try Task.checkCancellation() } catch { return }
+        service.recordView(anime: anime) { [weak self] value, _ in Task { @MainActor in self?.extras = value } }
+    }
     deinit { service.close() }
 }
 struct DetailView: View {
@@ -217,6 +222,7 @@ struct DetailView: View {
             }.padding(.top, 12).padding(.bottom, 30)
         }.background(LilacStyle.background)
             .navigationTitle("작품 정보").navigationBarTitleDisplayMode(.inline)
+            .task(id: model.anime?.id) { if !UIShowcase.enabled { await model.recordView() } }
             .task {
                 if UIShowcase.enabled {
                     model.anime = summary

@@ -1,4 +1,7 @@
 name: KMP and iOS
+concurrency:
+  group: kmp-${{ github.ref }}
+  cancel-in-progress: true
 on:
   workflow_dispatch:
   push:

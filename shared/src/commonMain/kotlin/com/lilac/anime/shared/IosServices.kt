@@ -31,6 +31,7 @@ class IosServices {
     }
     fun sourceSections(sourceKey: String, completion: (List<SourceSection>?, String?) -> Unit) { scope.launch { call(completion) { source.sourceSections(sourceKey) } } }
     fun sourceSchedule(sourceKey: String, day: Int, completion: (List<Anime>?, String?) -> Unit) { scope.launch { call(completion) { source.sourceSchedule(sourceKey, day) } } }
+    fun recordView(anime: Anime, completion: (SourceExtras?, String?) -> Unit) { scope.launch { call(completion) { source.recordView(anime) } } }
     fun sourceExtras(anime: Anime, completion: (SourceExtras?, String?) -> Unit) { scope.launch { call(completion) { source.extras(anime) } } }
     fun top(period: String, completion: (List<Anime>?, String?) -> Unit) { scope.launch { call(completion) { source.top(period) } } }
     fun schedule(week: Int, completion: (List<Anime>?, String?) -> Unit) { scope.launch { call(completion) { source.schedule(week) } } }

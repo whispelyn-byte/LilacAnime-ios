@@ -326,7 +326,7 @@ final class DownloadStore: ObservableObject {
                     try Task.checkCancellation()
                     analyzedGroups.insert(group.map(\.id).sorted().joined(separator: "|"))
                 } catch is CancellationError { return }
-                catch { analyzedGroups.insert(group.map(\.id).sorted().joined(separator: "|")); error = "OP/ED 분석: " + error.localizedDescription }
+                catch { analyzedGroups.insert(group.map(\.id).sorted().joined(separator: "|")); self.error = "OP/ED 분석: " + error.localizedDescription }
             }
         }
     }

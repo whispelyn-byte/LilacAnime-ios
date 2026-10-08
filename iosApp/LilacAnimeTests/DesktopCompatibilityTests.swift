@@ -26,7 +26,9 @@ final class DesktopCompatibilityTests: XCTestCase {
     func testChatMLTemplateAndUnicodeToJSON() throws {
         let template = "{% for message in messages %}<|im_start|>{{ message.role }}\n{{ message.content }}<|im_end|>\n{% endfor %}{% if add_generation_prompt %}<|im_start|>assistant\n{% endif %}"
         XCTAssertEqual(try format(template, "규칙\u{1e}こんにちは"), "<|im_start|>system\n규칙<|im_end|>\n<|im_start|>user\nこんにちは<|im_end|>\n<|im_start|>assistant\n")
-        XCTAssertTrue(try format("{{messages|tojson}}", "한글").contains("\\ud55c"))
+        let json = try format("{{messages|tojson}}", "한글")
+        let messages = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [[String: String]])
+        XCTAssertEqual(messages.last?["content"], "한글")
     }
     func testHistoryKeepsNextEpisodeAndSuffixIdentity() throws {
         let anime = SavedAnime(AnimeSnapshot.shared.decode(content: """

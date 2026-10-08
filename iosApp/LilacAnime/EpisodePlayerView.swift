@@ -55,7 +55,7 @@ final class EpisodePlayerModel: ObservableObject {
             let file = SubtitleFiles.root.appendingPathComponent(relative).standardizedFileURL
             if file.path.hasPrefix(SubtitleFiles.root.path + "/"), FileManager.default.fileExists(atPath: file.path) {
                 sourceSubtitle = file; subtitle = file; subtitleFiles = [file]
-                if library.preferences.autoTranslation { translate(library: library) }
+                if library.preferences.autoTranslation && !SubtitleFiles.isKorean(file) { translate(library: library) }
             }
         }
         if subtitle == nil, !item.localSubtitles.isEmpty {
@@ -64,7 +64,7 @@ final class EpisodePlayerModel: ObservableObject {
         }
         if subtitle == nil, let saved = EpisodeSubtitleStore.shared.list(item).first(where: { !$0.translated }), let file = saved.file {
             sourceSubtitle = file; subtitle = file; subtitleFiles = [file]
-            if library.preferences.autoTranslation { translate(library: library) }
+            if library.preferences.autoTranslation && !SubtitleFiles.isKorean(file) { translate(library: library) }
         }
         configure(library)
         engine.onEnd = { [weak self, weak library] in
@@ -183,7 +183,7 @@ final class EpisodePlayerModel: ObservableObject {
         stopPrefetch(); sourceSubtitle = url; subtitle = url; engine.subtitle(url)
         EpisodeSubtitleStore.shared.save(url, item: item, provider: "선택", translated: EpisodeSubtitleStore.shared.list(item).contains { $0.file == url && $0.translated })
         library.saveSubtitle(animeID: item.anime.id, episodeID: item.episodeID, file: url, offset: subtitleOffset)
-        if translate && library.preferences.autoTranslation { self.translate(library: library) }
+        if translate && library.preferences.autoTranslation && !SubtitleFiles.isKorean(url) { self.translate(library: library) }
         prefetchNext(library: library, token: generation)
     }
     private func preferredSubtitle(_ files: [URL]) -> URL? {

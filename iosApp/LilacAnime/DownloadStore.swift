@@ -350,7 +350,7 @@ final class DownloadStore: ObservableObject {
                 translatedDownloads.insert(entry.id)
                 let folder = Self.directory.appendingPathComponent(entry.id)
                 let files = (entry.subtitleFiles ?? []).map { folder.appendingPathComponent($0) }
-                guard !files.contains(where: { $0.lastPathComponent.hasPrefix("translated-") }),
+                guard !files.contains(where: { $0.lastPathComponent.hasPrefix("translated-") || SubtitleFiles.isKorean($0) }),
                       let original = files.first(where: { !SubtitleFiles.isKorean($0) }) else { continue }
                 let item = entry.playback
                 translationStatus = entry.anime.title + " · " + entry.title + " 자막 번역"

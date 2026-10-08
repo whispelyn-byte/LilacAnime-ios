@@ -5,8 +5,8 @@ Sources/LilacLocalAI/LocalAI.cpp wraps llama.cpp with one shared context, CPU/Me
 ## Pinned llama.cpp and Jinja
 
 - Release b11490, commit 9c2e0e491a822adae1f0b1c831adb4160057d24f.
-- scripts/build-native.sh checks the source commit, builds official iOS device and arm64 simulator frameworks, and copies the result to ignored Frameworks/llama.xcframework.
-- The official release archive lacks the simulator slice required by this app's test suite. The script builds both slices from source and lowers the deployment target to iOS 16.
+- scripts/build-native.sh checks the source commit, builds official iOS device arm64 and universal arm64/x86_64 simulator frameworks, and copies the result to ignored Frameworks/llama.xcframework.
+- The official release archive lacks the simulator slice required by this app's test suite. The script builds the required slices from source and lowers the deployment target to iOS 16.
 - Sources/LilacLocalAI/Jinja/ vendors common/jinja/{caps,lexer,parser,runtime,string,value}.{cpp,h}, utils.h, common/json.{cpp,h}, common/json.hpp and common/unicode.{cpp,h} from that commit.
 - Modifications: local include paths; replace the isolated JSON helper's GGML_ASSERT with assert; preserve UTF-8 helpers. The interpreter executes the model's real template, including Gemma 4's full template and enable_thinking.
 - llama.cpp/Jinja is MIT. The copyright and complete license are in Jinja/LICENSE.txt. The bundled nlohmann JSON 3.12.0 header retains its copyright; its full MIT license is NLOHMANN-LICENSE.txt.

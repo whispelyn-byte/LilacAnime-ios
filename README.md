@@ -18,7 +18,7 @@
   작품 탐색부터 회차 재생, 자막 검색·번역, 이어보기와 오프라인 감상까지 제공합니다.
 </p>
 
-현재 Android 원본과 같은 **0.4.0**을 기준으로 iOS 빌드 **33**을 사용합니다.
+현재 Android 원본과 같은 **0.4.0**을 기준으로 iOS 빌드 **33**을 사용합니다. 새 설치의 기본 영상 소스는 **ReAnime**이며, 기존에 선택한 소스는 유지합니다.
 
 ## 주요 기능
 
@@ -48,10 +48,10 @@ PC 창 버튼·설치 프로그램·CUDA·외장 폴더 직접 지정은 iOS의 
   <img src="docs/screenshots/models-dark.png" width="230" alt="로컬 AI 모델 관리">
 </p>
 <p align="center">
-  <img src="docs/screenshots/workspace-ipad-dark.png" width="700" alt="iPad 데스크탑 작업 공간">
+  <img src="docs/screenshots/workspace-ipad-dark.png" width="700" alt="iPad 홈">
 </p>
 
-캡처는 시뮬레이터에서 예시 데이터를 사용했습니다. 실제 작품 이미지나 영상 재생 캡처가 아닙니다.
+캡처는 [빌드 33 검증](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37778376087)에서 시뮬레이터와 예시 데이터로 생성했습니다. 실제 작품 이미지나 영상 재생 캡처가 아닙니다. 플레이어는 가로 전체 화면으로 표시되며, 원본 디스플레이 캡처의 방향을 유지했습니다.
 
 ## 설치
 
@@ -77,7 +77,7 @@ https://github.com/whispelyn-byte/LilacAnime-ios/releases/latest/download/source
 
 ## 처음 실행할 때
 
-1. 홈 상단 또는 탐색 탭에서 영상 소스를 선택합니다.
+1. 메뉴에서 **전체**로 들어가 영상 소스를 선택합니다. 새 설치는 ReAnime로 시작합니다.
 2. 작품을 선택하고 첫 회차 또는 이어보기를 누릅니다.
 3. 재생 화면의 자막 메뉴에서 검색하거나 파일을 가져옵니다.
 4. **설정 → 한국어 제목 검색**에 TMDB API Key 또는 Read Access Token을 넣으면 한국어 자막 검색 제목을 찾는 데 사용합니다.
@@ -136,7 +136,7 @@ brew install xcodegen
 sh iosApp/scripts/verify.sh
 ~~~
 
-GitHub Actions는 공통 테스트, KMP iOS 테스트, 네이티브 iOS 테스트, 시뮬레이터 캡처, unsigned arm64 IPA 패키징을 실행합니다. **App Store 배포용 서명 빌드가 아닙니다.**
+GitHub Actions는 공통 테스트, KMP iOS 테스트, 네이티브 iOS 테스트, 시뮬레이터 캡처, unsigned arm64 IPA 패키징을 실행합니다. Intel 시뮬레이터에서 화면만 확인하려면 [빌드된 앱 ZIP](https://github.com/whispelyn-byte/LilacAnime-ios/releases/download/v0.4.0-ios.3/LilacAnime-simulator-intel.zip)을 풀어 실행 중인 iPhone Simulator에 `.app`을 드래그합니다. IPA 설치·서명은 필요하지 않습니다. **App Store 배포용 서명 빌드가 아닙니다.**
 
 앱 버전은 app/module.toml의 Android versionName을 사용합니다. iOS 빌드 번호는 Android versionCode에 iosApp/revision.txt의 값을 더합니다. 배포 태그는 `python3 iosApp/scripts/android-version.py --tag`로 확인합니다(현재 **v0.4.0-ios.3**). 해당 태그를 푸시하면 모든 테스트·빌드가 성공한 뒤 IPA와 실제 메타데이터로 생성한 SideStore source.json을 릴리스에 게시합니다. 최신 소스 주소는 그대로 유지됩니다.
 

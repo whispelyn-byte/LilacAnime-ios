@@ -22,7 +22,7 @@ sh iosApp/scripts/open-xcode.sh
 
 스크립트는 로컬 AI 프레임워크와 Xcode 프로젝트를 준비해 엽니다. Xcode 상단에서 **LilacAnime → iPhone Simulator**를 선택하고 **Cmd+R**을 누릅니다. 실행 목적이 화면 확인이면 IPA나 Apple 개발자 서명은 필요하지 않습니다.
 
-이미 빌드한 Intel 시뮬레이터 앱도 Actions의 ios-app-builds 아티팩트에서 `LilacAnime-simulator-intel.zip`으로 제공합니다. ZIP을 풀어 나온 `.app`을 실행 중인 iPhone Simulator에 드래그하거나 아래 명령으로 설치합니다.
+이미 빌드한 [Intel 시뮬레이터 앱 ZIP](https://github.com/whispelyn-byte/LilacAnime-ios/releases/download/v0.4.0-ios.3/LilacAnime-simulator-intel.zip)을 받을 수 있습니다. 이후 Actions의 ios-app-builds 아티팩트에서도 `LilacAnime-simulator-intel.zip`으로 제공합니다. ZIP을 풀어 나온 `.app`을 실행 중인 iPhone Simulator에 드래그하거나 아래 명령으로 설치합니다.
 
 ~~~sh
 xcrun simctl install booted /path/to/LilacAnime.app
@@ -64,6 +64,14 @@ SideStore의 인증 갱신과 새 버전 설치는 별개입니다. 기존 앱�
 
 ## 검증 기록
 
+현재 빌드 33: [37778376087](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37778376087), 앱 소스 ee08a08. JVM **39개**, KMP iOS, Swift/C++ 네이티브 **21개**, UI **1개**가 통과했고 iPhone/iPad 캡처와 simulator/device arm64 앱·IPA를 생성했습니다. UI 테스트는 상세에서 가로 전체 화면 진입, 확대/해제 버튼 부재, 자막 모양 설정, 뒤로 복귀를 확인합니다. README 캡처는 이 빌드의 원본 파일입니다.
+
+Intel 교차 빌드: [37782455600](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37782455600), 4b0ea11. iOS x86_64 KMP와 mpv/llama.cpp/libarchive 의존성을 포함한 앱이 빌드되었고 실행 파일과 디버그 dylib의 x86_64 아키텍처, iphonesimulator 플랫폼, 0.4.0/build 33, 테스트 GGUF 미포함 및 ZIP CRC를 확인했습니다. ZIP **36,478,872 bytes**, SHA-256 **aafe29cf0c2e8d1ee758f98ea7c17a13e2e9a11c0267a960738cd6f9d99fa524**. Intel/macOS VM에서의 실제 실행·속도는 CI 검증 범위에 포함하지 않습니다.
+
+두 검증 소스를 main에 합쳤습니다. ARM 실행 테스트와 Intel 교차 빌드는 위의 별도 실행 기록을 기준으로 하며, 합친 커밋에서 동일한 전체 빌드를 반복하지 않았습니다.
+
+[빌드 33 릴리즈 패키징 37785699943](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37785699943)과 공개 [v0.4.0-ios.3](https://github.com/whispelyn-byte/LilacAnime-ios/releases/tag/v0.4.0-ios.3) 다운로드를 확인했습니다. IPA와 source.json의 버전·빌드·크기·최소 iOS가 일치하고, Info.plist를 제외한 앱 파일 **445개**가 검증한 device 아티팩트와 동일합니다. IPA **28,708,573 bytes**, SHA-256 **759e3016882cf430bad6dbfd4dee7ee2859e136eb59c8a47428f71d9cd3ebf85**. 최신 IPA/source.json의 공개 다운로드는 HTTP 200입니다.
+
 이전 안정 빌드: [37733189254](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37733189254), 34db062, 앱 0.4.0/build 31; JVM 24개·KMP iOS·네이티브 8개·device arm64·IPA.
 전체 데스크탑 기능 이식 빌드: [37751485817](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37751485817), eae4aad, 앱 **0.4.0/build 32**. JVM **33개**, KMP iOS 테스트, Swift/C++ 네이티브 **19개**가 통과했고 simulator/device arm64 앱 및 unsigned IPA를 생성했습니다.
 
@@ -71,7 +79,7 @@ SideStore의 인증 갱신과 새 버전 설치는 별개입니다. 기존 앱�
 생성된 IPA의 Info.plist·arm64 Mach-O·iPhoneOS 플랫폼·모델 프리셋 10개·라이선스 고지 및 테스트용 모델 미포함을 확인했습니다. 예시 UI 캡처는 실제 영상 서비스 재생 검증과 구분합니다.
 
 이미 빌드한 simulator 앱만 다시 실행하는 Capture verified iOS app 워크플로도 제공합니다. iPhone/iPad 작업 공간을 실행 후 5/15/30초에 캡처하고 앱 로그를 저장하며, 앱을 다시 컴파일하지 않습니다.
-[작업 공간 재캡처 37756362510](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37756362510)에서 iPad 사이드바/본문과 iPhone 메뉴 복귀 버튼을 확인했습니다. README에는 앱 첫 실행을 기다린 30초 캡처를 사용합니다.
+[작업 공간 재캡처 37756362510](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37756362510)에서 iPad 사이드바/본문과 iPhone 메뉴 복귀 버튼을 확인했습니다. 당시 README에는 앱 첫 실행을 기다린 30초 캡처를 사용했습니다.
 
 [릴리즈 패키징 37757654615](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37757654615)도 성공했습니다. 공개 [v0.4.0-ios.2](https://github.com/whispelyn-byte/LilacAnime-ios/releases/tag/v0.4.0-ios.2) IPA를 다시 내려받아 재패키징한 Info.plist 외 앱 파일 **445개**의 내용이 검증한 device 아티팩트와 동일함을 확인했습니다. IPA와 SideStore source.json의 버전·빌드·크기·최소 iOS가 일치하며 공개 다운로드는 HTTP 200입니다.
 릴리즈 IPA: **28,393,416 bytes**, SHA-256 **0f73d5ce8ce8d20920037a4c7dfdb2fdb3e4d2f1a255c68a3ae140ac2da7998d**.

@@ -83,6 +83,39 @@ class PortedFeaturesTest {
             assertEquals(2, calls)
         } finally { translator.close() }
     }
+    @Test fun geminiQuotaSwitchesToFlashButNeverPro() = runTest {
+        val called = mutableListOf<String>()
+        val engine = MockEngine { request ->
+            val json = headersOf(HttpHeaders.ContentType, "application/json")
+            if (request.url.encodedPath.endsWith("/models")) return@MockEngine respond("""{"models":[{"name":"models/gemini-2.5-flash","supportedGenerationMethods":["generateContent"]},{"name":"models/gemini-2.0-flash","supportedGenerationMethods":["generateContent"]},{"name":"models/gemini-2.5-pro","supportedGenerationMethods":["generateContent"]}]}""", HttpStatusCode.OK, json)
+            called += request.url.encodedPath
+            if (request.url.encodedPath.contains("2.5-flash")) respond("""{"error":{"message":"quota exhausted"}}""", HttpStatusCode.TooManyRequests, json)
+            else respond("""{"candidates":[{"content":{"parts":[{"text":"{\"lines\":[{\"i\":1,\"t\":\"안녕\"}]}"}]}}]}""", HttpStatusCode.OK, json)
+        }
+        val translator = CloudTranslator(HttpClient(engine) { expectSuccess = true })
+        try {
+            assertEquals(listOf("안녕"), translator.translate(listOf("Hello"), TranslationConfig("gemini", "key", "gemini-2.5-flash")))
+            assertEquals(2, called.size)
+            assertTrue(called.last().contains("2.0-flash"))
+            assertTrue(called.none { it.contains("pro") })
+        } finally { translator.close() }
+    }
+    @Test fun openaiBillingQuotaDoesNotSwitchPaidModels() = runTest {
+        var posts = 0
+        val engine = MockEngine { request ->
+            val json = headersOf(HttpHeaders.ContentType, "application/json")
+            if (request.url.encodedPath == "/v1/models") return@MockEngine respond("""{"data":[{"id":"gpt-4.1-mini"},{"id":"gpt-4.1-nano"}]}""", HttpStatusCode.OK, json)
+            posts++
+            respond("""{"error":{"code":"insufficient_quota","message":"billing quota exceeded"}}""", HttpStatusCode.TooManyRequests, json)
+        }
+        val translator = CloudTranslator(HttpClient(engine) { expectSuccess = true })
+        try {
+            assertFailsWith<io.ktor.client.plugins.ClientRequestException> {
+                translator.translate(listOf("Hello"), TranslationConfig("openai", "key", "gpt-4.1-mini"))
+            }
+            assertEquals(1, posts)
+        } finally { translator.close() }
+    }
     @Test fun driveConfirmationUsesOnlyGoogleHttpsAndPreservesHiddenValues() {
         val html = """<form action="https://drive.usercontent.google.com/download"><input name="id" value="abc"><input name="confirm" value="token &amp; value"></form>"""
         val url = Url(SubtitleTools.driveConfirmation(html, "https://drive.google.com/uc"))

@@ -8,14 +8,22 @@ struct DesktopRelease: Decodable {
 }
 @MainActor
 final class DesktopUpdater: ObservableObject {
+    static let shared = DesktopUpdater()
+    @Published private(set) var updateAvailable = false
+    private var lastCheck = Date.distantPast
     @Published var release: DesktopRelease?
     @Published var latestBuild: String?
     @Published var status = "업데이트를 확인하세요."
     @Published var busy = false
     @Published var downloaded: URL?
     var current: String { (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") + " (" + (Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?") + ")" }
+    func automaticCheck() {
+        guard !busy, Date().timeIntervalSince(lastCheck) > 6 * 3600 else { return }
+        check()
+    }
     func check() {
-        busy = true
+        guard !busy else { return }
+        busy = true; lastCheck = Date()
         Task {
             defer { busy = false }
             do {
@@ -32,7 +40,8 @@ final class DesktopUpdater: ObservableObject {
                     }
                 }
                 let current = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
-                status = (Int(latestBuild ?? "0") ?? 0) > (Int(current) ?? 0) ? "새 버전 " + result.tag_name + "을 받을 수 있습니다." : "최신 릴리즈: " + result.tag_name
+                updateAvailable = (Int(latestBuild ?? "0") ?? 0) > (Int(current) ?? 0)
+                status = updateAvailable ? "새 버전 " + result.tag_name + "을 받을 수 있습니다." : "최신 릴리즈: " + result.tag_name
             } catch { status = error.localizedDescription }
         }
     }
@@ -55,7 +64,7 @@ final class DesktopUpdater: ObservableObject {
     }
 }
 struct DesktopUpdateView: View {
-    @StateObject private var updater = DesktopUpdater()
+    @ObservedObject private var updater = DesktopUpdater.shared
     var body: some View {
         List {
             Section("업데이트 · 정보") {

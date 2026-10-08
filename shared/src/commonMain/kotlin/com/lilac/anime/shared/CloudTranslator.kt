@@ -46,7 +46,7 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
             catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
         val preferred = config.model.removePrefix("models/").ifBlank { CloudModelRules.default(config.provider, available) }
         val chain = CloudModelRules.chain(config.provider, preferred, available)
-        return chain.filter { spent[config.provider + ":" + it]?.hasPassedNow() != false }.ifEmpty { listOf(preferred) }
+        return chain.filter { spent[config.provider + ":" + config.region + ":" + config.key.hashCode() + ":" + it]?.hasPassedNow() != false }.ifEmpty { listOf(preferred) }
     }
     suspend fun translate(lines: List<String>, config: TranslationConfig): List<String> {
         if (lines.isEmpty()) return emptyList()
@@ -73,7 +73,7 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
                 val message = e.response.bodyAsText()
                 if (status !in listOf(404, 429, 500, 502, 503, 504) ||
                     config.provider == "openai" && Regex("insufficient_quota|billing|exceeded your current quota", RegexOption.IGNORE_CASE).containsMatchIn(message)) throw e
-                spent[config.provider + ":" + model] = TimeSource.Monotonic.markNow() + kotlin.time.Duration.parse(if (status >= 500) "5m" else "1h")
+                spent[config.provider + ":" + config.region + ":" + config.key.hashCode() + ":" + model] = TimeSource.Monotonic.markNow() + kotlin.time.Duration.parse(if (status >= 500) "5m" else "1h")
             }
         }
         val output = result ?: throw (failure ?: IllegalStateException("사용 가능한 번역 모델이 없습니다."))

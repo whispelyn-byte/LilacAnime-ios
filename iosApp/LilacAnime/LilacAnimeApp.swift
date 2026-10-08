@@ -5,6 +5,7 @@ struct LilacAnimeApp: App {
     @StateObject private var library = LibraryStore()
     @StateObject private var downloads = DownloadStore.shared
     @State private var selectedTab = 0
+    @Environment(\.scenePhase) private var scenePhase
     var body: some Scene {
         WindowGroup {
             Group {
@@ -26,7 +27,8 @@ struct LilacAnimeApp: App {
             }.environmentObject(library).environmentObject(downloads)
                 .tint(LilacStyle.accent)
                 .preferredColorScheme(library.preferences.theme == "system" ? nil : (library.preferences.theme == "light" ? .light : .dark))
-                .task { SubtitleFiles.restoreFonts(); downloads.library = library }
+                .task { SubtitleFiles.restoreFonts(); downloads.library = library; if !UIShowcase.enabled { DesktopUpdater.shared.automaticCheck() } }
+                .onChange(of: scenePhase) { phase in if phase == .active && !UIShowcase.enabled { DesktopUpdater.shared.automaticCheck() } }
         }
     }
 }

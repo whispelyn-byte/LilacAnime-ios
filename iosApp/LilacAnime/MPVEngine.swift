@@ -88,6 +88,7 @@ final class MPVEngine: ObservableObject {
     func subtitle(_ file: URL) { pendingSubtitle = file; if fileLoaded { command(["sub-add", file.path, "select"]) } }
     func reloadSubtitle() { command(["sub-reload"]) }
     func selectTrack(_ track: MediaTrack) { set(track.type == "audio" ? "aid" : "sid", track.id.description) }
+    func toggleSubtitleVisibility() { set("sub-visibility", flag("sub-visibility") ? "no" : "yes") }
     func disableSubtitles() { set("sid", "no") }
     func set(_ name: String, _ value: String) { if let handle { mpv_set_property_string(handle, name, value) } }
     private func command(_ arguments: [String]) {

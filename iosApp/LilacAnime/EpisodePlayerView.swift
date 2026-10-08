@@ -341,7 +341,8 @@ struct EpisodePlayerView: View {
                         previous: { if let item = model.previous.popLast() { model.change(item, library: library, remember: false) } },
                         next: { let remaining = model.item.next; guard !remaining.isEmpty else { return }; var item = remaining[0]; item.next = Array(remaining.dropFirst()); model.change(item, library: library) },
                         subtitles: { subtitleSheet = true }, chapter: model.chapters.first(where: { model.engine.position >= $0.start && model.engine.position < $0.end }),
-                        skipChapter: { if let chapter = model.chapters.first(where: { model.engine.position >= $0.start && model.engine.position < $0.end }) { model.engine.seek(chapter.end) } })
+                        skipChapter: { if let chapter = model.chapters.first(where: { model.engine.position >= $0.start && model.engine.position < $0.end }) { model.engine.seek(chapter.end) } },
+                        adjustSubtitle: { model.shiftSubtitle($0, library: library) })
                 }
             }.frame(maxWidth: .infinity).frame(height: fullscreen ? nil : 255).background(.black)
             if !fullscreen {
@@ -451,6 +452,7 @@ struct EpisodePlayerView: View {
     }
 }
 struct PlayerControls: View {
+    @EnvironmentObject private var library: LibraryStore
     @ObservedObject var engine: MPVEngine
     let seek: Double
     let title: String
@@ -465,6 +467,7 @@ struct PlayerControls: View {
     let subtitles: () -> Void
     let chapter: OfflineChapter?
     let skipChapter: () -> Void
+    let adjustSubtitle: (Double) -> Void
     @State private var dragging = false
     @State private var value = 0.0
     @State private var visible = true
@@ -550,6 +553,17 @@ struct PlayerControls: View {
                     Button("") { engine.toggleMute() }.keyboardShortcut("m", modifiers: [])
                     Button("", action: expand).keyboardShortcut("f", modifiers: [])
                     Button("", action: back).keyboardShortcut(.escape, modifiers: [])
+                    Group {
+                        Button("") { engine.toggleSubtitleVisibility() }.keyboardShortcut("c", modifiers: [])
+                        Button("") { shiftSubtitle(-0.5) }.keyboardShortcut("z", modifiers: [])
+                        Button("") { shiftSubtitle(0.5) }.keyboardShortcut("x", modifiers: [])
+                        Button("") { if chapter != nil { skipChapter() } }.keyboardShortcut("s", modifiers: [])
+                        Button("") { changeSpeed(-0.25) }.keyboardShortcut("[", modifiers: [])
+                        Button("") { changeSpeed(0.25) }.keyboardShortcut("]", modifiers: [])
+                        Button("") { if canNext { next() } }.keyboardShortcut(.pageDown, modifiers: [])
+                        Button("") { if canPrevious { previous() } }.keyboardShortcut(.pageUp, modifiers: [])
+                        ForEach(0..<10) { digit in Button("") { engine.seek(engine.duration * Double(digit) / 10) }.keyboardShortcut(KeyEquivalent(Character(String(digit))), modifiers: []) }
+                    }
                 }.frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
             }
             .task(id: interaction) {
@@ -558,6 +572,13 @@ struct PlayerControls: View {
                 if !dragging { withAnimation { visible = false } }
             }
             .onChange(of: engine.paused) { paused in if paused { visible = true }; touch() }
+    }
+    private func shiftSubtitle(_ delta: Double) {
+        adjustSubtitle(delta)
+    }
+    private func changeSpeed(_ delta: Double) {
+        library.preferences.speed = max(0.25, min(2, library.preferences.speed + delta))
+        engine.set("speed", library.preferences.speed.description)
     }
     private func tapZone(_ delta: Double) -> some View {
         Color.clear.contentShape(Rectangle()).onTapGesture(count: 2) {

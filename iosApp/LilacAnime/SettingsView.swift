@@ -4,6 +4,7 @@ import LilacShared
 
 struct SettingsView: View {
     @EnvironmentObject private var store: LibraryStore
+    @ObservedObject private var updater = DesktopUpdater.shared
     @State private var apiKey = ""
     @State private var apiModels: [String] = []
     @State private var apiStatus: String?
@@ -133,7 +134,7 @@ struct SettingsView: View {
                 }
                 Section("저장 공간") {
                     NavigationLink("저장 자막·캐시 관리") { SubtitleStorageView() }
-                    NavigationLink("업데이트·릴리즈 노트") { DesktopUpdateView() }
+                    NavigationLink(updater.updateAvailable ? "새 버전 있음 · 업데이트·릴리즈 노트" : "업데이트·릴리즈 노트") { DesktopUpdateView() }
                     Toggle("다운로드 자막도 자동 번역", isOn: Binding(get: { store.preferences.translateDownloads ?? true }, set: { store.preferences.translateDownloads = $0 }))
                     Toggle("다운로드에 자막 포함", isOn: Binding(get: { store.preferences.downloadSubtitles ?? true }, set: { store.preferences.downloadSubtitles = $0 }))
                     Button("시청 기록 삭제", role: .destructive) { store.clearHistory() }

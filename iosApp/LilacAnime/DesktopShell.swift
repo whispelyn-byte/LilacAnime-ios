@@ -99,7 +99,7 @@ struct DesktopSavedView: View {
                             LazyVGrid(columns: [GridItem(.adaptive(minimum: 140))], spacing: 20) {
                                 ForEach(library.favorites) { saved in
                                     NavigationLink { DetailView(summary: saved.anime, source: saved.source) } label: { AnimePosterCard(anime: saved.anime) }
-                                        .buttonStyle(.plain).contextMenu { Button("내 목록에서 삭제", role: .destructive) { library.toggle(saved) } }
+                                        .buttonStyle(.plain).contextMenu { Button("내 목록에서 삭제", role: .destructive) { library.toggle(saved.anime, source: saved.source) } }
                                 }
                             }.padding(20)
                         }

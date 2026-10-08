@@ -1,6 +1,13 @@
 package com.lilac.anime.shared
 import kotlin.test.*
 class DesktopCompleteTest {
+    @Test fun continuedSeasonUsesConfirmedPrequelCountAndRejectsExplicitWrongSeason() {
+        val posts = listOf(com.lilac.anime.shared.ported.KairanPost("작품 15화", "https://example.test/15"),
+            com.lilac.anime.shared.ported.KairanPost("작품 1기 03화", "https://example.test/wrong"))
+        assertEquals("https://example.test/15", DesktopEpisodeRules.findPost("작품 2기", 3, posts, "3", listOf(12))?.post?.url)
+        assertNull(DesktopEpisodeRules.findPost("작품 2기", 3, posts, "3", emptyList()))
+    }
+
     @Test fun cloudDefaultsUseStableFlashAndOnlySmallFallbackModels() {
         val models = CloudModelRules.sorted("gemini", listOf("gemini-3-flash-preview", "gemini-2.5-flash", "gemini-3-image", "gemini-2.5-pro"))
         assertEquals("gemini-2.5-flash", CloudModelRules.default("gemini", models))

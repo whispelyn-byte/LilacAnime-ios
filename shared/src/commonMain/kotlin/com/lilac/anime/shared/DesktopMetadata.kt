@@ -33,6 +33,27 @@ class DesktopMetadataRepository(private val client: HttpClient = newSharedClient
             if (id.toIntOrNull() != null && TitleCandidates.isKorean(title)) put(id, title)
         } }.toString()
     }
+    private val prequels = mutableMapOf<Int, List<Int>>()
+    suspend fun previousEpisodeOffsets(anilist: Int, title: String): List<Int> {
+        if (anilist <= 0 || DesktopTitleRules.season(title) < 2) return emptyList()
+        prequels[anilist]?.let { return it }
+        var current = anilist
+        val visited = mutableSetOf<Int>()
+        val counts = mutableListOf<Int>()
+        while (visited.add(current) && visited.size <= 8) {
+            val query = "query(" + "$" + "id:Int){Media(id:" + "$" + "id,type:ANIME){relations{edges{relationType node{id format episodes}}}}}"
+            val root = Json.parseToJsonElement(client.post("https://graphql.anilist.co") {
+                contentType(ContentType.Application.Json)
+                setBody(buildJsonObject { put("query", query); put("variables", buildJsonObject { put("id", current) }) }.toString())
+            }.bodyAsText()).jsonObject
+            val prequel = root.obj("data").obj("Media").obj("relations").list("edges").filterIsInstance<JsonObject>().firstOrNull {
+                it.text("relationType") == "PREQUEL" && it.obj("node").text("format") in listOf("TV", "TV_SHORT", "ONA") && (it.obj("node").number("episodes") ?: 0) > 0
+            }?.obj("node") ?: break
+            counts += prequel.number("episodes") ?: break
+            current = prequel.number("id") ?: break
+        }
+        return listOfNotNull(counts.firstOrNull(), counts.sum().takeIf { it > 0 }).distinct().also { prequels[anilist] = it }
+    }
     private val tmdb = TmdbTitleResolver(client)
     private suspend fun media(anime: Anime, includeCast: Boolean): JsonObject {
         val query = "query(" + "$" + "id:Int," + "$" + "search:String){Page(perPage:5){media(id:" + "$" + "id,search:" + "$" + "search,type:ANIME,sort:SEARCH_MATCH){id idMal format synonyms title{native romaji english}" + (if (includeCast) " characters(perPage:25,sort:[ROLE,RELEVANCE]){nodes{name{full native first last} gender}}" else "") + "}}}"

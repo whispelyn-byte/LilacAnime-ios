@@ -46,7 +46,11 @@ final class DownloadStore: ObservableObject {
     nonisolated static let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Downloads")
     static let shared = DownloadStore()
     @Published private(set) var entries: [DownloadEntry] = []
-    weak var library: LibraryStore?
+    weak var library: LibraryStore? { didSet { translateSavedDownloads() } }
+    @Published var translationStatus: String?
+    private let downloadTranslator = TranslationCoordinator()
+    private var subtitleTask: Task<Void, Never>?
+    private var translatedDownloads: Set<String> = []
     @Published var byteProgress: [String: Double] = [:]
     @Published var transferRate: [String: Double] = [:]
     private var samples: [String: (Date, Int64)] = [:]
@@ -187,7 +191,7 @@ final class DownloadStore: ObservableObject {
                 }
                 try Task.checkCancellation()
                 update(id) { $0.rootFile = root; $0.parts = parts; $0.completed = parts.filter(\.done).count; $0.total = parts.count; $0.status = "다운로드 중" }
-                if parts.allSatisfy(\.done) { update(id) { $0.localFile = root; $0.status = "완료" }; return }
+                if parts.allSatisfy(\.done) { update(id) { $0.localFile = root; $0.status = "완료" }; translateSavedDownloads(); return }
                 pump()
             } catch is CancellationError { update(id) { $0.status = "중단됨" } }
             catch { update(id) { $0.status = "실패"; $0.error = error.localizedDescription } }
@@ -229,6 +233,7 @@ final class DownloadStore: ObservableObject {
             entries[index].completed = entries[index].parts?.filter(\.done).count ?? 0
             if entries[index].parts?.allSatisfy(\.done) == true {
                 entries[index].localFile = entries[index].rootFile; entries[index].status = "완료"; entries[index].error = nil
+                translateSavedDownloads()
             }
             persist()
         } catch { backgroundFailed(description, error: error) }
@@ -270,9 +275,41 @@ final class DownloadStore: ObservableObject {
             samples[description] = (Date(), written)
         } else if samples[description] == nil { samples[description] = (Date(), written) }
     }
-    func pauseAll() { stopResolving(); for entry in entries where entry.localFile == nil { cancel(entry.id) } }
+    func pauseAll() { subtitleTask?.cancel(); downloadTranslator.cancel(); stopResolving(); for entry in entries where entry.localFile == nil { cancel(entry.id) } }
     func resumeAll() { enqueue(entries.filter { $0.localFile == nil }.map(\.playback), quality: library?.preferences.quality ?? "Auto") }
     func clearCompleted() { for entry in entries where entry.localFile != nil { delete(entry.id) } }
+    func translateSavedDownloads() {
+        guard subtitleTask == nil, let library, library.preferences.translateDownloads != false,
+              library.preferences.autoTranslation, library.preferences.downloadSubtitles != false else { return }
+        subtitleTask = Task(priority: .utility) {
+            defer { subtitleTask = nil; translationStatus = nil }
+            while let entry = entries.first(where: { $0.localFile != nil && !translatedDownloads.contains($0.id) }) {
+                if Task.isCancelled { return }
+                translatedDownloads.insert(entry.id)
+                let folder = Self.directory.appendingPathComponent(entry.id)
+                let files = (entry.subtitleFiles ?? []).map { folder.appendingPathComponent($0) }
+                guard !files.contains(where: { $0.lastPathComponent.hasPrefix("translated-") }),
+                      let original = files.first(where: { !SubtitleFiles.isKorean($0) }) else { continue }
+                let item = entry.playback
+                translationStatus = entry.anime.title + " · " + entry.title + " 자막 번역"
+                EpisodeSubtitleStore.shared.save(original, item: item, provider: "다운로드", translated: false)
+                downloadTranslator.translate(original, preferences: library.preferences, anime: entry.anime, background: true) { [weak self] output in
+                    guard let self, !output.lastPathComponent.hasPrefix("working-") else { return }
+                    do {
+                        let name = "translated-" + output.lastPathComponent
+                        let target = folder.appendingPathComponent(name)
+                        if !FileManager.default.fileExists(atPath: target.path) { try FileManager.default.copyItem(at: output, to: target) }
+                        self.update(entry.id) { if !($0.subtitleFiles ?? []).contains(name) { $0.subtitleFiles = ($0.subtitleFiles ?? []) + [name] } }
+                        EpisodeSubtitleStore.shared.save(output, item: item, provider: library.preferences.translationProvider, translated: true)
+                    } catch { self.error = error.localizedDescription }
+                }
+                while downloadTranslator.running && !Task.isCancelled {
+                    do { try await Task.sleep(nanoseconds: 500_000_000) } catch { downloadTranslator.cancel(); return }
+                }
+                if downloadTranslator.error != nil { translatedDownloads.remove(entry.id); error = downloadTranslator.error; return }
+            }
+        }
+    }
     func portableEntries() -> [DownloadEntry] {
         entries.filter { $0.localFile != nil }.map { entry in var copy = entry; copy.stream.headers = [:]; copy.stream.referer = ""; copy.stream.manifestKey = nil; copy.stream.subtitles = []; copy.chapters = OfflineAnalyzer.chapters(animeID: entry.anime.id, episodeID: entry.episodeID); return copy }
     }
@@ -338,6 +375,7 @@ struct DownloadsView: View {
                 }
                   }
                 }
+                if let status = downloads.translationStatus { ProgressView(status) }
                 if let error = downloads.error { Text(error).foregroundStyle(.red) }
                 if let analysisMessage { Text(analysisMessage) }
                 Button("다운로드 회차 OP/ED 분석") {

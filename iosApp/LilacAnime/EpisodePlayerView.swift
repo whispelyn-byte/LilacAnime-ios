@@ -281,7 +281,7 @@ final class EpisodePlayerModel: ObservableObject {
                 EpisodeSubtitleStore.shared.save(prepared.0, item: next, provider: prepared.1, translated: false)
                 if SubtitleFiles.isKorean(prepared.0) { prefetchStatus = "다음 화 한국어 자막 저장 완료"; return }
                 prefetchStatus = "다음 화 미리 번역 중"
-                pretranslation.translate(prepared.0, preferences: library.preferences, anime: next.anime) { output in
+                pretranslation.translate(prepared.0, preferences: library.preferences, anime: next.anime, background: true) { output in
                     EpisodeSubtitleStore.shared.save(output, item: next, provider: library.preferences.translationProvider, translated: true)
                 }
                 while pretranslation.running && !Task.isCancelled {

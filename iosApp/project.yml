@@ -22,7 +22,7 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "0.4.0"
-    CURRENT_PROJECT_VERSION: "30"
+    CURRENT_PROJECT_VERSION: "32"
     ENABLE_USER_SCRIPT_SANDBOXING: NO
 targets:
   LilacAnime:
@@ -76,7 +76,11 @@ targets:
   LilacAnimeTests:
     type: bundle.unit-test
     platform: iOS
-    sources: [LilacAnimeTests]
+    sources:
+      - path: LilacAnimeTests
+        excludes: [Fixtures]
+      - path: LilacAnimeTests/Fixtures
+        buildPhase: resources
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES

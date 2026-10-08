@@ -6,16 +6,21 @@ import io.ktor.http.*
 data class SubtitleAsset(val name: String, val url: String, val source: String, val score: Double = 0.0)
 class SubtitleDiscovery(private val repository: SourceRepository = SourceRepository()) {
     private val blogs = mutableMapOf<String, List<KairanPost>>()
-    suspend fun search(provider: String, title: String, episode: Int, episodeKey: String, anilistId: Int): List<SubtitleAsset> =
-        when (provider) {
+    private val metadata = DesktopMetadataRepository()
+    suspend fun offsets(anilist: Int, title: String): List<Int> = try { metadata.previousEpisodeOffsets(anilist, title) }
+        catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { emptyList() }
+    suspend fun search(provider: String, title: String, episode: Int, episodeKey: String, anilistId: Int): List<SubtitleAsset> {
+        val offsets = if (provider == "jimaku") emptyList() else offsets(anilistId, title)
+        return when (provider) {
             "jimaku" -> jimaku(anilistId, episode)
-            "anissia" -> AnissiaDiscovery(repository).search(title, episode, episodeKey)
-            else -> blog(provider, title, episode, episodeKey)
+            "anissia" -> AnissiaDiscovery(repository).search(title, episode, episodeKey, offsets = offsets)
+            else -> blog(provider, title, episode, episodeKey, offsets)
         }
+    }
     suspend fun makers(title: String) = AnissiaDiscovery(repository).makers(title)
     suspend fun makerSubtitles(title: String, episode: Int, episodeKey: String, website: String) =
         AnissiaDiscovery(repository).search(title, episode, episodeKey, website)
-    private suspend fun blog(provider: String, title: String, episode: Int, episodeKey: String): List<SubtitleAsset> {
+    private suspend fun blog(provider: String, title: String, episode: Int, episodeKey: String, offsets: List<Int>): List<SubtitleAsset> {
         require(provider in listOf("kairan", "csora"))
         val base = if (provider == "kairan") "https://kairan03.blogspot.com" else "https://csora556.blogspot.com"
         val posts = blogs[provider] ?: run {
@@ -44,7 +49,7 @@ class SubtitleDiscovery(private val repository: SourceRepository = SourceReposit
             }
             all.values.toList().also { blogs[provider] = it }
         }
-        val match = KairanPostMatcher.findBestMatch(title, episode, posts, episodeKey) ?: return emptyList()
+        val match = DesktopEpisodeRules.findPost(title, episode, posts, episodeKey, offsets) ?: return emptyList()
         val html = repository.getText(match.post.url)
         val assets = Regex("""https?://(?:drive|docs)\.google\.com/[^\s"'<>\\]+""").findAll(html).mapNotNull { found ->
             val link = found.value.replace("&amp;", "&")
@@ -70,5 +75,5 @@ class SubtitleDiscovery(private val repository: SourceRepository = SourceReposit
             SubtitleAsset(name, if (link.startsWith("http")) link else "$base/" + link.trimStart('/'), "jimaku", if (SubtitleEpisodeMatcher.matches(name, episode)) 1.0 else 0.0)
         }.sortedByDescending { it.score }.distinctBy { it.url }
     }
-    fun close() = repository.close()
+    fun close() { repository.close(); metadata.close() }
 }

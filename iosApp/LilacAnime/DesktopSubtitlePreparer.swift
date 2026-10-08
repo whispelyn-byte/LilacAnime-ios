@@ -7,8 +7,15 @@ final class DesktopSubtitlePreparer {
     private let titleLookup = TitleLookup()
     func prepare(_ item: PlaybackItem, tracks: [RemoteSubtitle], preferences: AppPreferences) async throws -> (URL, String)? {
         if let saved = EpisodeSubtitleStore.shared.list(item).first(where: { !$0.translated }), let file = saved.file { return (file, saved.provider) }
+        var offsets: [Int] = []
         func select(_ files: [URL]) -> URL? {
-            files.first { SubtitleEpisodeMatcher.shared.matches(name: $0.lastPathComponent, episodeNumber: Int32(item.number), expectedSeason: nil) } ?? (files.count == 1 ? files.first : nil)
+            let wanted = [item.number] + offsets.map { item.number + $0 }
+            return files.first { file in
+                let parsed = SubtitleEpisodeMatcher.shared.parse(name: file.lastPathComponent)
+                if let season = parsed?.season, season.intValue != Int(DesktopTitleRules.shared.season(title: item.anime.title)) { return false }
+                if parsed?.episode == nil && files.count == 1 { return true }
+                return wanted.contains { SubtitleEpisodeMatcher.shared.matches(name: file.lastPathComponent, episodeNumber: Int32($0), expectedSeason: nil) }
+            }
         }
         for track in tracks where track.language.lowercased().hasPrefix("ko") || track.label.contains("한국") || track.label.lowercased().contains("korean") {
             try Task.checkCancellation()
@@ -19,6 +26,10 @@ final class DesktopSubtitlePreparer {
         let metadata = DesktopCatalog.shared.record(item.anime)
         var title = metadata?.korean.isEmpty == false ? metadata!.korean : item.anime.title
         if !TitleCandidates.shared.isKorean(title: title), let found = await titleLookup.resolve(title, aliases: [item.anime.anime.native, item.anime.anime.romaji, item.anime.anime.english]) { title = found }
+        let offsetValues: [KotlinInt] = await withCheckedContinuation { continuation in
+            service.episodeOffsets(anilistId: item.anime.anime.anilistId?.int32Value ?? Int32(metadata?.anilist ?? 0), title: title) { values, _ in continuation.resume(returning: values ?? []) }
+        }
+        offsets = offsetValues.map { $0.intValue }
         var providers = ["kairan", "csora", "anissia"]
         if let preferred = preferences.subtitleProvider, let index = providers.firstIndex(of: preferred) { providers.remove(at: index); providers.insert(preferred, at: 0) }
         if preferences.autoTranslation { providers.append("jimaku") }

@@ -1,5 +1,6 @@
 import XCTest
 import LilacLocalAI
+import LilacShared
 @testable import LilacAnime
 
 final class DesktopCompatibilityTests: XCTestCase {
@@ -7,7 +8,7 @@ final class DesktopCompatibilityTests: XCTestCase {
         let original = AppPreferences()
         let encoded = try JSONEncoder().encode(original)
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
-        for key in ["titleLanguage", "desktopWorkspace", "preferredServer", "modelSampling", "pretranslateNext", "downloadSubtitles", "translationModels", "cloudFallback"] { object.removeValue(forKey: key) }
+        for key in ["titleLanguage", "desktopWorkspace", "preferredServer", "modelSampling", "pretranslateNext", "downloadSubtitles", "translationModels", "cloudFallback", "localGPU", "translateDownloads"] { object.removeValue(forKey: key) }
         object["selectedGGUF"] = "existing.gguf"; object["source"] = "miruro"; object["subtitleOffset"] = 1.7
         let restored = try JSONDecoder().decode(AppPreferences.self, from: JSONSerialization.data(withJSONObject: object))
         XCTAssertEqual(restored.selectedGGUF, "existing.gguf")
@@ -20,12 +21,20 @@ final class DesktopCompatibilityTests: XCTestCase {
         let output = try format(template, "표기 기준\u{1e}こんにちは")
         XCTAssertTrue(output.contains("표기 기준")); XCTAssertTrue(output.contains("こんにちは"))
         XCTAssertTrue(output.contains("<|turn>model"))
-        XCTAssertTrue(output.hasSuffix("<|turn>model\n<|channel>final\n"))
+        XCTAssertTrue(output.hasSuffix("<|turn>model\n")); XCTAssertFalse(output.contains("<|think>"))
     }
     func testChatMLTemplateAndUnicodeToJSON() throws {
         let template = "{% for message in messages %}<|im_start|>{{ message.role }}\n{{ message.content }}<|im_end|>\n{% endfor %}{% if add_generation_prompt %}<|im_start|>assistant\n{% endif %}"
         XCTAssertEqual(try format(template, "규칙\u{1e}こんにちは"), "<|im_start|>system\n규칙<|im_end|>\n<|im_start|>user\nこんにちは<|im_end|>\n<|im_start|>assistant\n")
         XCTAssertTrue(try format("{{messages|tojson}}", "한글").contains("\\ud55c"))
+    }
+    func testHistoryKeepsNextEpisodeAndSuffixIdentity() throws {
+        let anime = SavedAnime(AnimeSnapshot.shared.decode(content: """
+        {"id":"a","title":"보존","episodes":[{"id":"4","number":4,"title":"4화"},{"id":"4a","number":4,"title":"4a화","displayNumber":"4a"},{"id":"5","number":5,"title":"5화"}]}
+        """), source: "reanime")
+        let item = PlaybackItem(entry: WatchEntry(id: "reanime:a#4", anime: anime, episodeID: "4", episodeTitle: "4화", number: 4,
+            watchURL: "https://example.test/watch", position: 100, duration: 1400, updatedAt: Date()))
+        XCTAssertEqual(item.next.map(\.episodeID), ["4a", "5"])
     }
     func testPortableDownloadRejectsTraversingPaths() {
         XCTAssertFalse(DownloadTransfer.safeName("../video.mp4")); XCTAssertFalse(DownloadTransfer.safeName("C:\\secret"))

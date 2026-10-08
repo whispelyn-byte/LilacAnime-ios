@@ -37,6 +37,7 @@ enum DownloadTransfer {
                 try Task.checkCancellation()
                 guard valid(entry), let root = entry.localFile else { throw SubtitleFiles.failure("다운로드 목록에 잘못된 파일 경로가 있습니다.") }
                 let source = folder.appendingPathComponent(entry.id)
+                guard try source.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else { throw SubtitleFiles.failure("다운로드 폴더가 심볼릭 링크입니다.") }
                 let resources = try FileManager.default.contentsOfDirectory(at: source, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey])
                 guard resources.count <= 11000 else { throw SubtitleFiles.failure("한 회차의 파일이 너무 많습니다.") }
                 for file in resources {

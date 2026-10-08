@@ -4,6 +4,7 @@ object AnimeSnapshot {
     private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true; encodeDefaults = true }
     fun encode(anime: Anime): String = json.encodeToString(Anime.serializer(), anime)
     fun decode(content: String): Anime = runCatching { json.decodeFromString(Anime.serializer(), content) }.getOrElse { Anime(title = "저장된 작품 정보를 읽을 수 없습니다.") }
+    fun withEpisodes(anime: Anime, episodes: List<Episode>): Anime = anime.copy(episodes = episodes)
     fun localVideo(name: String, url: String): Anime = Anime(id = url, title = name, detailUrl = url, source = "local")
     fun related(relation: ReAnimeRelated): Anime = Anime(id = relation.id, title = relation.title, poster = relation.poster,
         native = relation.nativeTitle, romaji = relation.romaji, format = relation.format, source = "reanime",

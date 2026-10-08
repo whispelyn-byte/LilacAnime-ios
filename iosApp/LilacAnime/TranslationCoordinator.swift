@@ -13,10 +13,10 @@ final class TranslationCoordinator: ObservableObject {
     private var task: Task<Void, Never>?
     private var generation = UUID()
     private var workingFiles: Set<URL> = []
-    func translate(_ file: URL, preferences: AppPreferences, position: @escaping () -> Double = { 0 }, anime: SavedAnime? = nil, fresh: Bool = false, completion: @escaping (URL) -> Void) {
+    func translate(_ file: URL, preferences: AppPreferences, position: @escaping () -> Double = { 0 }, anime: SavedAnime? = nil, fresh: Bool = false, background: Bool = false, completion: @escaping (URL) -> Void) {
         cancel(); if fresh { service.clearTranslationCache() }; running = true; error = nil; status = nil; progress = 0
         let token = generation
-        task = Task {
+        task = Task(priority: background ? .utility : .userInitiated) {
             do {
                 var characters: [AnimeCharacter] = []
                 if let anime {
@@ -93,14 +93,14 @@ final class TranslationCoordinator: ObservableObject {
                             if preferences.modelSampling != false {
                                 settings.temperature = desktop.temperature; settings.topP = desktop.topP; settings.topK = Int(desktop.topK); settings.repetitionPenalty = desktop.repetition
                             }
-                            let response = try await local.generate(preferences.modelSampling == false ? prompt : desktop.prompt, preferences: settings)
+                            let response = try await local.generate(preferences.modelSampling == false ? prompt : desktop.prompt, preferences: settings, requestID: token)
                             try Task.checkCancellation()
                             let cleaned = LocalTranslationPrompt.shared.clean(text: response)
                             guard !cleaned.isEmpty else { throw SubtitleFiles.failure("로컬 모델이 빈 번역을 반환했습니다.") }
                             kept[lines[first]] = cleaned
                         } else {
                             let config = TranslationConfig(provider: provider, key: SecureKeys.load(provider),
-                                model: preferences.translationModels?[provider] ?? preferences.translationModel, region: preferences.qwenRegion, terminology: AnimeGlossary.shared.hints(text: pending.map { lines[$0] }.joined(separator: "\n"), characters: characters, custom: preferences.translationGlossary ?? ""))
+                                model: preferences.translationModels?[provider] ?? (provider == preferences.translationProvider ? preferences.translationModel : ""), region: preferences.qwenRegion, terminology: AnimeGlossary.shared.hints(text: pending.map { lines[$0] }.joined(separator: "\n"), characters: characters, custom: preferences.translationGlossary ?? ""))
                             let batch = pending.map { lines[$0] }
                             let output: [String] = try await withCheckedThrowingContinuation { continuation in
                                 service.translateLines(lines: batch, config: config) { result, failure in
@@ -135,7 +135,7 @@ final class TranslationCoordinator: ObservableObject {
             catch { if token == generation { self.error = error.localizedDescription; running = false } }
         }
     }
-    func cancel() { if running { local.cancel() }; generation = UUID(); task?.cancel(); task = nil; running = false }
+    func cancel() { if running { local.cancel(requestID: generation) }; generation = UUID(); task?.cancel(); task = nil; running = false }
     func shutdown() { cancel(); workingFiles.forEach { try? FileManager.default.removeItem(at: $0) }; workingFiles.removeAll(); Task { await local.unload() } }
 }
 

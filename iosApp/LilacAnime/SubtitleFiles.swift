@@ -40,7 +40,8 @@ enum SubtitleFiles {
         let folder = root.appendingPathComponent(key(url.absoluteString))
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let ext = URL(fileURLWithPath: name).pathExtension.lowercased()
-        let file = folder.appendingPathComponent("source." + (ext.isEmpty ? "ass" : ext))
+        let safe = URL(fileURLWithPath: name.replacingOccurrences(of: "\\", with: "/")).lastPathComponent
+        let file = folder.appendingPathComponent((safe.isEmpty || safe == "." || safe == ".." ? "source" : safe) + (ext.isEmpty ? ".ass" : ""))
         try data.write(to: file, options: .atomic)
         if ["zip", "7z", "rar"].contains(ext) || data.starts(with: [0x50, 0x4b, 0x03, 0x04]) || data.starts(with: [0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c]) || data.starts(with: [0x52, 0x61, 0x72, 0x21]) {
             var results: [URL] = []

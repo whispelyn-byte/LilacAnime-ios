@@ -34,8 +34,10 @@ struct AppPreferences: Codable {
     var desktopWorkspace: Bool? = false
     var preferredServer: String? = nil
     var modelSampling: Bool? = true
+    var localGPU: Bool? = true
     var pretranslateNext: Bool? = true
     var downloadSubtitles: Bool? = true
+    var translateDownloads: Bool? = true
     var source = "linkkf"
     var quality = "Auto"
     var speed = 1.0

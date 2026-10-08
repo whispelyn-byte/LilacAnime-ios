@@ -23,7 +23,7 @@ internal class AnissiaDiscovery(private val repository: SourceRepository) {
             if (!website.startsWith("https://")) null else SubtitleMaker(row.optString("name"), website, row.optString("status"))
         }.distinctBy { it.website }
     }
-    suspend fun search(title: String, episode: Int, episodeKey: String, makerWebsite: String = ""): List<SubtitleAsset> {
+    suspend fun search(title: String, episode: Int, episodeKey: String, makerWebsite: String = "", offsets: List<Int> = emptyList()): List<SubtitleAsset> {
         val query = title.replace(Regex("[!?！？.,:;·'\"“”‘’♡♥☆★]"), " ").replace(Regex("\\s+"), " ").trim()
         val root = api("/anime/list/0", mapOf("q" to query)).optJSONObject("data") ?: return emptyList()
         val entries = root.optJSONArray("content") ?: return emptyList()
@@ -97,7 +97,7 @@ internal class AnissiaDiscovery(private val repository: SourceRepository) {
                     posts += doc.select("a[href]").filter { Regex("/(?:entry/)?\\d+$").containsMatchIn(it.attr("href")) }
                         .map { KairanPost(it.text(), it.absUrl("href")) }
                 }
-                val match = KairanPostMatcher.findBestMatch(subject, episode, posts.distinctBy { it.url }, episodeKey) ?: continue
+                val match = DesktopEpisodeRules.findPost(subject, episode, posts.distinctBy { it.url }, episodeKey, offsets) ?: continue
                 val html = pages[match.post.url] ?: repository.getText(match.post.url)
                 output += attachments(html, match.post.url, maker.optString("name"), episode)
                 output += SubtitleAsset("Anissia · " + maker.optString("name") + " 원본 게시물", match.post.url, "post", match.similarity)

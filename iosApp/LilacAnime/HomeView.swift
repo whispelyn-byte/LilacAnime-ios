@@ -4,6 +4,8 @@ import LilacShared
 struct HomeView: View {
     @EnvironmentObject private var library: LibraryStore
     @StateObject private var model = CatalogModel()
+    @StateObject private var home = DesktopSourceModel()
+    @State private var featured = 0
     let browse: () -> Void
     private var items: [Anime] { UIShowcase.enabled ? UIShowcase.items : model.items }
     var body: some View {
@@ -34,10 +36,21 @@ struct HomeView: View {
                                 .font(.subheadline).foregroundStyle(.primary)
                         }
                     }.padding(.horizontal, 20)
-                    if let anime = items.first {
+                    if let anime = items.isEmpty ? nil : items[min(featured, items.count - 1)] {
                         NavigationLink { DetailView(summary: anime, source: model.source) } label: {
                             FeaturedAnimeCard(anime: anime)
                         }.buttonStyle(.plain).padding(.horizontal, 16)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 12) {
+                                ForEach(Array(items.prefix(8).enumerated()), id: \.element.id) { index, candidate in
+                                    Button { featured = index } label: {
+                                        AnimeArtwork(url: candidate.poster, width: 55, height: 78)
+                                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(featured == index ? LilacStyle.accent : Color.clear, lineWidth: 2))
+                                    }.accessibilityLabel(candidate.title)
+                                }
+                            }.padding(.horizontal, 20)
+                        }
                     } else if model.loading {
                         RoundedRectangle(cornerRadius: 28).fill(LilacStyle.accent.opacity(0.1)).frame(height: 320)
                             .overlay { ProgressView("작품을 불러오는 중…") }.padding(.horizontal, 16)
@@ -68,6 +81,10 @@ struct HomeView: View {
                         let movies = items.filter { $0.format.uppercased().contains("MOVIE") || $0.format.contains("극장") }
                         if !movies.isEmpty { AnimeRail(title: "극장판", items: movies, source: model.source) }
                     }
+                    ForEach(Array(home.sections.enumerated()), id: \.offset) { _, section in
+                        if !section.items.isEmpty { AnimeRail(title: section.name, items: section.items, source: model.source) }
+                    }
+                    if !home.airing.isEmpty { AnimeRail(title: "방영 중", items: home.airing, source: model.source) }
                     if !library.favorites.isEmpty {
                         VStack(alignment: .leading, spacing: 14) {
                             Text("내 목록").font(.title3.bold()).padding(.horizontal, 20)
@@ -97,6 +114,7 @@ struct HomeView: View {
             }.background(LilacStyle.background)
                 .toolbar(.hidden, for: .navigationBar)
                 .refreshable { if !UIShowcase.enabled { model.load() } }
+                .task(id: library.preferences.source) { if !UIShowcase.enabled { featured = 0; home.load(source: library.preferences.source, day: (Calendar.current.component(.weekday, from: Date()) + 5) % 7) } }
                 .task { if !UIShowcase.enabled && model.items.isEmpty { model.source = library.preferences.source; model.load() } }
                 .onChange(of: library.preferences.source) { source in if !UIShowcase.enabled && model.source != source { model.source = source; model.load() } }
         }

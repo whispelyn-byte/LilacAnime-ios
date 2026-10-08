@@ -134,9 +134,10 @@ struct SettingsView: View {
                 Section("저장 공간") {
                     NavigationLink("저장 자막·캐시 관리") { SubtitleStorageView() }
                     NavigationLink("업데이트·릴리즈 노트") { DesktopUpdateView() }
+                    Toggle("다운로드 자막도 자동 번역", isOn: Binding(get: { store.preferences.translateDownloads ?? true }, set: { store.preferences.translateDownloads = $0 }))
                     Toggle("다운로드에 자막 포함", isOn: Binding(get: { store.preferences.downloadSubtitles ?? true }, set: { store.preferences.downloadSubtitles = $0 }))
                     Button("시청 기록 삭제", role: .destructive) { store.clearHistory() }
-                    Button("번역 캐시 삭제") { SubtitleFiles.clearTranslationCache() }
+                    Button("저장 자막을 보존하고 번역 캐시 정리") { do { try SubtitleCache.clean(library: store, all: false) } catch { self.error = error.localizedDescription } }
                     Button("OP/ED 분석 캐시 삭제") { OfflineAnalyzer.clearCache() }
                 }
                 if let error { Text(error).foregroundStyle(.red) }

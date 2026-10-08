@@ -12,7 +12,7 @@ struct LilacAnimeApp: App {
                     NavigationStack { DetailView(summary: UIShowcase.anime, source: "linkkf") }
                 } else if UIShowcase.enabled && UIShowcase.screen == "player" {
                     NavigationStack { EpisodePlayerView(item: PlaybackItem(anime: SavedAnime(UIShowcase.anime, source: "linkkf"), episode: UIShowcase.anime.episodes[0])) }
-                } else if library.preferences.desktopWorkspace == true {
+                } else if library.preferences.desktopWorkspace == true || (UIShowcase.enabled && UIShowcase.screen == "workspace") {
                     DesktopWorkspace()
                 } else {
             TabView(selection: $selectedTab) {

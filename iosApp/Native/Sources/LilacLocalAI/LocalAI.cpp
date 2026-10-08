@@ -7,6 +7,7 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include <chrono>
 #include "Jinja/parser.h"
 #include "Jinja/json.h"
 
@@ -15,23 +16,35 @@ struct LilacModel {
     llama_context *context = nullptr;
     std::atomic<bool> cancelled{false};
     std::string error;
+    bool gpu = false;
+    int output_tokens = 0;
+    double seconds = 0;
 };
 static std::once_flag backend;
-extern "C" LilacModel *lilac_model_open(const char *path, int context, int threads) {
+extern "C" LilacModel *lilac_model_open_with_backend(const char *path, int context, int threads, int gpu) {
     std::call_once(backend, [] { llama_backend_init(); });
     auto *state = new LilacModel();
     auto mp = llama_model_default_params();
-    mp.n_gpu_layers = 99;
+    mp.n_gpu_layers = gpu ? 99 : 0;
+    state->gpu = gpu && llama_supports_gpu_offload();
     state->model = llama_model_load_from_file(path, mp);
     if (!state->model) { delete state; return nullptr; }
     auto cp = llama_context_default_params();
     cp.n_ctx = std::max(512, context);
+    cp.offload_kqv = gpu != 0;
+    cp.op_offload = gpu != 0;
     cp.n_batch = 512;
     cp.n_threads = cp.n_threads_batch = std::max(1, threads);
     state->context = llama_init_from_model(state->model, cp);
     if (!state->context) { llama_model_free(state->model); delete state; return nullptr; }
     return state;
 }
+extern "C" LilacModel *lilac_model_open(const char *path, int context, int threads) {
+    return lilac_model_open_with_backend(path, context, threads, 1);
+}
+extern "C" const char *lilac_backend(LilacModel *state) { return state && state->gpu ? "Metal" : "CPU"; }
+extern "C" int lilac_output_tokens(LilacModel *state) { return state ? state->output_tokens : 0; }
+extern "C" double lilac_generation_seconds(LilacModel *state) { return state ? state->seconds : 0; }
 extern "C" void lilac_model_close(LilacModel *state) {
     if (!state) return;
     llama_free(state->context); llama_model_free(state->model); delete state;
@@ -71,7 +84,8 @@ extern "C" char *lilac_format_prompt(const char *chat_template, const char *prom
 }
 extern "C" char *lilac_generate(LilacModel *state, const char *prompt, int max_tokens, float temperature, float top_p, int top_k, float repetition) {
     if (!state || !prompt) return nullptr;
-    state->cancelled = false; state->error.clear();
+    state->cancelled = false; state->error.clear(); state->output_tokens = 0;
+    const auto started = std::chrono::steady_clock::now();
     const auto *vocab = llama_model_get_vocab(state->model);
     const char *chat_template = llama_model_chat_template(state->model, nullptr);
     auto tokenText = [&](llama_token token) {
@@ -108,6 +122,7 @@ extern "C" char *lilac_generate(LilacModel *state, const char *prompt, int max_t
     for (int i = 0; i < max_tokens && !state->cancelled; ++i) {
         auto token = llama_sampler_sample(sampler, state->context, -1);
         if (llama_vocab_is_eog(vocab, token)) break;
+        ++state->output_tokens;
         std::vector<char> piece(256);
         int size = llama_token_to_piece(vocab, token, piece.data(), (int)piece.size(), 0, true);
         if (size < 0) { piece.resize(-size); size = llama_token_to_piece(vocab, token, piece.data(), (int)piece.size(), 0, true); }
@@ -117,5 +132,6 @@ extern "C" char *lilac_generate(LilacModel *state, const char *prompt, int max_t
     llama_sampler_free(sampler);
     if (state->cancelled) state->error = "Cancelled";
     if (!state->error.empty()) return nullptr;
+    state->seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
     return strdup(output.c_str());
 }

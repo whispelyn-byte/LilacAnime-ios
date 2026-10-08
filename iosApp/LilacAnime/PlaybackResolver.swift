@@ -37,6 +37,10 @@ struct PlaybackItem {
         anime = entry.anime; episodeID = entry.episodeID; title = entry.episodeTitle; number = entry.number
         displayNumber = String(entry.number); watchURL = URL(string: entry.watchURL) ?? URL(string: "https://linkkf.app/")!
         directURL = entry.directURL.flatMap(URL.init(string:)).flatMap { $0.isFileURL ? $0 : nil }
+        let episodes = entry.anime.anime.episodes
+        if let index = episodes.firstIndex(where: { $0.id == entry.episodeID }) {
+            next = episodes.dropFirst(index + 1).map { PlaybackItem(anime: entry.anime, episode: $0) }
+        }
     }
 }
 @MainActor

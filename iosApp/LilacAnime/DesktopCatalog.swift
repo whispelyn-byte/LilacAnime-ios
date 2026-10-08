@@ -124,7 +124,7 @@ final class DesktopCatalog: ObservableObject {
     }
     private func knownCount(_ values: [SavedAnime]) -> Int { values.filter { names[$0.id]?.korean.isEmpty == false || TitleCandidates.shared.isKorean(title: $0.title) }.count }
     func stop() { generation = UUID(); task?.cancel(); task = nil; running = false; status = "일시 중지" }
-    func clear() { stop(); names = [:]; catalogs = [:]; try? FileManager.default.removeItem(at: directory) }
+    func clear() { stop(); lookups.values.forEach { $0.cancel() }; lookups = [:]; nextLookup = .distantPast; names = [:]; catalogs = [:]; try? FileManager.default.removeItem(at: directory) }
     private func persist<T: Encodable>(_ value: T, name: String) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try JSONEncoder().encode(value).write(to: directory.appendingPathComponent(name), options: .atomic)

@@ -60,10 +60,10 @@ final class DesktopModelInstaller: NSObject, ObservableObject {
             let named = staged.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".gguf")
             try FileManager.default.moveItem(at: staged, to: named)
             defer { try? FileManager.default.removeItem(at: named) }
-            let imported = try LocalModelFiles.importModel(named)
+            try LocalModelFiles.validate(named)
             let target = LocalModelFiles.directory.appendingPathComponent(model.file)
             if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
-            try FileManager.default.moveItem(at: imported, to: target)
+            try FileManager.default.moveItem(at: named, to: target)
             try? FileManager.default.removeItem(at: LocalModelFiles.directory.appendingPathComponent(id + ".resume"))
         } catch { self.error = error.localizedDescription }
     }

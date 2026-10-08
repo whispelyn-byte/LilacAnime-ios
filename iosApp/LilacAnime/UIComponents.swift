@@ -52,15 +52,13 @@ struct FeaturedAnimeCard: View {
             AnimeArtwork(url: anime.backdrop.isEmpty ? anime.poster : anime.backdrop, height: 320)
             LinearGradient(colors: [.clear, .black.opacity(0.25), .black.opacity(0.92)], startPoint: .top, endPoint: .bottom)
             VStack(alignment: .leading, spacing: 10) {
-                Text("FEATURED").font(.caption.weight(.heavy)).tracking(3).foregroundStyle(LilacStyle.accent)
+                Text("이번 시즌 추천").font(.caption.weight(.heavy)).foregroundStyle(LilacStyle.accent)
                 AnimeDisplayTitle(anime: anime).font(.system(size: 27, weight: .bold)).lineLimit(2)
                 Text([anime.format, anime.year, anime.genres.prefix(2).joined(separator: " · ")].filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.caption).foregroundStyle(.white.opacity(0.8))
                 if let overview = names.record(saved)?.overview, !overview.isEmpty {
                     Text(overview).font(.caption).lineLimit(2).foregroundStyle(.white.opacity(0.85))
                 }
-                Label("지금 보기", systemImage: "play.fill").font(.subheadline.bold())
-                    .padding(.horizontal, 18).padding(.vertical, 12).background(LilacStyle.accent, in: Capsule())
             }.foregroundStyle(.white).padding(22)
         }.frame(height: 320).clipShape(RoundedRectangle(cornerRadius: 28))
             .task(id: saved.id) { if !UIShowcase.enabled { await names.enrich(anime, source: saved.source, cast: true) } }
@@ -70,9 +68,10 @@ struct AnimeRail: View {
     let title: String
     let items: [Anime]
     let source: String
+    var seeAll: (() -> Void)? = nil
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(title).font(.title3.bold()).padding(.horizontal, 20)
+            HStack { Text(title).font(.title3.bold()); Spacer(); if let seeAll { Button("전체 보기", action: seeAll).font(.caption.bold()) } }.padding(.horizontal, 20)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 14) {
                     ForEach(items, id: \.id) { anime in

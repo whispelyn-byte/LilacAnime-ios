@@ -15,3 +15,7 @@ internal actual fun inflateCatalogGzip(data: ByteArray): ByteArray = GZIPInputSt
     output.toByteArray()
 }
 internal actual fun currentCatalogDate() = LocalDate.now(ZoneOffset.UTC).toString()
+internal actual fun pacificDayRemaining(): Int {
+    val now = java.time.ZonedDateTime.now(java.time.ZoneId.of("America/Los_Angeles"))
+    return 86400 - now.toLocalTime().toSecondOfDay()
+}

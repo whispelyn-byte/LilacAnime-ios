@@ -7,7 +7,7 @@ final class CatalogModel: ObservableObject {
     @Published var error: String?
     @Published var loading = false
     @Published var query = ""
-    @Published var source = "linkkf"
+    @Published var source = "reanime"
     @Published var mode = "browse"
     @Published var genre = ""
     @Published var year = ""
@@ -26,7 +26,7 @@ final class CatalogModel: ObservableObject {
         else if loading || !canLoadMore { return }
         loading = true; error = nil
         let token = generation
-        let indexed = DesktopCatalog.shared.search(query, source: source)
+        let indexed = [genre, year, format, status, season, studio].allSatisfy(\.isEmpty) ? DesktopCatalog.shared.search(query, source: source) : []
         let callback: ([Anime]?, String?) -> Void = { [weak self] result, error in
             guard let self, token == self.generation else { return }
             self.loading = false; self.error = error
@@ -35,7 +35,7 @@ final class CatalogModel: ObservableObject {
                 if !indexed.isEmpty { self.error = nil }
                 let known = Set(self.items.map(\.id))
                 self.items += (indexed + result).filter { !known.contains($0.id) }.reduce(into: [Anime]()) { list, anime in if !list.contains(where: { $0.id == anime.id }) { list.append(anime) } }
-                self.canLoadMore = !result.isEmpty && self.mode == "browse"; self.page += 1
+                self.canLoadMore = !result.isEmpty && ["browse", "top", "season", "pv", "movie", "adult"].contains(self.mode); self.page += 1
             }
         }
         let searched: ([Anime]?, String?) -> Void = { [weak self] values, failure in
@@ -56,8 +56,8 @@ final class CatalogModel: ObservableObject {
                 }
             }
         }
-        if mode == "top" { service.top(period: "week", completion: callback) }
-        else if mode == "schedule" { service.sourceSchedule(sourceKey: source, day: 0, completion: callback) }
+        if mode == "top" { service.browse(sourceKey: source, query: "", page: page, filter: AnimeSnapshot.shared.sortedFilter(genre: "", year: "", season: "", format: "", status: "", studio: "", sort: "popular"), completion: callback) }
+        else if mode == "schedule" { service.sourceSchedule(sourceKey: source, day: Int32((Calendar.current.component(.weekday, from: Date()) + 5) % 7), completion: callback) }
         else {
             service.browse(sourceKey: source, query: query, page: page,
                 filter: AnimeSnapshot.shared.fullFilter(genre: genre, year: year, season: season, format: format, status: status, studio: studio), completion: searched)
@@ -68,7 +68,8 @@ final class CatalogModel: ObservableObject {
 struct CatalogView: View {
     @EnvironmentObject private var library: LibraryStore
     @StateObject private var model = CatalogModel()
-    @State private var filters = false
+    @EnvironmentObject private var navigation: DesktopNavigation
+    @State private var filters = true
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -76,9 +77,18 @@ struct CatalogView: View {
                     Picker("소스", selection: $model.source) {
                         ForEach(ContentSources.keys, id: \.self) { Text(ContentSources.name($0)).tag($0) }
                     }.pickerStyle(.menu).onChange(of: model.source) { source in library.preferences.source = source; model.mode = "browse"; model.genre = ""; model.year = ""; model.format = ""; model.status = ""; model.season = ""; model.studio = ""; model.load(); model.loadFilters() }
-                    if model.source == "reanime" {
-                        Picker("목록", selection: $model.mode) { Text("검색").tag("browse"); Text("인기").tag("top"); Text("방영표").tag("schedule") }
-                            .pickerStyle(.segmented).onChange(of: model.mode) { _ in model.load() }
+                    if filters {
+                        VStack(spacing: 12) {
+                            filterInput("장르", text: $model.genre, values: model.filters?.genres ?? [])
+                            filterInput("연도", text: $model.year, values: model.filters?.years ?? [])
+                            filterInput("형식", text: $model.format, values: model.filters?.formats ?? [])
+                            if ["reanime", "miruro", "animenosub"].contains(model.source) {
+                                filterInput("상태", text: $model.status, values: model.filters?.statuses ?? ["RELEASING", "FINISHED"])
+                                filterInput("시즌", text: $model.season, values: model.filters?.seasons ?? ["WINTER", "SPRING", "SUMMER", "FALL"])
+                            }
+                            if model.source == "reanime" { filterInput("스튜디오", text: $model.studio, values: model.filters?.studios ?? []) }
+                            HStack { Button("초기화") { model.genre = ""; model.year = ""; model.format = ""; model.status = ""; model.season = ""; model.studio = ""; model.mode = "browse"; model.load() }; Spacer(); Button("필터 적용") { model.load() }.buttonStyle(.borderedProminent) }
+                        }.padding(16).background(LilacStyle.card, in: RoundedRectangle(cornerRadius: 16))
                     }
                     if let error = model.error { Text(error).foregroundStyle(.red); Button("다시 시도") { model.load() } }
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 145))], spacing: 18) {
@@ -92,26 +102,24 @@ struct CatalogView: View {
                     else if model.items.isEmpty && model.error == nil { LilacEmptyState(icon: "magnifyingglass", title: "검색 결과가 없습니다", message: "검색어나 필터를 바꿔서 다시 찾아보세요.") }
                     else if model.canLoadMore { Button("더 보기") { model.load(reset: false) } }
                 }.padding()
-            }.background(LilacStyle.background).navigationTitle("탐색")
-                .searchable(text: $model.query, prompt: "애니메이션 검색").onSubmit(of: .search) { model.mode = "browse"; model.load() }
-                .toolbar { Button { filters = true } label: { Image(systemName: "line.3.horizontal.decrease.circle") } }
-                .sheet(isPresented: $filters) {
-                    NavigationStack {
-                        Form {
-                            filterInput("장르", text: $model.genre, values: model.filters?.genres ?? [])
-                            filterInput("연도", text: $model.year, values: model.filters?.years ?? [])
-                            filterInput("형식", text: $model.format, values: model.filters?.formats ?? [])
-                            if model.source == "reanime" {
-                                filterInput("상태", text: $model.status, values: model.filters?.statuses ?? [])
-                                filterInput("시즌", text: $model.season, values: model.filters?.seasons ?? [])
-                                filterInput("스튜디오", text: $model.studio, values: model.filters?.studios ?? [])
-                            }
-                        }.navigationTitle("필터").toolbar { Button("적용") { filters = false; model.load() } }
-                    }
-                }
-                .task { if model.items.isEmpty { model.source = library.preferences.source; model.load(); model.loadFilters() } }
+            }.background(LilacStyle.background).navigationTitle("검색")
+                .onChange(of: navigation.query) { _ in applyNavigation() }
+                .onChange(of: navigation.listMode) { _ in applyNavigation() }
+                .searchable(text: $model.query, prompt: "애니메이션 검색").onSubmit(of: .search) { navigation.search(model.query); model.mode = "browse"; model.load() }
+                .toolbar { Button { filters.toggle() } label: { Image(systemName: "line.3.horizontal.decrease.circle") } }
+                .task { if model.items.isEmpty { model.source = library.preferences.source; applyNavigation(); model.loadFilters() } }
                 .onChange(of: library.preferences.source) { source in if model.source != source { model.source = source } }
         }
+    }
+    private func applyNavigation() {
+        model.query = navigation.query; model.mode = navigation.listMode
+        model.genre = ""; model.year = ""; model.season = ""; model.format = ""; model.status = ""; model.studio = ""
+        if model.mode == "season" {
+            model.year = String(Calendar.current.component(.year, from: Date()))
+            model.season = ["WINTER", "SPRING", "SUMMER", "FALL"][(Calendar.current.component(.month, from: Date()) - 1) / 3]
+        }
+        if model.source == "linkkf" { model.format = ["pv": "5086", "movie": "5061", "adult": "5085"][model.mode] ?? "" }
+        if UIShowcase.enabled { model.items = UIShowcase.items; model.canLoadMore = false } else { model.load() }
     }
     private func filterInput(_ title: String, text: Binding<String>, values: [String]) -> some View {
         HStack {
@@ -191,11 +199,11 @@ struct DetailView: View {
                 }.frame(height: 310).clipShape(RoundedRectangle(cornerRadius: 28)).padding(.horizontal, 16)
                 HStack(spacing: 12) {
                     if let resume {
-                        NavigationLink { EpisodePlayerView(item: playback(resume.0.episodes, index: resume.1)) } label: {
+                        PlaybackButton(item: playback(resume.0.episodes, index: resume.1)) {
                             Label(resume.1 > 0 || library.history.contains(where: { $0.anime.id == source + ":" + anime.id }) ? "이어 보기" : "첫 회차 보기", systemImage: "play.fill")
                                 .font(.subheadline.bold()).frame(maxWidth: .infinity).padding(.vertical, 15)
                                 .foregroundStyle(.white).background(LilacStyle.accent, in: RoundedRectangle(cornerRadius: 16))
-                        }.buttonStyle(.plain)
+                        }.buttonStyle(.plain).accessibilityIdentifier("detail-play")
                     }
                     Button { library.toggle(anime, source: source) } label: {
                         Image(systemName: library.contains(anime, source: source) ? "heart.fill" : "heart")
@@ -248,7 +256,8 @@ struct DetailView: View {
                 }.disabled(downloads.pendingResolution > 0)
                 LazyVStack(spacing: 10) {
                     ForEach(Array(server.episodes.enumerated()), id: \.element.id) { index, episode in
-                        NavigationLink { EpisodePlayerView(item: playback(server.episodes, index: index)) } label: {
+                        HStack(spacing: 10) {
+                        PlaybackButton(item: playback(server.episodes, index: index)) {
                             HStack(spacing: 14) {
                                 Text(episode.displayNumber.isEmpty ? String(episode.number) : episode.displayNumber)
                                     .font(.headline).frame(width: 44, height: 44)
@@ -266,6 +275,8 @@ struct DetailView: View {
                             }.padding(14).background(LilacStyle.card, in: RoundedRectangle(cornerRadius: 18)).foregroundStyle(.primary)
                         }.buttonStyle(.plain).disabled(!episode.playable).contextMenu {
                             Button { downloads.enqueue([playback(server.episodes, index: index)], quality: library.preferences.quality) } label: { Label("회차 다운로드", systemImage: "arrow.down.circle") }
+                        }
+                        Button { downloads.enqueue([playback(server.episodes, index: index)], quality: library.preferences.quality) } label: { Image(systemName: "arrow.down.circle").font(.title2).padding(12) }.disabled(!episode.playable).accessibilityLabel(episode.title + " 다운로드")
                         }
                     }
                 }

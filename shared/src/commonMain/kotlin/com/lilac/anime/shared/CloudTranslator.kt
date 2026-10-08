@@ -9,6 +9,7 @@ import io.ktor.http.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlin.time.TimeSource
+import kotlin.time.Duration.Companion.seconds
 
 data class TranslationConfig(val provider: String, val key: String, val model: String = "", val region: String = "international", val terminology: String = "")
 class CloudTranslator(private val client: HttpClient = HttpClient {
@@ -46,7 +47,7 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
             catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
         val preferred = config.model.removePrefix("models/").ifBlank { CloudModelRules.default(config.provider, available) }
         val chain = CloudModelRules.chain(config.provider, preferred, available)
-        return chain.filter { spent[config.provider + ":" + config.region + ":" + config.key.hashCode() + ":" + it]?.hasPassedNow() != false }.ifEmpty { listOf(preferred) }
+        return chain.filter { spent[config.provider + ":" + config.region + ":" + config.key.hashCode() + ":" + it]?.hasPassedNow() != false }.ifEmpty { error("번역 모델 사용량이 소진되었습니다. 다른 API나 로컬 AI로 전환하세요.") }
     }
     suspend fun translate(lines: List<String>, config: TranslationConfig): List<String> {
         if (lines.isEmpty()) return emptyList()
@@ -71,9 +72,11 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
                 failure = e
                 val status = e.response.status.value
                 val message = e.response.bodyAsText()
-                if (status !in listOf(404, 429, 500, 502, 503, 504) ||
-                    config.provider == "openai" && Regex("insufficient_quota|billing|exceeded your current quota", RegexOption.IGNORE_CASE).containsMatchIn(message)) throw e
-                spent[config.provider + ":" + config.region + ":" + config.key.hashCode() + ":" + model] = TimeSource.Monotonic.markNow() + kotlin.time.Duration.parse(if (status >= 500) "5m" else "1h")
+                if (!CloudCooldown.canSwitch(config.provider, status, message)) throw e
+                spent[config.provider + ":" + config.region + ":" + config.key.hashCode() + ":" + model] = TimeSource.Monotonic.markNow() + CloudCooldown.seconds(config.provider, status, message, pacificDayRemaining()).seconds
+            } catch (e: HttpRequestTimeoutException) {
+                failure = e
+                spent[config.provider + ":" + config.region + ":" + config.key.hashCode() + ":" + model] = TimeSource.Monotonic.markNow() + 300.seconds
             }
         }
         val output = result ?: throw (failure ?: IllegalStateException("사용 가능한 번역 모델이 없습니다."))

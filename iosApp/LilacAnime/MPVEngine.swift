@@ -15,6 +15,7 @@ final class MPVEngine: ObservableObject {
     @Published var duration = 0.0
     @Published var volume = 100.0
     @Published var muted = false
+    @Published var subtitlesVisible = true
     @Published var fit = "contain"
     @Published var paused = true
     @Published var buffering = false
@@ -56,6 +57,7 @@ final class MPVEngine: ObservableObject {
     }
     func configure(_ settings: AppPreferences) {
         preferences = settings
+        setFit(settings.playerFit ?? "contain")
         set("speed", settings.speed.description)
         set("sub-scale", (settings.subtitleSize / 100).description)
         set("sub-delay", settings.subtitleOffset.description)
@@ -88,7 +90,7 @@ final class MPVEngine: ObservableObject {
     func subtitle(_ file: URL) { pendingSubtitle = file; if fileLoaded { command(["sub-add", file.path, "select"]) } }
     func reloadSubtitle() { command(["sub-reload"]) }
     func selectTrack(_ track: MediaTrack) { set(track.type == "audio" ? "aid" : "sid", track.id.description) }
-    func toggleSubtitleVisibility() { set("sub-visibility", flag("sub-visibility") ? "no" : "yes") }
+    func toggleSubtitleVisibility() { subtitlesVisible.toggle(); set("sub-visibility", subtitlesVisible ? "yes" : "no") }
     func disableSubtitles() { set("sid", "no") }
     func set(_ name: String, _ value: String) { if let handle { mpv_set_property_string(handle, name, value) } }
     private func command(_ arguments: [String]) {

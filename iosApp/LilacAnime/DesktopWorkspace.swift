@@ -2,49 +2,12 @@ import SwiftUI
 import LilacShared
 import UniformTypeIdentifiers
 
-struct DesktopWorkspace: View {
-    @EnvironmentObject private var library: LibraryStore
-    @State private var section: String? = "home"
-    @State private var visibility: NavigationSplitViewVisibility = .all
-    var body: some View {
-        NavigationSplitView(columnVisibility: $visibility) {
-            List(selection: $section) {
-                NavigationLink(value: "home") { Label("홈", systemImage: "house") }.tag("home")
-                NavigationLink(value: "catalog") { Label("전체 카탈로그", systemImage: "square.grid.2x2") }.tag("catalog")
-                NavigationLink(value: "search") { Label("검색·필터", systemImage: "magnifyingglass") }.tag("search")
-                NavigationLink(value: "airing") { Label("방영·추천", systemImage: "calendar") }.tag("airing")
-                NavigationLink(value: "history") { Label("시청 기록", systemImage: "clock") }.tag("history")
-                NavigationLink(value: "favorites") { Label("즐겨찾기", systemImage: "heart") }.tag("favorites")
-                NavigationLink(value: "downloads") { Label("다운로드", systemImage: "arrow.down.circle") }.tag("downloads")
-                NavigationLink(value: "local") { Label("로컬 영상", systemImage: "folder") }.tag("local")
-                NavigationLink(value: "settings") { Label("설정", systemImage: "gear") }.tag("settings")
-            }.navigationTitle("LilacAnime")
-                .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 280)
-        } detail: {
-            switch section {
-            case "catalog": DesktopFullCatalog()
-            case "search": CatalogView()
-            case "airing": DesktopSourceView()
-            case "history": DesktopLibraryView(history: true)
-            case "favorites": DesktopLibraryView(history: false)
-            case "downloads": DownloadsView()
-            case "local": LocalVideoView()
-            case "settings": SettingsView()
-            default: HomeView(workspace: true) { section = "search" }
-            }
-        }.navigationSplitViewStyle(.balanced)
-        .task(id: library.preferences.source) {
-            if !UIShowcase.enabled && !DesktopCatalog.shared.running && (DesktopCatalog.shared.catalogs[library.preferences.source] ?? []).isEmpty {
-                DesktopCatalog.shared.start(library.preferences.source)
-            }
-        }
-    }
-}
 struct DesktopFullCatalog: View {
     @EnvironmentObject private var library: LibraryStore
     @ObservedObject private var catalog = DesktopCatalog.shared
     @State private var query = ""
-    @State private var sort = "title"
+    @State private var sort = "popular"
+    private var sorts: [String] { switch library.preferences.source { case "linkkf": return ["default", "year"]; case "linkani": return ["default", "popular"]; case "ohli24": return ["default"]; default: return ["popular", "year", "score"] } }
     @State private var format = ""
     @State private var year = ""
     private var values: [SavedAnime] {
@@ -55,6 +18,7 @@ struct DesktopFullCatalog: View {
             (wanted.isEmpty || ([item.title, catalog.record(item)?.korean ?? "", catalog.record(item)?.english ?? ""] + (catalog.record(item)?.aliases ?? []))
                 .contains { DesktopTitleRules.shared.key(title: $0).contains(wanted) })
         }
+        if sort == "default" { return result }
         return result.sorted { a, b in
             switch sort {
             case "year": if a.anime.year != b.anime.year { return a.anime.year > b.anime.year }
@@ -73,7 +37,7 @@ struct DesktopFullCatalog: View {
                     HStack {
                         Picker("소스", selection: $library.preferences.source) { ForEach(ContentSources.keys, id: \.self) { Text(ContentSources.name($0)).tag($0) } }
                         Picker("정렬", selection: $sort) {
-                            Text("제목").tag("title"); Text("방영 연도").tag("year"); Text("평점").tag("score"); Text("인기").tag("popular")
+                            ForEach(sorts, id: \.self) { value in Text(value == "popular" ? "인기순" : value == "year" ? "최신순" : value == "score" ? "평점순" : "기본 순서").tag(value) }
                         }
                         NavigationLink { CatalogIndexView() } label: { Image(systemName: "arrow.triangle.2.circlepath") }
                     }
@@ -95,9 +59,12 @@ struct DesktopFullCatalog: View {
                         }
                     }
                 }.padding()
-            }.background(LilacStyle.background).navigationTitle("전체 카탈로그")
+            }.background(LilacStyle.background).navigationTitle("전체")
+                .onChange(of: sort) { value in UserDefaults.standard.set(value, forKey: "allSort:" + library.preferences.source) }
                 .searchable(text: $query, prompt: "한국어·원제·영어 검색")
                 .task(id: library.preferences.source) {
+                    let remembered = UserDefaults.standard.string(forKey: "allSort:" + library.preferences.source) ?? ""
+                    sort = sorts.contains(remembered) ? remembered : sorts[0]
                     if !UIShowcase.enabled && (catalog.catalogs[library.preferences.source] ?? []).isEmpty { catalog.start(library.preferences.source) }
                 }
         }
@@ -113,6 +80,7 @@ final class DesktopSourceModel: ObservableObject {
     private var generation = UUID()
     func load(source: String, day: Int) {
         service.cancel(); generation = UUID(); let token = generation; loading = true; error = nil
+        sections = []; airing = []
         service.sourceSchedule(sourceKey: source, day: Int32(day)) { [weak self] values, failure in
             guard let self, token == self.generation else { return }; self.airing = values ?? []; self.error = failure; self.loading = false
         }
@@ -162,7 +130,7 @@ struct DesktopLibraryView: View {
             List {
                 if history {
                     ForEach(library.history) { entry in
-                        NavigationLink { EpisodePlayerView(item: PlaybackItem(entry: entry)) } label: {
+                        PlaybackButton(item: PlaybackItem(entry: entry)) {
                             VStack(alignment: .leading) { AnimeDisplayTitle(anime: entry.anime.anime, source: entry.anime.source); Text(entry.episodeTitle).font(.caption)
                                 if entry.duration > 0 { ProgressView(value: min(entry.position / entry.duration, 1)) }
                             }
@@ -179,6 +147,7 @@ struct DesktopLibraryView: View {
     }
 }
 struct LocalVideoView: View {
+    @EnvironmentObject private var playback: PlaybackRouter
     @State private var importer = false
     @State private var item: PlaybackItem?
     @State private var error: String?
@@ -202,7 +171,7 @@ struct LocalVideoView: View {
                             number: 1, watchURL: file.absoluteString, directURL: file.absoluteString, position: 0, duration: 0, updatedAt: Date()))
                     } catch { self.error = error.localizedDescription }
                 }
-                .navigationDestination(isPresented: Binding(get: { item != nil }, set: { if !$0 { item = nil } })) { if let item { EpisodePlayerView(item: item) } }
+                .onChange(of: item != nil) { ready in if ready, let item { playback.open(item); self.item = nil } }
         }
     }
 }

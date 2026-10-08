@@ -124,6 +124,7 @@ final class EpisodePlayerModel: ObservableObject {
             } catch { if token == generation { self.error = error.localizedDescription } }
         }
     }
+    func applyPreferences(_ library: LibraryStore) { configure(library) }
     private func configure(_ library: LibraryStore) {
         var settings = library.preferences
         settings.subtitleOffset = subtitleOffset
@@ -308,110 +309,173 @@ final class EpisodePlayerModel: ObservableObject {
 struct EpisodePlayerView: View {
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var downloads: DownloadStore
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var model: EpisodePlayerModel
     @ObservedObject private var savedSubtitles = EpisodeSubtitleStore.shared
-    @State private var showWeb = true
+    @State private var showWeb = false
     @State private var importer = false
     @State private var subtitleSheet = false
-    @State private var fullscreen = false
-    @Environment(\.dismiss) private var dismiss
+    @State private var settings = false
+    @State private var settingsTab = 0
     init(item: PlaybackItem) { _model = StateObject(wrappedValue: EpisodePlayerModel(item: item)) }
     var body: some View {
-        VStack(spacing: 0) {
-            ZStack {
-                if UIShowcase.enabled {
-                    LinearGradient(colors: [Color(red: 0.18, green: 0.12, blue: 0.3), .black], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    VStack(spacing: 8) { Image(systemName: "sparkles").font(.largeTitle); Text("UI PREVIEW · 예시 데이터").font(.caption) }.foregroundStyle(.white.opacity(0.5))
-                } else { MPVPlayerView(engine: model.engine) }
-                if model.systemPlayback, let stream = model.systemStream {
-                    SystemPlayerView(stream: stream, resume: library.resume(model.item.anime, episodeID: model.item.episodeID),
-                                     onProgress: { position, duration in
-                        library.progress(anime: model.item.anime, episodeID: model.item.episodeID, title: model.item.title,
-                            number: model.item.number, watchURL: model.item.watchURL.absoluteString, directURL: stream.url.absoluteString,
-                            position: position, duration: duration)
-                    })
-                }
-                if showWeb { ProviderPlayerView(resolver: model.resolver) }
-                if !showWeb && !model.systemPlayback {
-                    PlayerControls(engine: model.engine, seek: library.preferences.seekSeconds,
-                        title: model.item.anime.title, episode: model.item.title, fullscreen: fullscreen,
-                        canPrevious: !model.previous.isEmpty, canNext: !model.item.next.isEmpty,
-                        back: { if fullscreen { fullscreen = false; OrientationController.portrait() } else { dismiss() } },
-                        expand: { fullscreen.toggle(); if fullscreen { OrientationController.landscape() } else { OrientationController.portrait() } },
-                        previous: { if let item = model.previous.popLast() { model.change(item, library: library, remember: false) } },
-                        next: { let remaining = model.item.next; guard !remaining.isEmpty else { return }; var item = remaining[0]; item.next = Array(remaining.dropFirst()); model.change(item, library: library) },
-                        subtitles: { subtitleSheet = true }, chapter: model.chapters.first(where: { model.engine.position >= $0.start && model.engine.position < $0.end }),
-                        skipChapter: { if let chapter = model.chapters.first(where: { model.engine.position >= $0.start && model.engine.position < $0.end }) { model.engine.seek(chapter.end) } },
-                        adjustSubtitle: { model.shiftSubtitle($0, library: library) })
-                }
-            }.frame(maxWidth: .infinity).frame(height: fullscreen ? nil : 255).background(.black)
-            if !fullscreen {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text(model.item.anime.title).font(.title2.bold()).lineLimit(2)
-                        Text(model.item.title).font(.subheadline).foregroundStyle(.secondary)
-                        HStack(spacing: 18) {
-                            Button { subtitleSheet = true } label: { Label("자막", systemImage: "captions.bubble") }
-                            Menu {
-                                Button("자막 검색") { subtitleSheet = true }
-                                Button("자막 가져오기") { importer = true }
-                                Button("AI 번역") { model.translate(library: library) }
-                                Button("캐시 없이 다시 번역") { model.translate(library: library, fresh: true) }
-                                ForEach(model.active?.subtitles ?? model.resolver.subtitles) { subtitle in Button(subtitle.label) { model.importSubtitle(subtitle.url, library: library, headers: subtitle.headers ?? [:]) } }
-                                ForEach(model.subtitleFiles, id: \.path) { file in Button(file.lastPathComponent) { model.selectSubtitle(file, library: library) } }
-                            } label: { Image(systemName: "chevron.down").font(.caption.bold()) }
-                            Spacer()
-                            Button { fullscreen = true; OrientationController.landscape() } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }
-                            Menu {
-                                Button(showWeb ? "네이티브 플레이어" : "웹 플레이어") { showWeb.toggle() }
-                                if let active = model.active {
-                                    Button("다운로드") { downloads.download(model.item, stream: active, quality: library.preferences.quality) }
-                                    Button("Cast 재생") { model.castVideo() }
-                                    Button("시스템 재생 / PiP") { model.engine.pause(); model.systemPlayback = true; showWeb = false }
-                                }
-                                Button("Cast 중계 종료") { model.stopCast() }
-                            } label: { Image(systemName: "ellipsis.circle").font(.title3) }
-                            AirPlayButton().frame(width: 28, height: 28)
-                            CastButton().frame(width: 28, height: 28)
-                        }.padding(16).background(LilacStyle.card, in: RoundedRectangle(cornerRadius: 18))
-                        if model.resolver.loading { ProgressView("영상 탐지 중…") }
-                        if !model.resolver.streams.isEmpty {
-                            Menu {
-                                ForEach(model.resolver.streams) { stream in
-                                    Button(stream.label + " · " + (stream.url.host ?? "")) { library.preferences.preferredStream = stream.label; model.play(stream, library: library); showWeb = false }
-                                }
-                            } label: { Label("영상 선택 · " + (model.active?.label ?? "자동"), systemImage: "slider.horizontal.3").font(.subheadline) }
-                        }
-                        if let subtitle = model.subtitle { Label(subtitle.lastPathComponent, systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.secondary) }
-                        TranslationStatus(coordinator: model.translation)
-                        if let status = model.prefetchStatus { Text(status).font(.caption).foregroundStyle(.secondary) }
-                        ForEach(model.chapters) { chapter in Button("\(chapter.type.uppercased()) 건너뛰기") { model.engine.seek(chapter.end) } }
-                        if !model.item.next.isEmpty { Button("다음 회차") { let next = model.item.next; var item = next[0]; item.next = Array(next.dropFirst()); model.change(item, library: library) } }
-                        if let error = model.error ?? model.resolver.error { Text(error).foregroundStyle(.red) }
-                        EngineError(engine: model.engine)
-                    }.padding(20)
-                }.background(LilacStyle.background)
+        ZStack {
+            Color.black
+            if UIShowcase.enabled {
+                LinearGradient(colors: [Color(red: 0.18, green: 0.12, blue: 0.3), .black], startPoint: .topLeading, endPoint: .bottomTrailing)
+                Text("UI PREVIEW · 예시 데이터").font(.caption).foregroundStyle(.white.opacity(0.4))
+            } else {
+                MPVPlayerView(engine: model.engine)
+                ProviderPlayerView(resolver: model.resolver).opacity(showWeb ? 1 : 0.001).allowsHitTesting(showWeb)
             }
-        }.navigationTitle(model.item.title).navigationBarTitleDisplayMode(.inline)
-            .toolbar(fullscreen ? .hidden : .visible, for: .navigationBar)
-            .toolbar(.hidden, for: .tabBar)
-            .ignoresSafeArea(fullscreen ? .all : [], edges: .all)
-            .onAppear {
-                if UIShowcase.enabled { showWeb = false; model.engine.position = 183; model.engine.duration = 1440 }
-                else { model.begin(library: library) }
+            if model.systemPlayback, let stream = model.systemStream {
+                SystemPlayerView(stream: stream, resume: library.resume(model.item.anime, episodeID: model.item.episodeID), onProgress: { position, duration in
+                    library.progress(anime: model.item.anime, episodeID: model.item.episodeID, title: model.item.title,
+                        number: model.item.number, watchURL: model.item.watchURL.absoluteString, directURL: stream.url.absoluteString, position: position, duration: duration)
+                })
             }
+            if !showWeb && !model.systemPlayback {
+                PlayerControls(engine: model.engine, seek: library.preferences.seekSeconds,
+                    title: DesktopCatalog.shared.title(model.item.anime.anime, source: model.item.anime.source, language: library.preferences.titleLanguage), episode: model.item.title,
+                    canPrevious: !model.previous.isEmpty, canNext: !model.item.next.isEmpty,
+                    back: { dismiss() },
+                    previous: { if let item = model.previous.popLast() { model.change(item, library: library, remember: false) } },
+                    next: nextEpisode,
+                    settings: { settings = true },
+                    chapter: model.chapters.first(where: { model.engine.position >= $0.start && model.engine.position < $0.end }),
+                    skipChapter: { if let chapter = model.chapters.first(where: { model.engine.position >= $0.start && model.engine.position < $0.end }) { model.engine.seek(chapter.end) } },
+                    adjustSubtitle: { model.shiftSubtitle($0, library: library) })
+            } else {
+                VStack { HStack { Button { dismiss() } label: { Image(systemName: "arrow.left") }; Spacer(); Button { settings = true } label: { Image(systemName: "gearshape") } }.font(.title3).padding(20).background(.black.opacity(0.65)); Spacer() }.foregroundStyle(.white)
+            }
+            if !showWeb && model.active == nil && !UIShowcase.enabled {
+                VStack(spacing: 12) {
+                    if model.resolver.loading { ProgressView("영상을 준비하고 있어요").tint(.white) }
+                    if let error = model.error ?? model.resolver.error { Text(error).font(.caption).multilineTextAlignment(.center); Button("다시 시도") { model.begin(library: library) }; Button("웹 플레이어 열기") { showWeb = true } }
+                }.padding(24).foregroundStyle(.white).background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 16))
+            }
+        }.frame(maxWidth: .infinity, maxHeight: .infinity).background(.black).ignoresSafeArea()
+            .accessibilityIdentifier("fullscreen-player")
+            .statusBarHidden(true).persistentSystemOverlays(.hidden)
+            .toolbar(.hidden, for: .navigationBar).toolbar(.hidden, for: .tabBar)
+            .onAppear { OrientationController.landscape(); if UIShowcase.enabled { model.engine.position = 183; model.engine.duration = 1440 } else { model.begin(library: library) } }
             .onDisappear { model.shutdown(library: library); OrientationController.portrait() }
             .onChange(of: model.resolver.streams) { streams in
-                if let stream = streams.first(where: { $0.label == library.preferences.preferredStream }) ?? streams.first, model.active == nil || (model.active?.url == stream.url && model.active?.manifestKey != stream.manifestKey) {
+                if let stream = streams.first(where: { $0.label == library.preferences.preferredStream }) ?? streams.first,
+                    model.active == nil || (model.active?.url == stream.url && model.active?.manifestKey != stream.manifestKey) {
                     model.play(stream, library: library); showWeb = false
                 }
             }
             .fileImporter(isPresented: $importer, allowedContentTypes: [.data, .text]) { result in
                 do { model.importSubtitle(try result.get(), library: library) } catch { model.error = error.localizedDescription }
             }
-            .sheet(isPresented: $subtitleSheet) {
-                NavigationStack {
-                    List {
+            .sheet(isPresented: $settings) { playerSettings }
+            .sheet(isPresented: $subtitleSheet) { NavigationStack { subtitleList.navigationTitle("자막 선택").toolbar { Button("닫기") { subtitleSheet = false } } } }
+    }
+    private func nextEpisode() {
+        let remaining = model.item.next
+        guard !remaining.isEmpty else { return }
+        var item = remaining[0]; item.next = Array(remaining.dropFirst()); model.change(item, library: library)
+    }
+    private func openSubtitleList() { settings = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { subtitleSheet = true } }
+    private var playerSettings: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                Picker("플레이어 설정", selection: $settingsTab) { Text("재생").tag(0); Text("자막").tag(1); Text("자막 모양").tag(2) }.pickerStyle(.segmented).padding(16)
+                Form {
+                    if settingsTab == 0 { playbackSettings }
+                    else if settingsTab == 1 { subtitleSettings }
+                    else { styleSettings }
+                }
+            }.navigationTitle("플레이어 설정").navigationBarTitleDisplayMode(.inline).toolbar { Button("닫기") { settings = false } }
+        }.presentationDetents([.large])
+    }
+    @ViewBuilder private var playbackSettings: some View {
+        Section("영상 서버 · 화질") {
+            ForEach(model.resolver.streams) { stream in
+                Button { library.preferences.preferredStream = stream.label; model.play(stream, library: library); showWeb = false } label: {
+                    HStack { Text(stream.label); Spacer(); if model.active?.id == stream.id { Image(systemName: "checkmark") } }
+                }
+            }
+            Picker("화질", selection: $library.preferences.quality) { ForEach(["Auto", "480p", "720p", "1080p"], id: \.self) { Text($0) } }
+                .onChange(of: library.preferences.quality) { _ in if let stream = model.active { model.play(stream, library: library) } }
+            Button(showWeb ? "네이티브 플레이어" : "웹 플레이어") { showWeb.toggle(); settings = false }
+        }
+        Section("재생") {
+            Picker("재생 속도", selection: $library.preferences.speed) { ForEach([0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2], id: \.self) { Text(String(format: "%.2fx", $0)).tag($0) } }.onChange(of: library.preferences.speed) { model.engine.set("speed", String($0)) }
+            Toggle("다음 화 자동 재생", isOn: $library.preferences.autoPlay)
+            Toggle("OP/ED 자동 스킵", isOn: $library.preferences.autoSkip)
+            Picker("화면 맞춤", selection: Binding(get: { library.preferences.playerFit ?? "contain" }, set: { library.preferences.playerFit = $0; model.engine.setFit($0) })) { Text("맞춤").tag("contain"); Text("채움").tag("cover"); Text("늘림").tag("stretch") }
+            Toggle("음소거", isOn: Binding(get: { model.engine.muted }, set: { _ in model.engine.toggleMute() }))
+            Slider(value: Binding(get: { model.engine.volume }, set: { model.engine.setVolume($0) }), in: 0...100) { Text("볼륨") }
+            ForEach(model.engine.tracks.filter { $0.type == "audio" }) { track in Button(track.title) { model.engine.selectTrack(track) } }
+        }
+        Section("저장 · 연결") {
+            if let active = model.active {
+                Button("회차 다운로드") { downloads.download(model.item, stream: active, quality: library.preferences.quality) }
+                Button("Cast 재생") { model.castVideo() }
+                Button("시스템 재생 / PiP") { model.engine.pause(); model.systemPlayback = true; showWeb = false; settings = false }
+                if model.systemPlayback { Button("mpv로 재생") { model.systemPlayback = false; model.play(active, library: library); settings = false } }
+            }
+            HStack { Text("AirPlay / Chromecast"); Spacer(); AirPlayButton().frame(width: 32, height: 32); CastButton().frame(width: 32, height: 32) }
+            Button("Cast 중계 종료") { model.stopCast() }
+        }
+        if let error = model.error { Section { Text(error).foregroundStyle(.red) } }
+    }
+    @ViewBuilder private var subtitleSettings: some View {
+        Section("자막 가져올 곳") {
+            Picker("자막 소스", selection: Binding(get: { library.preferences.subtitleProvider ?? "auto" }, set: { library.preferences.subtitleProvider = $0 })) {
+                Text("자동").tag("auto"); Text("Kairan").tag("kairan"); Text("Csora").tag("csora"); Text("Anissia").tag("anissia"); Text("Jimaku / AI 번역").tag("jimaku"); Text("직접 선택").tag("manual")
+            }
+            Button("한국어 자막 다시 찾기") { model.search(library.preferences.subtitleProvider == "auto" ? "kairan" : library.preferences.subtitleProvider ?? "kairan") }
+            Button("자막 검색 · Jimaku 파일 · 저장 자막", action: openSubtitleList)
+            Button("자막 파일 열기") { settings = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { importer = true } }
+            if let subtitle = model.subtitle { Text(subtitle.lastPathComponent).font(.caption) }
+            Button(model.engine.subtitlesVisible ? "자막 표시 끄기" : "자막 표시 켜기") { model.engine.toggleSubtitleVisibility() }
+            ForEach(model.active?.subtitles ?? model.resolver.subtitles) { track in
+                Button(track.label) { model.importSubtitle(track.url, library: library, headers: track.headers ?? [:]) }
+            }
+        }
+        Section("번역") {
+            Button("번역 API") { model.translate(library: library, provider: library.preferences.translationProvider == "local" ? "gemini" : library.preferences.translationProvider) }
+            Button("로컬 AI") { model.translate(library: library, provider: "local") }
+            Button("캐시 없이 다시 번역") { model.translate(library: library, fresh: true) }
+            TranslationStatus(coordinator: model.translation)
+            if let status = model.prefetchStatus { Text(status).font(.caption) }
+        }
+        Section("이 회차에 저장한 자막") {
+            ForEach(savedSubtitles.list(model.item)) { record in
+                if let file = record.file {
+                    HStack {
+                        Button(record.name) { model.selectSubtitle(file, library: library, translate: !record.translated) }
+                        Spacer(); ShareLink(item: file) { Image(systemName: "square.and.arrow.up") }
+                        Button(role: .destructive) { savedSubtitles.remove(record.id) } label: { Image(systemName: "trash") }
+                    }
+                }
+            }
+        }
+        if model.searching { ProgressView("자막을 찾는 중") }
+        ForEach(Array(model.assets.enumerated()), id: \.offset) { _, asset in
+            if asset.source == "post", let url = URL(string: asset.url) { Link(asset.name, destination: url) }
+            else { Button(asset.name) { if let url = URL(string: asset.url) { model.importSubtitle(url, library: library) } } }
+        }
+    }
+    private var styleSettings: some View {
+        Section("자막 모양") {
+            Slider(value: $library.preferences.subtitleSize, in: 50...300, step: 10)
+            Text("크기 \(Int(library.preferences.subtitleSize))%")
+            Toggle("굵게", isOn: $library.preferences.subtitleBold)
+            Toggle("ASS 효과", isOn: $library.preferences.assEffects)
+            TextField("폰트", text: $library.preferences.subtitleFont)
+            TextField("글자 색", text: $library.preferences.subtitleColor)
+            TextField("테두리 색", text: $library.preferences.outlineColor)
+            Slider(value: $library.preferences.outlineWidth, in: 0...6, step: 0.5)
+            Slider(value: $library.preferences.subtitlePadding, in: 0...40)
+            HStack { Button("빠르게 −0.5초") { model.shiftSubtitle(-0.5, library: library) }; Text("\(model.subtitleOffset, specifier: "%.1f")초"); Button("늦게 +0.5초") { model.shiftSubtitle(0.5, library: library) } }
+        }.onChange(of: library.preferences) { _ in model.applyPreferences(library) }
+    }
+    private var subtitleList: some View {
+        List {
                         HStack {
                             Button("-0.1초") { model.shiftSubtitle(-0.1, library: library) }
                             Text("자막 싱크 \(model.subtitleOffset, specifier: "%.1f")초")
@@ -446,9 +510,7 @@ struct EpisodePlayerView: View {
                             else { Button(asset.name) { if let url = URL(string: asset.url) { model.importSubtitle(url, library: library); subtitleSheet = false } } }
                         }
                         if let error = model.error { Text(error).foregroundStyle(.red) }
-                    }.navigationTitle("자막 선택").toolbar { Button("닫기") { subtitleSheet = false } }
-                }
-            }
+                    }
     }
 }
 struct PlayerControls: View {
@@ -457,14 +519,12 @@ struct PlayerControls: View {
     let seek: Double
     let title: String
     let episode: String
-    let fullscreen: Bool
     let canPrevious: Bool
     let canNext: Bool
     let back: () -> Void
-    let expand: () -> Void
     let previous: () -> Void
     let next: () -> Void
-    let subtitles: () -> Void
+    let settings: () -> Void
     let chapter: OfflineChapter?
     let skipChapter: () -> Void
     let adjustSubtitle: (Double) -> Void
@@ -474,6 +534,7 @@ struct PlayerControls: View {
     @State private var locked = false
     @State private var interaction = UUID()
     @State private var feedback = ""
+    private var windowInsets: UIEdgeInsets { UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first(where: \.isKeyWindow)?.safeAreaInsets ?? .zero }
     var body: some View {
         GeometryReader { geometry in
             ZStack {
@@ -492,18 +553,7 @@ struct PlayerControls: View {
                                 Text(episode).font(.system(size: 11)).foregroundStyle(.white.opacity(0.65)).lineLimit(1)
                             }.padding(.horizontal, 12).padding(.vertical, 8).background(.black.opacity(0.4), in: RoundedRectangle(cornerRadius: 14))
                             Spacer(minLength: 0)
-                            Menu {
-                                Button("자막 선택", action: subtitles)
-                                Button("자막 끄기") { engine.disableSubtitles() }
-                                Button(engine.muted ? "음소거 해제" : "음소거") { engine.toggleMute() }
-                                Button("볼륨 +10") { engine.setVolume(engine.volume + 10) }
-                                Button("볼륨 -10") { engine.setVolume(engine.volume - 10) }
-                                Button("화면에 맞춤") { engine.setFit("contain") }
-                                Button("화면 채움") { engine.setFit("cover") }
-                                Button("화면 늘림") { engine.setFit("stretch") }
-                                ForEach(engine.tracks) { track in Button(track.title) { engine.selectTrack(track) } }
-                                ForEach([0.5, 1, 1.25, 1.5, 2], id: \.self) { speed in Button("\(speed)x") { engine.set("speed", String(speed)); touch() } }
-                            } label: { icon("gearshape", size: 44) }
+                            control("gearshape", label: "플레이어 설정", action: settings)
                         }
                         Spacer(minLength: 4)
                         HStack(spacing: 12) {
@@ -529,9 +579,8 @@ struct PlayerControls: View {
                             }.font(.system(size: 11)).padding(.horizontal, 12).padding(.vertical, 2)
                                 .background(.black.opacity(0.52), in: RoundedRectangle(cornerRadius: 20))
                             control("lock.fill", label: "화면 잠금") { locked = true; visible = false }
-                            control(fullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right", label: "전체 화면", action: expand)
                         }
-                    }.padding(.horizontal, fullscreen ? 24 : 12).padding(.vertical, 12)
+                    }.padding(.horizontal, max(24, max(geometry.safeAreaInsets.leading, max(windowInsets.left, windowInsets.right)))).padding(.top, max(14, max(geometry.safeAreaInsets.top, windowInsets.top))).padding(.bottom, max(14, max(geometry.safeAreaInsets.bottom, windowInsets.bottom)))
                 }
                 if locked {
                     VStack { Spacer(); HStack { Spacer(); control("lock.open.fill", label: "잠금 해제") { locked = false; visible = true } }.padding(18) }
@@ -551,7 +600,6 @@ struct PlayerControls: View {
                     Button("") { engine.setVolume(engine.volume + 5) }.keyboardShortcut(.upArrow, modifiers: [])
                     Button("") { engine.setVolume(engine.volume - 5) }.keyboardShortcut(.downArrow, modifiers: [])
                     Button("") { engine.toggleMute() }.keyboardShortcut("m", modifiers: [])
-                    Button("", action: expand).keyboardShortcut("f", modifiers: [])
                     Button("", action: back).keyboardShortcut(.escape, modifiers: [])
                     Group {
                         Button("") { engine.toggleSubtitleVisibility() }.keyboardShortcut("c", modifiers: [])

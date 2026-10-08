@@ -6,7 +6,7 @@ import io.ktor.client.call.body
 import io.ktor.client.request.*
 import io.ktor.http.*
 import kotlinx.serialization.json.*
-import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.*
 import kotlin.experimental.xor
 
 internal expect fun inflateCatalogGzip(data: ByteArray): ByteArray
@@ -166,6 +166,7 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
             val pages = cursors.getOrPut(key) { mutableMapOf() }
             if (page > 1 && pages[page] == null) return emptyList()
             val params = mutableMapOf("limit" to "15", "sort" to "-popularity")
+            params["sort"] = when(filter.sort) { "score" -> "-score"; "year" -> "-season_year"; else -> "-popularity" }
             if (query.isNotBlank()) params["q"] = query
             pages[page]?.let { params["cursor"] = it }
             if (filter.year.isNotBlank()) params["season_year"] = filter.year
@@ -184,7 +185,7 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
         }
         val base = "https://linkani.tv"
         val suffix = if (page > 1) "page/" + page + "/" else ""
-        val path = if (filter.year.isNotBlank()) "/list/2/year/" + filter.year.encodeURLPathPart() + "/" + suffix else "/list/2/" + suffix
+        val path = if (filter.sort == "popular") "/label/topday/" + suffix else if (filter.status == "RELEASING") "/list/2/class/" + "월화수목금토일"[((catalogWeekday() + 6) % 7)].toString().encodeURLPathPart() + "/" + suffix else if (filter.year.isNotBlank()) "/list/2/year/" + filter.year.encodeURLPathPart() + "/" + suffix else "/list/2/" + suffix
         val params = if (query.isBlank()) emptyMap() else mapOf("wd" to query)
         return DesktopSourceParser.koreanList(text(base + if (query.isBlank()) path else "/view/" + suffix, params), source)
     }
@@ -201,6 +202,27 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
         }
         return SourceDetail(anime.copy(episodes = episodes, reAnimeRelated = relations), listOf(EpisodeServer(1, "Miruro", episodes)))
     }
+    suspend fun homeShows(source: String, season: Boolean): List<Anime> {
+        val date = currentCatalogDate(); val year = date.take(4)
+        val quarter = listOf("WINTER", "SPRING", "SUMMER", "FALL")[(date.substring(5, 7).toInt() - 1) / 3]
+        if (source == "ohli24") return if (season) DesktopSourceParser.koreanList(text("https://www.ohli24.net/ing"), source) else emptyList()
+        if (source == "linkani") return (1..if (season) 2 else 1).flatMap { browse(source, "", it, if (season) BrowseFilter(year = year) else BrowseFilter(status = "RELEASING")) }.distinctBy { it.id }
+        val candidates = mutableListOf<JsonObject>(); var cursor = ""
+        repeat(6) {
+            if (candidates.size >= 40) return@repeat
+            val root = miruro("anime", buildMap {
+                put("limit", "15"); put("sort", "-popularity"); if (cursor.isNotBlank()) put("cursor", cursor)
+                if (season) { put("season", quarter); put("season_year", year) } else put("status", "RELEASING")
+            })
+            candidates += root.list("data").filterIsInstance<JsonObject>().filter { raw -> raw.text("status") != "NOT_YET_RELEASED" && raw.obj("episode_counts").values.any { (it as? JsonPrimitive)?.content?.toIntOrNull()?.let { n -> n > 0 } == true } }
+            cursor = root.text("next_cursor")
+            if (cursor.isBlank()) return candidates.map(DesktopSourceParser::miruroAnime).let { if (season) playableMiruro(it) else it }
+        }
+        return candidates.map(DesktopSourceParser::miruroAnime).let { if (season) playableMiruro(it) else it }
+    }
+    private suspend fun playableMiruro(items: List<Anime>): List<Anime> = coroutineScope {
+        items.chunked(6).flatMap { group -> group.map { item -> async { try { item.takeIf { detail(it, "miruro").anime.episodes.isNotEmpty() } } catch (e: CancellationException) { throw e } catch (_: Exception) { null } } }.awaitAll().filterNotNull() }
+    }
     suspend fun streams(source: String, animeId: String, number: Int, url: String): List<DesktopPlaybackStream> = when (source) {
         "miruro" -> DesktopSourceParser.miruroStreams(miruro("anime/" + animeId + "/episodes/" + number + "/play"))
         "linkani" -> DesktopSourceParser.linkaniStreams(text(url))
@@ -208,3 +230,9 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
     }
 }
 internal expect fun currentCatalogDate(): String
+internal fun catalogWeekday(): Int {
+    // Gregorian weekday (Sunday = 0), independent of platform calendars.
+    val parts = currentCatalogDate().take(10).split('-').map(String::toInt)
+    var year = parts[0]; val month = parts[1]; if (month < 3) year--
+    return (year + year / 4 - year / 100 + year / 400 + listOf(0,3,2,5,0,3,5,1,4,6,2,4)[month - 1] + parts[2]) % 7
+}

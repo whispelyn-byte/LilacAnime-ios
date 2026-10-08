@@ -36,6 +36,7 @@ enum DownloadTransfer {
         try await Task.detached(priority: .utility) {
             let access = folder.startAccessingSecurityScopedResource()
             defer { if access { folder.stopAccessingSecurityScopedResource() } }
+            if FileManager.default.fileExists(atPath: folder.appendingPathComponent("downloads.json").path) { return try DesktopDownloads.load(folder, skipping: existing) }
             let index = folder.appendingPathComponent("index.json")
             guard (try index.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) <= 16_000_000 else { throw SubtitleFiles.failure("다운로드 목록이 너무 큽니다.") }
             let entries = try JSONDecoder().decode([DownloadEntry].self, from: Data(contentsOf: index))
@@ -63,7 +64,10 @@ enum DownloadTransfer {
                 }
                 try FileManager.default.createDirectory(at: DownloadStore.directory, withIntermediateDirectories: true)
                 let target = DownloadStore.directory.appendingPathComponent(entry.id)
-                guard !FileManager.default.fileExists(atPath: target.path) else { continue }
+                if FileManager.default.fileExists(atPath: target.path) {
+                    if try files(entry, in: target).allSatisfy({ FileManager.default.fileExists(atPath: target.appendingPathComponent($0).path) }) { imported.append(entry) }
+                    continue
+                }
                 let staging = DownloadStore.directory.appendingPathComponent("import-" + UUID().uuidString)
                 do { try FileManager.default.copyItem(at: source, to: staging); try FileManager.default.moveItem(at: staging, to: target) }
                 catch { try? FileManager.default.removeItem(at: staging); throw error }
@@ -113,9 +117,9 @@ struct DownloadTransferView: View {
     @State private var message: String?
     var body: some View {
         List {
-            Text("영상·자막·OP/ED 정보와 회차 목록을 폴더로 내보내고, 다른 설치에서 다시 가져옵니다. 앱 내부 다운로드도 그대로 남습니다.")
+            Text("iOS의 index.json 폴더 또는 PC의 downloads.json과 작품 폴더를 함께 넣은 폴더를 가져옵니다. PC 목록은 앱 데이터 폴더에, 영상은 Videos/LilacAnime 또는 지정한 다운로드 폴더에 있습니다. 영상·자막·글꼴·OP/ED 정보를 함께 복사해 주세요.")
             Button("완료한 다운로드를 폴더로 내보내기") { importing = false; picker = true }.disabled(busy)
-            Button("내보낸 다운로드 폴더 가져오기") { importing = true; picker = true }.disabled(busy)
+            Button("PC·iOS 다운로드 폴더 가져오기") { importing = true; picker = true }.disabled(busy)
             if busy { ProgressView() }
             if let message { Text(message) }
         }.navigationTitle("다운로드 폴더")

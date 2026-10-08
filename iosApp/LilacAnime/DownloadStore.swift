@@ -306,6 +306,24 @@ final class DownloadStore: ObservableObject {
     func pauseAll() { analysisTask?.cancel(); subtitleTask?.cancel(); downloadTranslator.cancel(); stopResolving(); for entry in entries where entry.localFile == nil { cancel(entry.id) } }
     func resumeAll() { enqueue(entries.filter { $0.localFile == nil }.map(\.playback), quality: library?.preferences.quality ?? "Auto") }
     func clearCompleted() { for entry in entries where entry.localFile != nil { delete(entry.id) } }
+    func clearList() {
+        let removable = Set(entries.filter { !["대기", "준비 중", "다운로드 중"].contains($0.status) && !busy($0.id) }.map(\.id))
+        entries.removeAll { removable.contains($0.id) }
+        persist()
+    }
+    func restoreList() {
+        do {
+            let folders = try FileManager.default.contentsOfDirectory(at: Self.directory, includingPropertiesForKeys: nil)
+            let values = folders.compactMap { folder -> DownloadEntry? in
+                guard let data = try? Data(contentsOf: folder.appendingPathComponent("download-entry.json")),
+                    let entry = try? JSONDecoder().decode(DownloadEntry.self, from: data), DownloadTransfer.valid(entry),
+                    folder.lastPathComponent == entry.id, let file = entry.localFile,
+                    FileManager.default.fileExists(atPath: folder.appendingPathComponent(file).path) else { return nil }
+                return entry
+            }
+            importCompleted(values)
+        } catch { self.error = error.localizedDescription }
+    }
     func clearAll() async {
         guard !clearing else { return }
         clearing = true
@@ -395,6 +413,10 @@ final class DownloadStore: ObservableObject {
         do {
             try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
             try JSONEncoder().encode(entries).write(to: file, options: .atomic)
+            for entry in entries where entry.localFile != nil {
+                let folder = Self.directory.appendingPathComponent(entry.id)
+                if FileManager.default.fileExists(atPath: folder.path) { try JSONEncoder().encode(entry).write(to: folder.appendingPathComponent("download-entry.json"), options: .atomic) }
+            }
         } catch { self.error = error.localizedDescription }
     }
 }
@@ -403,6 +425,10 @@ struct DownloadsView: View {
     @State private var confirmClear = false
     @State private var analyzing = false
     @State private var analysisMessage: String?
+    @State private var collapsed: Set<String> = []
+    private var groups: [String] { Dictionary(grouping: downloads.entries, by: { $0.anime.id }).keys.sorted { left, right in
+        (downloads.entries.filter { $0.anime.id == left }.map(\.date).max() ?? .distantPast) > (downloads.entries.filter { $0.anime.id == right }.map(\.date).max() ?? .distantPast)
+    } }
     var body: some View {
         NavigationStack {
             List {
@@ -416,11 +442,13 @@ struct DownloadsView: View {
                 Section("다운로드 관리") {
                     HStack { Button("모두 일시 중지") { downloads.pauseAll() }; Button("모두 이어받기") { downloads.resumeAll() } }.buttonStyle(.borderless)
                     NavigationLink("다운로드 폴더 내보내기·가져오기") { DownloadTransferView() }
+                    Button("목록 비우기 · 파일 보존") { downloads.clearList() }
+                    Button("보존한 다운로드 다시 찾기") { downloads.restoreList() }
                     Button("다운로드 전체 삭제", role: .destructive) { confirmClear = true }.disabled(downloads.clearing)
                     if downloads.clearing { ProgressView("중단 후 삭제 중") }
                 }
-                ForEach(Array(Dictionary(grouping: downloads.entries, by: { $0.anime.id }).keys).sorted(), id: \.self) { key in
-                  Section(downloads.entries.first { $0.anime.id == key }?.anime.title ?? key) {
+                ForEach(groups, id: \.self) { key in
+                  DisclosureGroup(isExpanded: Binding(get: { !collapsed.contains(key) }, set: { if $0 { collapsed.remove(key) } else { collapsed.insert(key) } })) {
                     ForEach(downloads.entries.filter { $0.anime.id == key }.sorted { $0.number < $1.number }) { entry in
                     VStack(alignment: .leading, spacing: 8) {
                         Text(entry.anime.title).font(.headline); Text(entry.title)
@@ -432,14 +460,14 @@ struct DownloadsView: View {
                         if entry.total > 0 && entry.status == "다운로드 중" { ProgressView(value: Double(entry.completed), total: Double(max(entry.total, 1))) }
                         if let error = entry.error { Text(error).foregroundStyle(.red) }
                         HStack {
-                            if entry.localFile != nil { NavigationLink("재생") { EpisodePlayerView(item: entry.playback) } }
+                            if entry.localFile != nil { PlaybackButton(item: entry.playback) { Text("재생") } }
                             if entry.status == "다운로드 중" { Button("중단") { downloads.cancel(entry.id) } }
                             else if entry.localFile == nil { Button("다시 시도") { downloads.retry(entry) } }
                             Button("삭제", role: .destructive) { downloads.delete(entry.id) }
                         }.buttonStyle(.borderless)
                     }
                 }
-                  }
+                  } label: { Text(downloads.entries.first { $0.anime.id == key }?.anime.title ?? key).font(.headline) }
                 }
                 if let status = downloads.analysisStatus { ProgressView(status) }
                 if let status = downloads.translationStatus { ProgressView(status) }

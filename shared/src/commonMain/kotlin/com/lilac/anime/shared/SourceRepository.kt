@@ -8,9 +8,9 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.*
 import kotlinx.coroutines.*
-import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.*
 enum class AnimeSource(val key: String) { LINKKF("linkkf"), REANIME("reanime"), ANIMENOSUB("animenosub"), MIRURO("miruro"), OHLI24("ohli24"), LINKANI("linkani") }
-data class BrowseFilter(val genres: List<String> = emptyList(), val year: String = "", val season: String = "", val format: String = "", val status: String = "", val studio: String = "")
+data class BrowseFilter(val genres: List<String> = emptyList(), val year: String = "", val season: String = "", val format: String = "", val status: String = "", val studio: String = "", val sort: String = "")
 data class SourceFilters(val genres: List<String> = emptyList(), val years: List<String> = emptyList(),
     val formats: List<String> = emptyList(), val statuses: List<String> = emptyList(),
     val seasons: List<String> = emptyList(), val studios: List<String> = emptyList())
@@ -27,13 +27,17 @@ class SourceRepository(private val client: HttpClient = newSharedClient()) {
             "reanime" -> ReAnimeHarParser.parseSearch(getText("https://reanime.to/api/v1/search", buildMap {
                 put("limit", "36"); put("offset", ((page - 1) * 36).toString())
                 if (query.isNotBlank()) put("q", query.trim())
+                if (filter.sort.isNotBlank()) put("sort", when (filter.sort) { "popular" -> "popularity"; "year" -> "year"; else -> "score" })
                 if (filter.genres.isNotEmpty()) put("genre", filter.genres.joinToString(","))
                 listOf("year" to filter.year, "season" to filter.season, "format" to filter.format, "status" to filter.status, "studio" to filter.studio).forEach { (key, value) -> if (value.isNotBlank()) put(key, value) }
             }))
             "animenosub" -> {
                 val base = "https://animenosub.to"
-                val path = if (page == 1) "$base/" else "$base/page/$page/"
-                AnimenosubParser.parseAnimeList(Ksoup.parse(getText(path, buildMap { if (query.isNotBlank()) put("s", query); if (filter.status == "RELEASING") put("status", "ongoing"); if (filter.season.isNotBlank() && filter.year.isNotBlank()) put("season[0]", filter.season.lowercase() + "-" + filter.year) }), path))
+                val filtered = query.isBlank() && (filter.sort.isNotBlank() || filter.status.isNotBlank() || filter.season.isNotBlank())
+                val path = if (filtered) "$base/anime/" else if (page == 1) "$base/" else "$base/page/$page/"
+                val document = Ksoup.parse(getText(path, buildMap { if (filtered) put("page", "$page"); if (filter.sort.isNotBlank()) put("order", when(filter.sort) { "year" -> "latest"; "score" -> "rating"; else -> "popular" }); if (query.isNotBlank()) put("s", query); if (filter.status == "RELEASING") put("status", "ongoing"); if (filter.season.isNotBlank() && filter.year.isNotBlank()) put("season[0]", filter.season.lowercase() + "-" + filter.year) }), path)
+                if (filter.status.isNotBlank() || filter.season.isNotBlank()) document.select("article.bs").filter { it.select(".ans-status-ribbon").text().contains("upcoming", true) }.forEach { it.remove() }
+                AnimenosubParser.parseAnimeList(document)
             }
             else -> if (query.isNotBlank()) linkkf.search(query, page, filter)
                     else if (filter.genres.isNotEmpty() || filter.year.isNotBlank() || filter.format.isNotBlank()) linkkf.filtered(page, filter)
@@ -98,16 +102,28 @@ class SourceRepository(private val client: HttpClient = newSharedClient()) {
         if (source == "linkkf") return listOf("PV" to "5086", "극장판" to "5061", "16+" to "5085").map { (name, tag) ->
             SourceSection(name, linkkf.filtered(1, BrowseFilter(format = tag)))
         }
-        val year = currentCatalogDate().take(4)
-        val season = listOf("WINTER", "SPRING", "SUMMER", "FALL")[((currentCatalogDate().substring(5,7).toIntOrNull() ?: 1) - 1) / 3]
-        return listOf(SourceSection("이번 시즌", browse(source, filter = BrowseFilter(year = year, season = season))),
-            SourceSection("인기 작품", if (source == "reanime") top("week") else browse(source)))
+        return listOf(SourceSection("이번 시즌", homeShows(source, true)),
+            SourceSection("인기 작품", browse(source, filter = BrowseFilter(sort = "popular"))))
+    }
+    suspend fun homeShows(source: String, seasonOnly: Boolean): List<Anime> {
+        if (source in listOf("miruro", "ohli24", "linkani")) return desktop.homeShows(source, seasonOnly)
+        val date = currentCatalogDate(); val year = date.take(4)
+        val season = listOf("WINTER", "SPRING", "SUMMER", "FALL")[(date.substring(5,7).toInt() - 1) / 3]
+        if (source == "reanime") {
+            val root = Json.parseToJsonElement(getText("https://reanime.to/api/v1/search", buildMap {
+                put("limit", "100"); put("offset", "0")
+                if (seasonOnly) { put("season", season); put("year", year) } else { put("status", "RELEASING"); put("sort", "popularity") }
+            })).jsonObject
+            val playable = root.list("results").ifEmpty { root.list("data") }.filterIsInstance<JsonObject>().map { it["anime"] as? JsonObject ?: it }.filter {
+                (it.number("subbed") ?: 0) > 0 || (it.number("dubbed") ?: 0) > 0 || (it.number("subbed_count") ?: 0) > 0 || (it.number("dubbed_count") ?: 0) > 0
+            }
+            return ReAnimeHarParser.parseSearch(JsonObject(mapOf("results" to JsonArray(playable))).toString())
+        }
+        return (1..3).flatMap { page -> browse(source, page = page, filter = if(seasonOnly) BrowseFilter(year = year, season = season, sort = "popular") else BrowseFilter(status = "RELEASING", sort = "popular")) }.distinctBy { it.id }
     }
     suspend fun sourceSchedule(source: String, day: Int): List<Anime> {
         if (source == "linkkf") return parseCatalog(kotlinx.serialization.json.Json.parseToJsonElement(getText("https://linkkf1.5imgdarr.top/api/singlefilter.php", mapOf("categorytagid" to (21189 + day.coerceIn(0,6)).toString(), "limit" to "50"))))
-        if (source == "ohli24") return DesktopSourceParser.koreanList(getText("https://www.ohli24.net/ing"), source)
-        if (source == "reanime") return schedule(0)
-        return browse(source, filter = BrowseFilter(year = currentCatalogDate().take(4), status = "RELEASING"))
+        return homeShows(source, false)
     }
     suspend fun recordView(anime: Anime): SourceExtras {
         if (anime.source != "linkkf" || !Regex("^\\d+$").matches(anime.id)) return SourceExtras("", emptyList())

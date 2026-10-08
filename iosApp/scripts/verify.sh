@@ -38,15 +38,15 @@ mkdir -p build/screenshots
 xcrun simctl bootstatus "$SIMULATOR_ID" -b
 xcrun simctl install "$SIMULATOR_ID" build/DerivedData/Build/Products/Debug-iphonesimulator/LilacAnime.app
 xcrun simctl status_bar "$SIMULATOR_ID" override --time '9:41' --batteryState charged --batteryLevel 100
-for SCREEN in home detail player catalog models; do
+for SCREEN in home detail player catalog models settings; do
   xcrun simctl ui "$SIMULATOR_ID" appearance dark
   xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" com.lilac.anime.ios --ui-preview "$SCREEN"
-  sleep 3
+  sleep 12
   xcrun simctl io "$SIMULATOR_ID" screenshot "build/screenshots/$SCREEN-dark.png"
 done
 xcrun simctl ui "$SIMULATOR_ID" appearance light
 xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" com.lilac.anime.ios --ui-preview home
-sleep 3
+sleep 12
 xcrun simctl io "$SIMULATOR_ID" screenshot build/screenshots/home-light.png
 xcrun simctl terminate "$SIMULATOR_ID" com.lilac.anime.ios
 IPAD_ID="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); pads=[v for group in d["devices"].values() for v in group if v.get("isAvailable") and "iPad" in v["name"]]; print(pads[0]["udid"] if pads else "")')"
@@ -56,7 +56,7 @@ if [ -n "$IPAD_ID" ]; then
   xcrun simctl install "$IPAD_ID" build/DerivedData/Build/Products/Debug-iphonesimulator/LilacAnime.app
   xcrun simctl ui "$IPAD_ID" appearance dark
   xcrun simctl launch --terminate-running-process "$IPAD_ID" com.lilac.anime.ios --ui-preview workspace
-  sleep 3
+  sleep 12
   xcrun simctl io "$IPAD_ID" screenshot build/screenshots/workspace-ipad-dark.png
   xcrun simctl terminate "$IPAD_ID" com.lilac.anime.ios
 fi

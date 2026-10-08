@@ -16,21 +16,34 @@ struct SettingsView: View {
     @State private var tmdbStatus: String?
     @State private var tmdbTesting = false
     @State private var tmdbService = IosServices()
+    @State private var category = "general"
+    private let categories = ["general", "playback", "subtitle", "titles", "translate", "oped", "about"]
+    private let categoryNames = ["일반", "재생", "자막", "한국어 제목 검색", "자막 자동 번역", "OP/ED 분석 데이터", "업데이트 · 정보"]
     var body: some View {
         NavigationStack {
+            VStack(spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 8) {
+                ForEach(Array(categories.enumerated()), id: \.offset) { index, key in
+                    Button(categoryNames[index]) { category = key }.buttonStyle(.bordered).tint(category == key ? LilacStyle.accent : .secondary)
+                }
+            }.padding(16) }
             Form {
+                if category == "general" {
                 Section("화면과 콘텐츠") {
-                    Toggle("데스크탑 작업 공간", isOn: Binding(get: { store.preferences.desktopWorkspace ?? false }, set: { store.preferences.desktopWorkspace = $0 }))
                     Picker("작품 제목 표시", selection: Binding(get: { store.preferences.titleLanguage ?? "original" }, set: { store.preferences.titleLanguage = $0 })) {
                         Text("원래 제목").tag("original"); Text("한국어").tag("ko"); Text("영어").tag("en")
                     }
-                    NavigationLink("한국어 전체 카탈로그", destination: CatalogIndexView())
 
                     Picker("테마", selection: $store.preferences.theme) { Text("시스템").tag("system"); Text("밝게").tag("light"); Text("어둡게").tag("dark") }
-                    Picker("영상 소스", selection: $store.preferences.source) { ForEach(ContentSources.keys, id: \.self) { Text(ContentSources.name($0)).tag($0) } }
-                    Picker("기본 화질", selection: $store.preferences.quality) { ForEach(["Auto", "720p", "1080p"], id: \.self) { Text($0) } }
                 }
+                }
+                if category == "playback" {
                 Section("재생") {
+                    Picker("영상 소스", selection: $store.preferences.source) { ForEach(ContentSources.keys, id: \.self) { Text(ContentSources.name($0)).tag($0) } }
+                    Picker("기본 화질", selection: $store.preferences.quality) { ForEach(["Auto", "480p", "720p", "1080p"], id: \.self) { Text($0) } }
+                    Picker("화면 맞춤", selection: Binding(get: { store.preferences.playerFit ?? "contain" }, set: { store.preferences.playerFit = $0 })) { Text("맞춤").tag("contain"); Text("채움").tag("cover"); Text("늘림").tag("stretch") }
+                    Toggle("다운로드 자막도 자동 번역", isOn: Binding(get: { store.preferences.translateDownloads ?? true }, set: { store.preferences.translateDownloads = $0 }))
+                    Toggle("다운로드에 자막 포함", isOn: Binding(get: { store.preferences.downloadSubtitles ?? true }, set: { store.preferences.downloadSubtitles = $0 }))
                     Slider(value: $store.preferences.speed, in: 0.25...2, step: 0.25) { Text("배속") }
                     Text("기본 배속 \(store.preferences.speed, specifier: "%.2f")x")
                     Stepper("탐색 \(Int(store.preferences.seekSeconds))초", value: $store.preferences.seekSeconds, in: 1...120)
@@ -39,10 +52,13 @@ struct SettingsView: View {
                     Toggle("오프라인 OP/ED 분석", isOn: $store.preferences.offlineAnalysis)
                     Toggle("백그라운드 오디오", isOn: $store.preferences.backgroundAudio)
                 }
+                }
+                if category == "subtitle" {
                 Section("자막") {
                     Picker("기본 자막 소스", selection: Binding(get: { store.preferences.subtitleProvider ?? "auto" }, set: { store.preferences.subtitleProvider = $0 })) {
                         Text("자동 (한국어 트랙 우선)").tag("auto")
                         Text("Kairan 우선").tag("kairan"); Text("Csora 우선").tag("csora"); Text("Anissia 우선").tag("anissia")
+                        Text("Jimaku 우선").tag("jimaku")
                         Text("직접 선택").tag("manual")
                     }
                     Text("한국어 트랙이 없으면 Kairan → Csora → Anissia 순서로 찾습니다.").font(.caption).foregroundStyle(.secondary)
@@ -57,8 +73,12 @@ struct SettingsView: View {
                     Toggle("ASS 효과", isOn: $store.preferences.assEffects)
                     Slider(value: $store.preferences.subtitlePadding, in: 0...40)
                     Stepper("싱크 \(store.preferences.subtitleOffset, specifier: "%.1f")초", value: $store.preferences.subtitleOffset, in: -120...120, step: 0.1)
+                    NavigationLink("저장 자막·캐시 관리") { SubtitleStorageView() }
                 }
+                }
+                if category == "titles" {
                 Section("한국어 제목 검색 · TMDB") {
+                    NavigationLink("한국어 전체 카탈로그 · 인덱스", destination: CatalogIndexView())
                     SecureField("API Key 또는 Read Access Token", text: $tmdbKey)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                     Button("TMDB 키 저장") {
@@ -79,6 +99,8 @@ struct SettingsView: View {
                     Text("This product uses the TMDB API but is not endorsed or certified by TMDB.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                }
+                if category == "translate" {
                 Section("AI 번역") {
                     Toggle("자막 자동 번역", isOn: $store.preferences.autoTranslation)
                     Toggle("다음 화 자막 미리 번역", isOn: Binding(get: { store.preferences.pretranslateNext ?? true }, set: { store.preferences.pretranslateNext = $0 }))
@@ -110,7 +132,7 @@ struct SettingsView: View {
                         }
                         SecureField("API Key", text: $apiKey).textInputAutocapitalization(.never).autocorrectionDisabled()
                         Button("키 저장") {
-                            do { try SecureKeys.save(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), name: store.preferences.translationProvider); error = nil }
+                            do { try SecureKeys.save(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), name: store.preferences.translationProvider); error = nil; fetchCloudModels() }
                             catch { self.error = error.localizedDescription }
                         }
                     }
@@ -132,17 +154,26 @@ struct SettingsView: View {
                     Picker("Thinking", selection: $store.preferences.thinking) { ForEach(["auto", "on", "off"], id: \.self) { Text($0) } }
                     TextEditor(text: $store.preferences.prompt).frame(minHeight: 120)
                 }
+                }
+                if category == "about" {
                 Section("저장 공간") {
                     NavigationLink("저장 자막·캐시 관리") { SubtitleStorageView() }
                     NavigationLink(updater.updateAvailable ? "새 버전 있음 · 업데이트·릴리즈 노트" : "업데이트·릴리즈 노트") { DesktopUpdateView() }
-                    Toggle("다운로드 자막도 자동 번역", isOn: Binding(get: { store.preferences.translateDownloads ?? true }, set: { store.preferences.translateDownloads = $0 }))
-                    Toggle("다운로드에 자막 포함", isOn: Binding(get: { store.preferences.downloadSubtitles ?? true }, set: { store.preferences.downloadSubtitles = $0 }))
                     Button("시청 기록 삭제", role: .destructive) { store.clearHistory() }
                     Button("저장 자막을 보존하고 번역 캐시 정리") { do { try SubtitleCache.clean(library: store, all: false) } catch { self.error = error.localizedDescription } }
                     Button("OP/ED 분석 캐시 삭제") { OfflineAnalyzer.clearCache() }
                 }
+                }
+                if category == "oped" {
+                    Section("OP/ED 분석 데이터") {
+                        Toggle("다운로드 영상 자동 분석", isOn: $store.preferences.offlineAnalysis)
+                        NavigationLink("다운로드 영상 · 수동 분석") { DownloadsView() }
+                        Button("OP/ED 분석 캐시 삭제") { OfflineAnalyzer.clearCache() }
+                    }
+                }
                 if let error { Text(error).foregroundStyle(.red) }
                 if let error = store.persistenceError { Text(error).foregroundStyle(.red) }
+            }
             }.navigationTitle("설정")
             .onAppear { previousProvider = store.preferences.translationProvider; apiKey = SecureKeys.load(store.preferences.translationProvider); tmdbKey = SecureKeys.load("tmdb") }
              .onChange(of: store.preferences.translationProvider) { provider in
@@ -161,6 +192,16 @@ struct SettingsView: View {
                     store.preferences.subtitleFont = imported
                 } catch { self.error = error.localizedDescription }
             }
+        }
+    }
+    private func fetchCloudModels() {
+        testingAPI = true
+        let provider = store.preferences.translationProvider
+        let config = TranslationConfig(provider: provider, key: apiKey.trimmingCharacters(in: .whitespacesAndNewlines), model: "", region: store.preferences.qwenRegion, terminology: "")
+        tmdbService.cloudModels(config: config) { values, failure in
+            guard provider == store.preferences.translationProvider else { testingAPI = false; return }
+            apiModels = values ?? []; apiStatus = failure ?? "API 연결 성공 · 모델 \(apiModels.count)개"; testingAPI = false
+            if failure == nil && store.preferences.translationModel.isEmpty { store.preferences.translationModel = CloudModelRules.shared.default(provider: provider, names: apiModels) }
         }
     }
 }

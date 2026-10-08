@@ -28,9 +28,10 @@ struct WatchEntry: Codable, Identifiable {
     var updatedAt: Date
 }
 struct SubtitleChoice: Codable { var relativeFile: String?; var offset: Double }
-struct AppPreferences: Codable {
-    var theme = "system"
-    var titleLanguage: String? = nil
+struct AppPreferences: Codable, Equatable {
+    var playerFit: String? = "contain"
+    var theme = "dark"
+    var titleLanguage: String? = "ko"
     var desktopWorkspace: Bool? = false
     var preferredServer: String? = nil
     var preferredStream: String? = nil
@@ -39,8 +40,8 @@ struct AppPreferences: Codable {
     var pretranslateNext: Bool? = true
     var downloadSubtitles: Bool? = true
     var translateDownloads: Bool? = true
-    var source = "linkkf"
-    var quality = "Auto"
+    var source = "reanime"
+    var quality = "1080p"
     var speed = 1.0
     var seekSeconds = 10.0
     var subtitleSize = 100.0
@@ -130,6 +131,7 @@ final class LibraryStore: ObservableObject {
     }
     func deleteHistory(_ offsets: IndexSet) { history.remove(atOffsets: offsets); persist() }
     func clearHistory() { history.removeAll(); persist() }
+    func deleteHistory(ids: Set<String>) { history.removeAll { ids.contains($0.id) }; persist() }
     private func persist() {
         guard ready else { return }
         do {
@@ -182,9 +184,7 @@ struct LibraryView: View {
                 }
                 Section("이어 보기") {
                     ForEach(store.history) { entry in
-                        NavigationLink {
-                            EpisodePlayerView(item: PlaybackItem(entry: entry))
-                        } label: {
+                        PlaybackButton(item: PlaybackItem(entry: entry)) {
                             VStack(alignment: .leading) {
                                 Text(entry.anime.title); Text(entry.episodeTitle).foregroundStyle(.secondary)
                                 if entry.duration > 0 { ProgressView(value: min(entry.position / entry.duration, 1)) }

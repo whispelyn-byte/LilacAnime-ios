@@ -22,7 +22,7 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "0.4.0"
-    CURRENT_PROJECT_VERSION: "32"
+    CURRENT_PROJECT_VERSION: "33"
     ENABLE_USER_SCRIPT_SANDBOXING: NO
 targets:
   LilacAnime:
@@ -86,11 +86,21 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
     dependencies:
       - target: LilacAnime
+  LilacAnimeUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [LilacAnimeUITests]
+    dependencies:
+      - target: LilacAnime
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
 schemes:
   LilacAnime:
     build:
       targets:
         LilacAnime: all
         LilacAnimeTests: [test]
+        LilacAnimeUITests: [test]
     test:
-      targets: [LilacAnimeTests]
+      targets: [LilacAnimeTests, LilacAnimeUITests]

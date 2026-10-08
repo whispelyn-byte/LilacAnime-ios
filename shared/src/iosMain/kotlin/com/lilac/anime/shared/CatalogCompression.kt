@@ -45,7 +45,7 @@ internal actual fun currentCatalogDate(): String {
 internal actual fun pacificDayRemaining(): Int {
     val formatter = NSDateFormatter()
     formatter.dateFormat = "HH:mm:ss"
-    formatter.timeZone = NSTimeZone.timeZoneWithName("America/Los_Angeles")
+    formatter.timeZone = requireNotNull(NSTimeZone.timeZoneWithName("America/Los_Angeles"))
     val time = formatter.stringFromDate(NSDate()).split(':').map(String::toInt)
     return 86400 - time[0] * 3600 - time[1] * 60 - time[2]
 }

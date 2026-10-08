@@ -22,7 +22,7 @@ sh iosApp/scripts/open-xcode.sh
 
 스크립트는 로컬 AI 프레임워크와 Xcode 프로젝트를 준비해 엽니다. Xcode 상단에서 **LilacAnime → iPhone Simulator**를 선택하고 **Cmd+R**을 누릅니다. 실행 목적이 화면 확인이면 IPA나 Apple 개발자 서명은 필요하지 않습니다.
 
-이미 빌드한 [Intel 시뮬레이터 앱 ZIP](https://github.com/whispelyn-byte/LilacAnime-ios/releases/download/v0.4.0-ios.3/LilacAnime-simulator-intel.zip)을 받을 수 있습니다. 이후 Actions의 ios-app-builds 아티팩트에서도 `LilacAnime-simulator-intel.zip`으로 제공합니다. ZIP을 풀어 나온 `.app`을 실행 중인 iPhone Simulator에 드래그하거나 아래 명령으로 설치합니다.
+시뮬레이터 앱은 릴리즈에 게시하지 않습니다. 개발·검증이 필요하면 Actions의 ios-app-builds 또는 LilacAnime-Intel-Simulator 아티팩트에서 `LilacAnime-simulator-intel.zip`을 받습니다. ZIP을 풀어 나온 `.app`을 실행 중인 iPhone Simulator에 드래그하거나 아래 명령으로 설치합니다.
 
 ~~~sh
 xcrun simctl install booted /path/to/LilacAnime.app

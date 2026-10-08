@@ -21,7 +21,7 @@ object DesktopSourceParser {
     fun miruroAnime(root: JsonObject): Anime {
         val titles = root.obj("title")
         val ids = root.obj("external_ids")
-        return Anime(id = root.text("id"), source = "miruro",
+        return Anime(id = root.text("id"), source = "miruro", score = root.text("average_score").toDoubleOrNull() ?: root.text("score").toDoubleOrNull() ?: 0.0, popularity = root.number("popularity") ?: 0,
             title = titles.text("english").ifBlank { titles.text("romaji").ifBlank { titles.text("native") } },
             english = titles.text("english"), romaji = titles.text("romaji"), native = titles.text("native"),
             poster = root.text("cover_url"), year = root.text("season_year"), format = root.text("format"),
@@ -170,6 +170,8 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
             pages[page]?.let { params["cursor"] = it }
             if (filter.year.isNotBlank()) params["season_year"] = filter.year
             if (filter.format.isNotBlank()) params["format"] = filter.format
+            if (filter.season.isNotBlank()) params["season"] = filter.season
+            if (filter.status.isNotBlank()) params["status"] = filter.status
             val root = miruro("anime", params)
             root.text("next_cursor").ifBlank { root.obj("pagination").text("next_cursor") }.takeIf(String::isNotBlank)?.let { pages[page + 1] = it }
             return root.list("data").filterIsInstance<JsonObject>().map(DesktopSourceParser::miruroAnime)

@@ -59,6 +59,8 @@ struct AppPreferences: Codable {
     var autoTranslation = false
     var translationProvider = "local"
     var translationModel = ""
+    var translationModels: [String: String]? = nil
+    var cloudFallback: Bool? = true
     var qwenRegion = "international"
     var selectedGGUF = ""
     var contextSize = 4096
@@ -101,6 +103,7 @@ final class LibraryStore: ObservableObject {
         subtitleChoices[animeID + "#" + episodeID] = SubtitleChoice(relativeFile: relative, offset: offset)
         persist()
     }
+    func clearSubtitleFiles() { for key in subtitleChoices.keys { subtitleChoices[key]?.relativeFile = nil }; persist() }
     func contains(_ anime: Anime, source: String) -> Bool { favorites.contains { $0.id == source + ":" + anime.id } }
     func toggle(_ anime: Anime, source: String) {
         let saved = SavedAnime(anime, source: source)

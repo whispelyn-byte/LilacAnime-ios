@@ -56,6 +56,8 @@ class IosServices {
             SubtitleTools.replace(content, extension, translated)
         } }
     }
+    fun cloudModels(config: TranslationConfig, completion: (List<String>?, String?) -> Unit) { scope.launch { call(completion) { translator.models(config) } } }
+    fun clearTranslationCache() = translator.clearCache()
     fun translateLines(lines: List<String>, config: TranslationConfig, completion: (List<String>?, String?) -> Unit) {
         scope.launch { call(completion) { translator.translate(lines, config) } }
     }

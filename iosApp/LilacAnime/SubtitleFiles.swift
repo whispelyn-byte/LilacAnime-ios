@@ -53,6 +53,12 @@ enum SubtitleFiles {
         }
         return [try normalize(file)]
     }
+    static func isKorean(_ file: URL) -> Bool {
+        guard let content = try? text(file) else { return false }
+        let lines = SubtitleTools.shared.lines(content: content, extension: file.pathExtension).prefix(40)
+        let korean = lines.filter { $0.range(of: "[가-힣]", options: .regularExpression) != nil }.count
+        return !lines.isEmpty && Double(korean) / Double(lines.count) > 0.4
+    }
     static func text(_ file: URL) throws -> String {
         let data = try Data(contentsOf: file)
         let encodings: [String.Encoding] = [.utf8,.utf16,.utf16LittleEndian,.utf16BigEndian,.japaneseEUC,.shiftJIS,

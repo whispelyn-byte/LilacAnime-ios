@@ -12,6 +12,10 @@ final class BackgroundDownloadDelegate: NSObject, URLSessionDownloadDelegate {
         let parts = description.components(separatedBy: "|")
         return DownloadStore.directory.appendingPathComponent(parts[0]).appendingPathComponent(parts[1] + suffix)
     }
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+        guard let description = downloadTask.taskDescription else { return }
+        Task { @MainActor [weak self] in self?.owner?.progress(description, written: totalBytesWritten, expected: totalBytesExpectedToWrite) }
+    }
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         guard let description = downloadTask.taskDescription,
               let target = Self.destination(description, suffix: ".staging-" + UUID().uuidString) else { return }

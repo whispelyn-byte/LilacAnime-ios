@@ -7,6 +7,8 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+import kotlin.time.TimeSource
 
 data class TranslationConfig(val provider: String, val key: String, val model: String = "", val region: String = "international", val terminology: String = "")
 class CloudTranslator(private val client: HttpClient = HttpClient {
@@ -14,30 +16,94 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
     install(HttpTimeout) { requestTimeoutMillis = 150_000; connectTimeoutMillis = 20_000 }
 }) {
     private val cache = mutableMapOf<String, List<String>>()
+    private val modelLists = mutableMapOf<String, List<String>>()
+    private val spent = mutableMapOf<String, kotlin.time.TimeMark>()
+    suspend fun models(config: TranslationConfig): List<String> {
+        require(config.key.isNotBlank()) { "API Key를 설정하세요." }
+        val auth = if (config.provider == "deepl") "DeepL-Auth-Key " + config.key else "Bearer " + config.key
+        val endpoint = when (config.provider) {
+            "gemini" -> "https://generativelanguage.googleapis.com/v1beta/models"
+            "openai" -> "https://api.openai.com/v1/models"
+            "qwen" -> "https://" + (if (config.region == "china") "dashscope.aliyuncs.com" else "dashscope-intl.aliyuncs.com") + "/compatible-mode/v1/models"
+            "deepl" -> "https://" + (if (config.key.endsWith(":fx")) "api-free.deepl.com" else "api.deepl.com") + "/v2/usage"
+            else -> error("지원하지 않는 번역 공급자입니다.")
+        }
+        val root = JSONObject(client.get(endpoint) {
+            if (config.provider == "gemini") header("x-goog-api-key", config.key) else header("Authorization", auth)
+        }.bodyAsText())
+        if (config.provider == "deepl") return listOf("DeepL")
+        val rows = root.optJSONArray(if (config.provider == "gemini") "models" else "data") ?: error("모델 목록이 없습니다.")
+        val names = (0 until rows.length()).mapNotNull { index ->
+            val row = rows.optJSONObject(index) ?: return@mapNotNull null
+            if (config.provider == "gemini" && row.optJSONArray("supportedGenerationMethods")?.toString()?.contains("generateContent") != true) null
+            else row.optString(if (config.provider == "gemini") "name" else "id").removePrefix("models/").takeIf(String::isNotBlank)
+        }
+        return CloudModelRules.sorted(config.provider, names)
+    }
+    private suspend fun chain(config: TranslationConfig): List<String> {
+        val key = config.provider + "|" + config.region + "|" + config.key.hashCode()
+        val available = modelLists[key] ?: try { models(config).also { modelLists[key] = it } }
+            catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
+        val preferred = config.model.removePrefix("models/").ifBlank { CloudModelRules.default(config.provider, available) }
+        val chain = CloudModelRules.chain(config.provider, preferred, available)
+        return chain.filter { spent[config.provider + ":" + it]?.hasPassedNow() != false }.ifEmpty { listOf(preferred) }
+    }
     suspend fun translate(lines: List<String>, config: TranslationConfig): List<String> {
         if (lines.isEmpty()) return emptyList()
         require(config.key.isNotBlank()) { "API Key를 설정하세요." }
         val cacheKey = config.provider + "|" + config.model + "|" + config.region + "|" + config.key.hashCode() + "|" + config.terminology + "|" + lines.joinToString("\u0000")
         cache[cacheKey]?.let { return it }
-        val result = when (config.provider) {
-            "deepl" -> deepl(lines, config)
-            "gemini" -> gemini(lines, config)
-            "openai" -> openai(lines, config)
-            "qwen" -> qwen(lines, config)
-            else -> error("지원하지 않는 번역 공급자입니다.")
+        var result: List<String>? = null
+        var failure: Exception? = null
+        val chain = if (config.provider == "deepl") listOf("") else chain(config)
+        for (model in chain) {
+            try {
+                result = when (config.provider) {
+                    "deepl" -> deepl(lines, config)
+                    "gemini" -> gemini(lines, config.copy(model = model))
+                    "openai" -> openai(lines, config.copy(model = model))
+                    "qwen" -> qwen(lines, config.copy(model = model))
+                    else -> error("지원하지 않는 번역 공급자입니다.")
+                }
+                break
+            } catch (e: CancellationException) { throw e }
+            catch (e: ResponseException) {
+                failure = e
+                val status = e.response.status.value
+                val message = e.response.bodyAsText()
+                if (status !in listOf(404, 429, 500, 502, 503, 504) ||
+                    config.provider == "openai" && Regex("insufficient_quota|billing|exceeded your current quota", RegexOption.IGNORE_CASE).containsMatchIn(message)) throw e
+                spent[config.provider + ":" + model] = TimeSource.Monotonic.markNow() + kotlin.time.Duration.parse(if (status >= 500) "5m" else "1h")
+            }
         }
-        check(result.size == lines.size && result.all { it.isNotBlank() }) { "번역 줄 수가 일치하지 않습니다." }
+        val output = result ?: throw (failure ?: IllegalStateException("사용 가능한 번역 모델이 없습니다."))
+        check(output.size == lines.size && output.all { it.isNotBlank() }) { "번역 줄 수가 일치하지 않습니다." }
         if (cache.size > 512) cache.clear()
-        cache[cacheKey] = result
-        return result
+        cache[cacheKey] = output
+        return output
     }
-    private suspend fun post(url: String, body: JSONObject, authorization: String? = null, apiKey: String? = null): JSONObject =
-        JSONObject(client.post(url) {
-            contentType(ContentType.Application.Json)
-            authorization?.let { header("Authorization", it) }
-            apiKey?.let { header("x-goog-api-key", it) }
-            setBody(body.toString())
-        }.bodyAsText())
+    private suspend fun post(url: String, body: JSONObject, authorization: String? = null, apiKey: String? = null): JSONObject {
+        for (attempt in 0..3) {
+            try {
+                return JSONObject(client.post(url) {
+                    contentType(ContentType.Application.Json)
+                    authorization?.let { header("Authorization", it) }
+                    apiKey?.let { header("x-goog-api-key", it) }
+                    setBody(body.toString())
+                }.bodyAsText())
+            } catch (e: ResponseException) {
+                val status = e.response.status.value
+                val message = e.response.bodyAsText()
+                val retry = status >= 500 || status == 429 && !Regex("quota|billing|insufficient|exceeded your current", RegexOption.IGNORE_CASE).containsMatchIn(message)
+                if (!retry || attempt == 3) throw e
+                delay(((e.response.headers["Retry-After"]?.toDoubleOrNull() ?: (2.5 * (1 shl attempt))) * 1000).toLong().coerceIn(500, 60000))
+            } catch (e: HttpRequestTimeoutException) {
+                if (attempt == 3) throw e
+                delay(2500L * (1 shl attempt))
+            }
+        }
+        error("번역 API 요청 실패")
+    }
     private fun instruction(config: TranslationConfig) = "Translate Japanese or English anime subtitles into natural Korean. Preserve meaning, names and tone. Return exactly one translated item per input, with its original 1-based index. Return JSON {\"lines\":[{\"i\":1,\"t\":\"translation\"}]}. Do not add explanations." + if (config.terminology.isBlank()) "" else "\nUse these spellings consistently:\n" + config.terminology
     private fun itemSchema() = JSONObject().put("type", "object").put("properties", JSONObject()
         .put("i", JSONObject().put("type", "integer")).put("t", JSONObject().put("type", "string")))
@@ -99,7 +165,7 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
     private suspend fun deepl(lines: List<String>, config: TranslationConfig): List<String> {
         val host = if (config.key.endsWith(":fx")) "api-free.deepl.com" else "api.deepl.com"
         val root = post("https://$host/v2/translate", JSONObject().put("text", JSONArray().apply { lines.forEach { put(it) } })
-            .put("source_lang", "JA").put("target_lang", "KO").put("preserve_formatting", true), "DeepL-Auth-Key " + config.key)
+            .put("target_lang", "KO").put("preserve_formatting", true), "DeepL-Auth-Key " + config.key)
         val values = root.optJSONArray("translations") ?: error("DeepL 결과가 없습니다.")
         return (0 until values.length()).map { values.optJSONObject(it)?.optString("text").orEmpty() }
     }

@@ -1,6 +1,13 @@
 package com.lilac.anime.shared
 import kotlin.test.*
 class DesktopCompleteTest {
+    @Test fun cloudDefaultsUseStableFlashAndOnlySmallFallbackModels() {
+        val models = CloudModelRules.sorted("gemini", listOf("gemini-3-flash-preview", "gemini-2.5-flash", "gemini-3-image", "gemini-2.5-pro"))
+        assertEquals("gemini-2.5-flash", CloudModelRules.default("gemini", models))
+        assertFalse(CloudModelRules.chain("gemini", "gemini-2.5-flash", models).contains("gemini-2.5-pro"))
+        assertEquals(listOf("gpt-4.1-mini", "gpt-5-mini", "gpt-4.1-nano"), CloudModelRules.chain("openai", "gpt-4.1-mini", listOf("gpt-5", "gpt-5-mini", "gpt-4.1-nano")))
+    }
+
     private val boy = AnimeCharacter("Sota Hori", "堀 創太", "Sota", "Hori", "Male")
     private val girl = AnimeCharacter("Kyoko Hori", "堀 京子", "Kyoko", "Hori", "Female")
     @Test fun fullCastNameAndSingleCharacterBoundaries() {

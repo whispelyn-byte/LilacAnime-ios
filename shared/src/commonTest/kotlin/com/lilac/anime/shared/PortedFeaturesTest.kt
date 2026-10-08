@@ -66,6 +66,7 @@ class PortedFeaturesTest {
         var calls = 0
         val engine = MockEngine { request ->
             calls++
+            if (request.url.encodedPath == "/v1/models") return@MockEngine respond("""{"data":[{"id":"gpt-4.1-mini"},{"id":"gpt-4.1"}]}""", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
             assertEquals("/v1/responses", request.url.encodedPath)
             assertEquals("Bearer test-key", request.headers[HttpHeaders.Authorization])
             val body = Json.parseToJsonElement((request.body as io.ktor.http.content.TextContent).text).jsonObject
@@ -79,7 +80,7 @@ class PortedFeaturesTest {
             val config = TranslationConfig("openai", "test-key")
             assertEquals(listOf("안녕"), translator.translate(listOf("こんにちは"), config))
             assertEquals(listOf("안녕"), translator.translate(listOf("こんにちは"), config))
-            assertEquals(1, calls)
+            assertEquals(2, calls)
         } finally { translator.close() }
     }
     @Test fun driveConfirmationUsesOnlyGoogleHttpsAndPreservesHiddenValues() {

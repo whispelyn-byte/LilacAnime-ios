@@ -32,7 +32,7 @@ class SourceRepository(private val client: HttpClient = newSharedClient()) {
             "animenosub" -> {
                 val base = "https://animenosub.to"
                 val path = if (page == 1) "$base/" else "$base/page/$page/"
-                AnimenosubParser.parseAnimeList(Ksoup.parse(getText(path, if (query.isBlank()) emptyMap() else mapOf("s" to query)), path))
+                AnimenosubParser.parseAnimeList(Ksoup.parse(getText(path, buildMap { if (query.isNotBlank()) put("s", query); if (filter.status == "RELEASING") put("status", "ongoing"); if (filter.season.isNotBlank() && filter.year.isNotBlank()) put("season[0]", filter.season.lowercase() + "-" + filter.year) }), path))
             }
             else -> if (query.isNotBlank()) linkkf.search(query, page, filter)
                     else if (filter.genres.isNotEmpty() || filter.year.isNotBlank() || filter.format.isNotBlank()) linkkf.filtered(page, filter)
@@ -91,7 +91,8 @@ class SourceRepository(private val client: HttpClient = newSharedClient()) {
             SourceSection(name, linkkf.filtered(1, BrowseFilter(format = tag)))
         }
         val year = currentCatalogDate().take(4)
-        return listOf(SourceSection("이번 시즌", browse(source, filter = BrowseFilter(year = year))),
+        val season = listOf("WINTER", "SPRING", "SUMMER", "FALL")[((currentCatalogDate().substring(5,7).toIntOrNull() ?: 1) - 1) / 3]
+        return listOf(SourceSection("이번 시즌", browse(source, filter = BrowseFilter(year = year, season = season))),
             SourceSection("인기 작품", if (source == "reanime") top("week") else browse(source)))
     }
     suspend fun sourceSchedule(source: String, day: Int): List<Anime> {
@@ -105,7 +106,7 @@ class SourceRepository(private val client: HttpClient = newSharedClient()) {
         val rows = anime.seriesTagIds.flatMap { tag ->
             parseCatalog(kotlinx.serialization.json.Json.parseToJsonElement(getText("https://linkkf1.5imgdarr.top/api/singlefilter.php", mapOf("postanisstagid" to tag.toString(), "limit" to "25"))))
         }.filter { it.id != anime.id }.distinctBy { it.id }
-        val stats = runCatching { kotlinx.serialization.json.Json.parseToJsonElement(getText("https://linkkf1.5imgdarr.top/api/view.php", mapOf("action" to "get", "id" to anime.id))).jsonObject.obj("data").text("total_views") }.getOrDefault("")
+        val stats = try { kotlinx.serialization.json.Json.parseToJsonElement(getText("https://linkkf1.5imgdarr.top/api/view.php", mapOf("action" to "get", "id" to anime.id))).jsonObject.obj("data").text("total_views") } catch (e: CancellationException) { throw e } catch (_: Exception) { "" }
         return SourceExtras(stats, rows)
     }
     fun close() = client.close()

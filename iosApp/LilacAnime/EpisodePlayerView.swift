@@ -16,6 +16,8 @@ final class EpisodePlayerModel: ObservableObject {
     @Published var subtitleFiles: [URL] = []
     @Published var subtitle: URL?
     private var sourceSubtitle: URL?
+    @Published var makers: [SubtitleMaker] = []
+    @Published var prefetchStatus: String?
     @Published var searching = false
     @Published var searchTitle = ""
     @Published var subtitleOffset = 0.0
@@ -26,6 +28,11 @@ final class EpisodePlayerModel: ObservableObject {
     let engine = MPVEngine()
     let resolver = PlaybackResolver()
     let translation = TranslationCoordinator()
+    let pretranslation = TranslationCoordinator()
+    private let preparer = DesktopSubtitlePreparer()
+    private let nextResolver = PlaybackResolver()
+    private var prefetchTask: Task<Void, Never>?
+    private var automaticTask: Task<Void, Never>?
     private let service = IosServices()
     private var proxy: HLSProxy?
     private let cast = CastService()
@@ -54,6 +61,10 @@ final class EpisodePlayerModel: ObservableObject {
         if subtitle == nil, !item.localSubtitles.isEmpty {
             subtitleFiles = item.localSubtitles.filter { FileManager.default.fileExists(atPath: $0.path) }
             if let first = preferredSubtitle(subtitleFiles) ?? subtitleFiles.first { sourceSubtitle = first; subtitle = first }
+        }
+        if subtitle == nil, let saved = EpisodeSubtitleStore.shared.list(item).first(where: { !$0.translated }), let file = saved.file {
+            sourceSubtitle = file; subtitle = file; subtitleFiles = [file]
+            if library.preferences.autoTranslation { translate(library: library) }
         }
         configure(library)
         engine.onEnd = { [weak self, weak library] in
@@ -88,7 +99,7 @@ final class EpisodePlayerModel: ObservableObject {
     }
     func change(_ item: PlaybackItem, library: LibraryStore, remember: Bool = true) {
         if remember { previous.append(self.item) }
-        save(library: library); engine.pause(); proxy?.stop(); proxy = nil; translation.cancel(); cast.stop()
+        save(library: library); engine.pause(); proxy?.stop(); proxy = nil; stopPrefetch(); automaticTask?.cancel(); translation.cancel(); cast.stop()
         generation = UUID(); titleLookup.cancel(); searchTitle = item.anime.title; self.item = item; active = nil; subtitle = nil; sourceSubtitle = nil; assets = []; subtitleFiles = []; chapters = []
         loadedSkip = false; lastSave = 0; lastSkipped = ""; systemPlayback = false
         begin(library: library)
@@ -109,6 +120,7 @@ final class EpisodePlayerModel: ObservableObject {
                 engine.load(playable, resume: library.resume(item.anime, episodeID: item.episodeID))
                 if let subtitle { engine.subtitle(subtitle) }
                 else { automaticSubtitle(stream, library: library, token: token) }
+                prefetchNext(library: library, token: token)
             } catch { if token == generation { self.error = error.localizedDescription } }
         }
     }
@@ -168,9 +180,11 @@ final class EpisodePlayerModel: ObservableObject {
     }
     func selectSubtitle(_ url: URL, library: LibraryStore, translate: Bool = true) {
         subtitleRequest = UUID(); translation.cancel()
-        sourceSubtitle = url; subtitle = url; engine.subtitle(url)
+        stopPrefetch(); sourceSubtitle = url; subtitle = url; engine.subtitle(url)
+        EpisodeSubtitleStore.shared.save(url, item: item, provider: "선택", translated: EpisodeSubtitleStore.shared.list(item).contains { $0.file == url && $0.translated })
         library.saveSubtitle(animeID: item.anime.id, episodeID: item.episodeID, file: url, offset: subtitleOffset)
         if translate && library.preferences.autoTranslation { self.translate(library: library) }
+        prefetchNext(library: library, token: generation)
     }
     private func preferredSubtitle(_ files: [URL]) -> URL? {
         files.first { SubtitleEpisodeMatcher.shared.matches(name: $0.lastPathComponent, episodeNumber: Int32(item.number), expectedSeason: nil) } ?? (files.count == 1 ? files.first : nil)
@@ -184,16 +198,16 @@ final class EpisodePlayerModel: ObservableObject {
             return
         }
         guard !["linkkf", "ohli24", "linkani"].contains(item.anime.source) else { return }
-        Task {
-            let names = [item.anime.title, item.anime.anime.native, item.anime.anime.romaji, item.anime.anime.english]
-            let korean = names.first { TitleCandidates.shared.isKorean(title: $0) }
-            let found: String?
-            if let korean { found = korean } else { found = await titleLookup.resolve(item.anime.title, aliases: Array(names.dropFirst())) }
-            guard token == generation, request == subtitleRequest, subtitle == nil, let found else { return }
-            searchTitle = found
-            var providers = ["kairan", "csora", "anissia"]
-            if let preferred = library.preferences.subtitleProvider, let index = providers.firstIndex(of: preferred) { providers.remove(at: index); providers.insert(preferred, at: 0) }
-            findAutomaticSubtitle(providers, library: library, token: token, request: request)
+        automaticTask?.cancel()
+        automaticTask = Task {
+            do {
+                if let prepared = try await preparer.prepare(item, tracks: stream.subtitles, preferences: library.preferences) {
+                    guard token == generation, request == subtitleRequest, subtitle == nil, !Task.isCancelled else { return }
+                    subtitleFiles = [prepared.0]
+                    selectSubtitle(prepared.0, library: library, translate: prepared.1 == "jimaku" || !SubtitleFiles.isKorean(prepared.0))
+                }
+            } catch is CancellationError { }
+            catch { if token == generation { self.error = error.localizedDescription } }
         }
     }
     private func findAutomaticSubtitle(_ providers: [String], library: LibraryStore, token: UUID, request: UUID) {
@@ -219,10 +233,64 @@ final class EpisodePlayerModel: ObservableObject {
     }
     func translate(library: LibraryStore, fresh: Bool = false) {
         guard let sourceSubtitle else { error = "먼저 자막을 선택하세요."; return }
+        stopPrefetch()
         translation.translate(sourceSubtitle, preferences: library.preferences, position: { [weak self] in self?.engine.position ?? 0 }, anime: item.anime, fresh: fresh) { [weak self] output in
             guard let self else { return }
+            EpisodeSubtitleStore.shared.save(output, item: self.item, provider: library.preferences.translationProvider, translated: true)
             if self.subtitle == output { self.engine.reloadSubtitle() }
             else { self.subtitle = output; self.engine.subtitle(output) }
+        }
+        prefetchNext(library: library, token: generation)
+    }
+    func loadMakers() {
+        searching = true
+        let token = generation
+        service.subtitleMakers(title: searchTitle) { [weak self] values, failure in
+            guard token == self?.generation else { return }
+            self?.makers = values ?? []; self?.error = failure; self?.searching = false
+        }
+    }
+    func searchMaker(_ maker: SubtitleMaker) {
+        searching = true
+        let token = generation
+        service.makerSubtitles(title: searchTitle, episode: Int32(item.number), episodeKey: item.displayNumber, website: maker.website) { [weak self] values, failure in
+            guard token == self?.generation else { return }
+            self?.assets = values ?? []; self?.error = failure; self?.searching = false
+        }
+    }
+    private func stopPrefetch() {
+        prefetchTask?.cancel(); prefetchTask = nil; pretranslation.cancel(); nextResolver.cancel(); prefetchStatus = nil
+    }
+    private func prefetchNext(library: LibraryStore, token: UUID) {
+        guard library.preferences.autoTranslation, library.preferences.pretranslateNext != false, !item.next.isEmpty, prefetchTask == nil else { return }
+        let next = item.next[0]
+        prefetchTask = Task {
+            defer { if token == generation { prefetchTask = nil } }
+            while !Task.isCancelled && token == generation && (translation.running || subtitle == nil) {
+                do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
+            }
+            guard !Task.isCancelled, token == generation else { return }
+            prefetchStatus = "다음 화 자막 준비 중"
+            nextResolver.resolve(next)
+            while nextResolver.loading && nextResolver.streams.isEmpty && !Task.isCancelled {
+                do { try await Task.sleep(nanoseconds: 250_000_000) } catch { return }
+            }
+            do {
+                try Task.checkCancellation()
+                guard token == generation, let prepared = try await preparer.prepare(next, tracks: nextResolver.streams.first?.subtitles ?? [], preferences: library.preferences) else { prefetchStatus = nil; return }
+                EpisodeSubtitleStore.shared.save(prepared.0, item: next, provider: prepared.1, translated: false)
+                if SubtitleFiles.isKorean(prepared.0) { prefetchStatus = "다음 화 한국어 자막 저장 완료"; return }
+                prefetchStatus = "다음 화 미리 번역 중"
+                pretranslation.translate(prepared.0, preferences: library.preferences, anime: next.anime) { output in
+                    EpisodeSubtitleStore.shared.save(output, item: next, provider: library.preferences.translationProvider, translated: true)
+                }
+                while pretranslation.running && !Task.isCancelled {
+                    try await Task.sleep(nanoseconds: 500_000_000)
+                }
+                try Task.checkCancellation()
+                if token == generation { prefetchStatus = pretranslation.error.map { "다음 화 번역: " + $0 } ?? "다음 화 자막 번역 저장 완료" }
+            } catch is CancellationError { }
+            catch { if token == generation { prefetchStatus = error.localizedDescription } }
         }
     }
     func save(library: LibraryStore) {
@@ -231,7 +299,7 @@ final class EpisodePlayerModel: ObservableObject {
             watchURL: item.watchURL.absoluteString, directURL: active?.url.absoluteString, position: engine.position, duration: engine.duration)
     }
     func shutdown(library: LibraryStore) {
-        save(library: library); generation = UUID(); engine.shutdown(); resolver.cancel(); translation.shutdown(); service.cancel(); titleLookup.cancel(); proxy?.stop(); proxy = nil; cast.stop()
+        save(library: library); stopPrefetch(); automaticTask?.cancel(); generation = UUID(); engine.shutdown(); resolver.cancel(); translation.shutdown(); service.cancel(); titleLookup.cancel(); proxy?.stop(); proxy = nil; cast.stop()
     }
 }
 struct EpisodePlayerView: View {
@@ -283,6 +351,7 @@ struct EpisodePlayerView: View {
                                 Button("자막 검색") { subtitleSheet = true }
                                 Button("자막 가져오기") { importer = true }
                                 Button("AI 번역") { model.translate(library: library) }
+                                Button("캐시 없이 다시 번역") { model.translate(library: library, fresh: true) }
                                 ForEach(model.active?.subtitles ?? model.resolver.subtitles) { subtitle in Button(subtitle.label) { model.importSubtitle(subtitle.url, library: library, headers: subtitle.headers ?? [:]) } }
                                 ForEach(model.subtitleFiles, id: \.path) { file in Button(file.lastPathComponent) { model.selectSubtitle(file, library: library) } }
                             } label: { Image(systemName: "chevron.down").font(.caption.bold()) }
@@ -310,6 +379,7 @@ struct EpisodePlayerView: View {
                         }
                         if let subtitle = model.subtitle { Label(subtitle.lastPathComponent, systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.secondary) }
                         TranslationStatus(coordinator: model.translation)
+                        if let status = model.prefetchStatus { Text(status).font(.caption).foregroundStyle(.secondary) }
                         ForEach(model.chapters) { chapter in Button("\(chapter.type.uppercased()) 건너뛰기") { model.engine.seek(chapter.end) } }
                         if !model.item.next.isEmpty { Button("다음 회차") { let next = model.item.next; var item = next[0]; item.next = Array(next.dropFirst()); model.change(item, library: library) } }
                         if let error = model.error ?? model.resolver.error { Text(error).foregroundStyle(.red) }
@@ -344,6 +414,20 @@ struct EpisodePlayerView: View {
                         }
                         TextField("한국어 검색 제목", text: $model.searchTitle)
                         HStack { ForEach(["kairan","csora","anissia","jimaku"], id: \.self) { provider in Button(provider) { model.search(provider) } } }
+                        Button("Anissia 자막 제작자 목록") { model.loadMakers() }
+                        ForEach(Array(model.makers.enumerated()), id: \.offset) { _, maker in
+                            Button(maker.name + " · " + maker.status) { model.searchMaker(maker) }
+                        }
+                        Section("이 회차에 저장한 자막") {
+                            ForEach(EpisodeSubtitleStore.shared.list(model.item)) { record in
+                                if let file = record.file {
+                                    HStack {
+                                        Button(record.name) { model.selectSubtitle(file, library: library, translate: !record.translated); subtitleSheet = false }
+                                        ShareLink(item: file) { Image(systemName: "square.and.arrow.up") }
+                                    }
+                                }
+                            }
+                        }
                         if model.searching { ProgressView() }
                         ForEach(Array(model.assets.enumerated()), id: \.offset) { _, asset in
                             if asset.source == "post", let url = URL(string: asset.url) { Link(asset.name, destination: url) }
@@ -397,6 +481,12 @@ struct PlayerControls: View {
                             Menu {
                                 Button("자막 선택", action: subtitles)
                                 Button("자막 끄기") { engine.disableSubtitles() }
+                                Button(engine.muted ? "음소거 해제" : "음소거") { engine.toggleMute() }
+                                Button("볼륨 +10") { engine.setVolume(engine.volume + 10) }
+                                Button("볼륨 -10") { engine.setVolume(engine.volume - 10) }
+                                Button("화면에 맞춤") { engine.setFit("contain") }
+                                Button("화면 채움") { engine.setFit("cover") }
+                                Button("화면 늘림") { engine.setFit("stretch") }
                                 ForEach(engine.tracks) { track in Button(track.title) { engine.selectTrack(track) } }
                                 ForEach([0.5, 1, 1.25, 1.5, 2], id: \.self) { speed in Button("\(speed)x") { engine.set("speed", String(speed)); touch() } }
                             } label: { icon("gearshape", size: 44) }
@@ -439,6 +529,18 @@ struct PlayerControls: View {
                 }
             }.frame(width: geometry.size.width, height: geometry.size.height)
         }.foregroundStyle(.white).buttonStyle(.plain)
+            .background {
+                Group {
+                    Button("") { engine.toggle() }.keyboardShortcut(.space, modifiers: [])
+                    Button("") { engine.skip(-seek) }.keyboardShortcut(.leftArrow, modifiers: [])
+                    Button("") { engine.skip(seek) }.keyboardShortcut(.rightArrow, modifiers: [])
+                    Button("") { engine.setVolume(engine.volume + 5) }.keyboardShortcut(.upArrow, modifiers: [])
+                    Button("") { engine.setVolume(engine.volume - 5) }.keyboardShortcut(.downArrow, modifiers: [])
+                    Button("") { engine.toggleMute() }.keyboardShortcut("m", modifiers: [])
+                    Button("", action: expand).keyboardShortcut("f", modifiers: [])
+                    Button("", action: back).keyboardShortcut(.escape, modifiers: [])
+                }.frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
+            }
             .task(id: interaction) {
                 guard !UIShowcase.enabled, !engine.paused, !locked, !dragging else { return }
                 do { try await Task.sleep(nanoseconds: 4_000_000_000) } catch { return }

@@ -5,6 +5,10 @@ import LilacShared
 struct SettingsView: View {
     @EnvironmentObject private var store: LibraryStore
     @State private var apiKey = ""
+    @State private var apiModels: [String] = []
+    @State private var apiStatus: String?
+    @State private var testingAPI = false
+    @State private var previousProvider = ""
     @State private var error: String?
     @State private var importFont = false
     @State private var tmdbKey = ""
@@ -77,6 +81,7 @@ struct SettingsView: View {
                 Section("AI 번역") {
                     Toggle("자막 자동 번역", isOn: $store.preferences.autoTranslation)
                     Toggle("다음 화 자막 미리 번역", isOn: Binding(get: { store.preferences.pretranslateNext ?? true }, set: { store.preferences.pretranslateNext = $0 }))
+                    Toggle("실패 시 등록한 다른 번역 API 사용", isOn: Binding(get: { store.preferences.cloudFallback ?? true }, set: { store.preferences.cloudFallback = $0 }))
                     Toggle("클라우드 실패 시 로컬 AI로 이어서 번역", isOn: Binding(get: { store.preferences.translationFallback ?? true }, set: { store.preferences.translationFallback = $0 }))
                     Text("현재 재생 위치에 가까운 자막부터 번역하며, 중단한 번역은 다음 시도에 이어서 처리합니다.").font(.caption).foregroundStyle(.secondary)
                     Text("이름·용어 표기 (원문=한국어)").font(.subheadline)
@@ -86,6 +91,22 @@ struct SettingsView: View {
                     }
                     TextField("클라우드 모델 ID (빈칸: 기본값)", text: $store.preferences.translationModel).textInputAutocapitalization(.never)
                     if store.preferences.translationProvider != "local" {
+                        Button("API 연결 테스트·모델 목록") {
+                            testingAPI = true
+                            let config = TranslationConfig(provider: store.preferences.translationProvider, key: apiKey.trimmingCharacters(in: .whitespacesAndNewlines),
+                                model: "", region: store.preferences.qwenRegion, terminology: "")
+                            tmdbService.cloudModels(config: config) { values, failure in
+                                apiModels = values ?? []; apiStatus = failure ?? "API 연결 성공 · 모델 " + String(values?.count ?? 0) + "개"; testingAPI = false
+                            }
+                        }.disabled(testingAPI || apiKey.isEmpty)
+                        if testingAPI { ProgressView() }
+                        if let apiStatus { Text(apiStatus).font(.caption) }
+                        if !apiModels.isEmpty {
+                            Picker("사용 가능한 모델", selection: $store.preferences.translationModel) {
+                                Text("자동").tag("")
+                                ForEach(apiModels, id: \.self) { Text($0).tag($0) }
+                            }
+                        }
                         SecureField("API Key", text: $apiKey).textInputAutocapitalization(.never).autocorrectionDisabled()
                         Button("키 저장") {
                             do { try SecureKeys.save(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), name: store.preferences.translationProvider); error = nil }
@@ -111,6 +132,9 @@ struct SettingsView: View {
                     TextEditor(text: $store.preferences.prompt).frame(minHeight: 120)
                 }
                 Section("저장 공간") {
+                    NavigationLink("저장 자막·캐시 관리") { SubtitleStorageView() }
+                    NavigationLink("업데이트·릴리즈 노트") { DesktopUpdateView() }
+                    Toggle("다운로드에 자막 포함", isOn: Binding(get: { store.preferences.downloadSubtitles ?? true }, set: { store.preferences.downloadSubtitles = $0 }))
                     Button("시청 기록 삭제", role: .destructive) { store.clearHistory() }
                     Button("번역 캐시 삭제") { SubtitleFiles.clearTranslationCache() }
                     Button("OP/ED 분석 캐시 삭제") { OfflineAnalyzer.clearCache() }
@@ -118,8 +142,16 @@ struct SettingsView: View {
                 if let error { Text(error).foregroundStyle(.red) }
                 if let error = store.persistenceError { Text(error).foregroundStyle(.red) }
             }.navigationTitle("설정")
-            .onAppear { apiKey = SecureKeys.load(store.preferences.translationProvider); tmdbKey = SecureKeys.load("tmdb") }
-            .onChange(of: store.preferences.translationProvider) { provider in apiKey = SecureKeys.load(provider) }
+            .onAppear { previousProvider = store.preferences.translationProvider; apiKey = SecureKeys.load(store.preferences.translationProvider); tmdbKey = SecureKeys.load("tmdb") }
+             .onChange(of: store.preferences.translationProvider) { provider in
+                var models = store.preferences.translationModels ?? [:]
+                if !previousProvider.isEmpty { models[previousProvider] = store.preferences.translationModel }
+                store.preferences.translationModels = models; store.preferences.translationModel = models[provider] ?? ""
+                previousProvider = provider; apiKey = SecureKeys.load(provider); apiModels = []; apiStatus = nil
+            }
+            .onChange(of: store.preferences.translationModel) { model in
+                var models = store.preferences.translationModels ?? [:]; models[store.preferences.translationProvider] = model; store.preferences.translationModels = models
+            }
             .fileImporter(isPresented: $importFont, allowedContentTypes: [.data]) { result in
                 do {
                     let url = try result.get()

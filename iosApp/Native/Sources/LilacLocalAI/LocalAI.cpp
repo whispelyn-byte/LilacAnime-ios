@@ -39,13 +39,8 @@ extern "C" void lilac_model_close(LilacModel *state) {
 extern "C" void lilac_cancel(LilacModel *state) { if (state) state->cancelled = true; }
 extern "C" const char *lilac_error(LilacModel *state) { return state ? state->error.c_str() : "GGUF model could not be loaded"; }
 extern "C" void lilac_string_free(char *text) { free(text); }
-extern "C" char *lilac_generate(LilacModel *state, const char *prompt, int max_tokens, float temperature, float top_p, int top_k, float repetition) {
-    if (!state || !prompt) return nullptr;
-    state->cancelled = false; state->error.clear();
-    const auto *vocab = llama_model_get_vocab(state->model);
-    const char *chat_template = llama_model_chat_template(state->model, nullptr);
+static std::string format_prompt(const char *chat_template, const char *prompt, const char *bos, const char *eos) {
     std::string formatted;
-    try {
         std::string input(prompt);
         const auto separator = input.find('\x1e');
         std::string system = separator == std::string::npos ? "" : input.substr(0, separator);
@@ -54,13 +49,9 @@ extern "C" char *lilac_generate(LilacModel *state, const char *prompt, int max_t
         if (!system.empty()) messages.push_back(common_json::object({{"role", "system"}, {"content", system}}));
         messages.push_back(common_json::object({{"role", "user"}, {"content", user}}));
         if (chat_template && chat_template[0]) {
-            auto tokenText = [&](llama_token token) {
-                char data[256]; int count = llama_token_to_piece(vocab, token, data, sizeof(data), 0, true);
-                return count > 0 ? std::string(data, count) : std::string();
-            };
             common_json values = common_json::object({
                 {"messages", messages}, {"add_generation_prompt", true}, {"enable_thinking", false},
-                {"bos_token", tokenText(llama_vocab_bos(vocab))}, {"eos_token", tokenText(llama_vocab_eos(vocab))}
+                {"bos_token", std::string(bos ? bos : "")}, {"eos_token", std::string(eos ? eos : "")}
             });
             jinja::lexer lexer;
             auto ast = jinja::parse_from_tokens(lexer.tokenize(chat_template));
@@ -71,7 +62,26 @@ extern "C" char *lilac_generate(LilacModel *state, const char *prompt, int max_t
         } else {
             formatted = system + "\n" + user;
         }
-    } catch (const std::exception &error) { state->error = std::string("Chat template: ") + error.what(); return nullptr; }
+    return formatted;
+}
+extern "C" char *lilac_format_prompt(const char *chat_template, const char *prompt, const char *bos, const char *eos, char **error) {
+    if (error) *error = nullptr;
+    try { return strdup(format_prompt(chat_template, prompt ? prompt : "", bos, eos).c_str()); }
+    catch (const std::exception &failure) { if (error) *error = strdup(failure.what()); return nullptr; }
+}
+extern "C" char *lilac_generate(LilacModel *state, const char *prompt, int max_tokens, float temperature, float top_p, int top_k, float repetition) {
+    if (!state || !prompt) return nullptr;
+    state->cancelled = false; state->error.clear();
+    const auto *vocab = llama_model_get_vocab(state->model);
+    const char *chat_template = llama_model_chat_template(state->model, nullptr);
+    auto tokenText = [&](llama_token token) {
+        char data[256]; int count = llama_token_to_piece(vocab, token, data, sizeof(data), 0, true);
+        return count > 0 ? std::string(data, count) : std::string();
+    };
+    const auto bos = tokenText(llama_vocab_bos(vocab)), eos = tokenText(llama_vocab_eos(vocab));
+    std::string formatted;
+    try { formatted = format_prompt(chat_template, prompt, bos.c_str(), eos.c_str()); }
+    catch (const std::exception &error) { state->error = std::string("Chat template: ") + error.what(); return nullptr; }
     prompt = formatted.c_str();
     int count = -llama_tokenize(vocab, prompt, (int)strlen(prompt), nullptr, 0, true, true);
     if (count <= 0 || count + max_tokens >= (int)llama_n_ctx(state->context)) {

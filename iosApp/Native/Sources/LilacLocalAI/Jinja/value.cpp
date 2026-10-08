@@ -3,6 +3,7 @@
 
 // for converting from JSON to jinja values
 #include "json.h"
+#include "unicode.h"
 
 #include <sstream>
 #include <string>

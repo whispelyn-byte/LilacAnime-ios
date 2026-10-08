@@ -13,6 +13,9 @@ struct MediaTrack: Identifiable {
 final class MPVEngine: ObservableObject {
     @Published var position = 0.0
     @Published var duration = 0.0
+    @Published var volume = 100.0
+    @Published var muted = false
+    @Published var fit = "contain"
     @Published var paused = true
     @Published var buffering = false
     @Published var tracks: [MediaTrack] = []
@@ -72,6 +75,11 @@ final class MPVEngine: ObservableObject {
         set("referrer", stream.referer)
         command(["loadfile", stream.url.isFileURL ? stream.url.path : stream.url.absoluteString, "replace"])
     }
+    func setVolume(_ value: Double) { volume = max(0, min(100, value)); set("volume", String(volume)) }
+    func toggleMute() { muted.toggle(); set("mute", muted ? "yes" : "no") }
+    func setFit(_ value: String) {
+        fit = value; set("keepaspect", value == "stretch" ? "no" : "yes"); set("panscan", value == "cover" ? "1" : "0")
+    }
     func play() { set("pause", "no") }
     func pause() { set("pause", "yes") }
     func toggle() { paused ? play() : pause() }
@@ -122,7 +130,7 @@ final class MPVEngine: ObservableObject {
             }
         }
         position = double("time-pos"); duration = double("duration")
-        paused = flag("pause"); buffering = flag("paused-for-cache")
+        paused = flag("pause"); buffering = flag("paused-for-cache"); volume = double("volume"); muted = flag("mute")
         if fileLoaded { onProgress?(position, duration) }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = [MPNowPlayingInfoPropertyElapsedPlaybackTime: position,
             MPMediaItemPropertyPlaybackDuration: duration, MPNowPlayingInfoPropertyPlaybackRate: paused ? 0 : double("speed")]

@@ -38,11 +38,29 @@ final class CatalogModel: ObservableObject {
                 self.canLoadMore = !result.isEmpty && self.mode == "browse"; self.page += 1
             }
         }
+        let searched: ([Anime]?, String?) -> Void = { [weak self] values, failure in
+            guard let self, token == self.generation else { return }
+            guard (values ?? []).isEmpty, TitleCandidates.shared.isKorean(title: self.query), !SecureKeys.load("tmdb").isEmpty else { callback(values, failure); return }
+            self.service.titleVariants(query: self.query, credential: SecureKeys.load("tmdb")) { variants, _ in
+                guard token == self.generation else { return }
+                let candidates = (variants ?? []).filter { !TitleCandidates.shared.isKorean(title: $0) }
+                guard !candidates.isEmpty else { callback(values, failure); return }
+                var combined: [Anime] = []; var remaining = candidates.count
+                for variant in candidates {
+                    self.service.browse(sourceKey: self.source, query: variant, page: self.page,
+                        filter: AnimeSnapshot.shared.fullFilter(genre: self.genre, year: self.year, season: self.season, format: self.format, status: self.status, studio: self.studio)) { result, _ in
+                        guard token == self.generation else { return }
+                        combined += result ?? []; remaining -= 1
+                        if remaining == 0 { callback(combined, combined.isEmpty ? failure : nil) }
+                    }
+                }
+            }
+        }
         if mode == "top" { service.top(period: "week", completion: callback) }
         else if mode == "schedule" { service.sourceSchedule(sourceKey: source, day: 0, completion: callback) }
         else {
             service.browse(sourceKey: source, query: query, page: page,
-                filter: AnimeSnapshot.shared.fullFilter(genre: genre, year: year, season: season, format: format, status: status, studio: studio), completion: callback)
+                filter: AnimeSnapshot.shared.fullFilter(genre: genre, year: year, season: season, format: format, status: status, studio: studio), completion: searched)
         }
     }
     deinit { service.close() }
@@ -112,6 +130,7 @@ struct CatalogView: View {
 final class DetailModel: ObservableObject {
     @Published var anime: Anime?
     @Published var servers: [EpisodeServer] = []
+    @Published var extras: SourceExtras?
     @Published var error: String?
     @Published var loading = false
     private let service = IosServices()
@@ -119,7 +138,10 @@ final class DetailModel: ObservableObject {
         loading = true; error = nil
         service.detail(summary: summary, sourceKey: source) { [weak self] detail, error in
             Task { @MainActor in
-                if let anime = detail?.anime { Task { await DesktopCatalog.shared.enrich(anime, source: source, cast: true) } }
+                if let anime = detail?.anime {
+                    Task { await DesktopCatalog.shared.enrich(anime, source: source, cast: true) }
+                    if source == "linkkf" { self?.service.sourceExtras(anime: anime) { value, _ in self?.extras = value } }
+                }
                 self?.anime = detail?.anime; self?.servers = detail?.servers ?? []; self?.error = error; self?.loading = false
             }
         }
@@ -227,13 +249,16 @@ struct DetailView: View {
                                     .background(LilacStyle.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 12)).foregroundStyle(LilacStyle.accent)
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(episode.title).font(.subheadline.weight(.semibold)).lineLimit(2)
+                                    if episode.isFiller || episode.isRecap || !episode.playable {
+                                        Text(!episode.playable ? "공개 예정" : episode.isRecap ? "총집편" : "필러").font(.caption).foregroundStyle(LilacStyle.accent)
+                                    }
                                     Text("에피소드 \(episode.displayNumber.isEmpty ? String(episode.number) : episode.displayNumber)")
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
                                 Image(systemName: "play.circle.fill").font(.title2).foregroundStyle(LilacStyle.accent)
                             }.padding(14).background(LilacStyle.card, in: RoundedRectangle(cornerRadius: 18)).foregroundStyle(.primary)
-                        }.buttonStyle(.plain).contextMenu {
+                        }.buttonStyle(.plain).disabled(!episode.playable).contextMenu {
                             Button { downloads.enqueue([playback(server.episodes, index: index)], quality: library.preferences.quality) } label: { Label("회차 다운로드", systemImage: "arrow.down.circle") }
                         }
                     }
@@ -249,6 +274,7 @@ struct DetailView: View {
             Text(names.record(SavedAnime(anime, source: source))?.overview.isEmpty == false ? names.record(SavedAnime(anime, source: source))!.overview : (anime.description.isEmpty ? "등록된 소개가 없습니다." : anime.description.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)))
                 .font(.subheadline).lineSpacing(6).foregroundStyle(.secondary)
             Divider()
+            if let views = model.extras?.views, !views.isEmpty { Text("조회 " + views).font(.caption).foregroundStyle(.secondary) }
             ForEach(Array([("원제", anime.native), ("로마자", anime.romaji), ("영문명", anime.english),
                 ("방영", anime.airedDate), ("제작", anime.studios.joined(separator: ", ")), ("장르", anime.genres.joined(separator: " · ")),
                 ("비고", anime.note)].enumerated()), id: \.offset) { _, row in
@@ -260,7 +286,13 @@ struct DetailView: View {
     }
     private var related: some View {
         VStack(alignment: .leading, spacing: 16) {
-            if anime.reAnimeRelated.isEmpty {
+            if let extras = model.extras, !extras.related.isEmpty {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 140))], spacing: 18) {
+                    ForEach(extras.related, id: \.id) { related in
+                        NavigationLink { DetailView(summary: related, source: source) } label: { AnimePosterCard(anime: related) }.buttonStyle(.plain)
+                    }
+                }
+            } else if anime.reAnimeRelated.isEmpty {
                 LilacEmptyState(icon: "square.stack", title: "관련 작품이 없습니다", message: "관련 작품 정보가 제공되면 여기에 표시됩니다.")
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 140))], spacing: 18) {

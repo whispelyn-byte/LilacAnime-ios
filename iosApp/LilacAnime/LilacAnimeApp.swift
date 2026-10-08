@@ -26,7 +26,7 @@ struct LilacAnimeApp: App {
             }.environmentObject(library).environmentObject(downloads)
                 .tint(LilacStyle.accent)
                 .preferredColorScheme(library.preferences.theme == "system" ? nil : (library.preferences.theme == "light" ? .light : .dark))
-                .task { SubtitleFiles.restoreFonts() }
+                .task { SubtitleFiles.restoreFonts(); downloads.library = library }
         }
     }
 }

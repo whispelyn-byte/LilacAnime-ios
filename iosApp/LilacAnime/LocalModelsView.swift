@@ -29,6 +29,7 @@ private final class NativeModelBox: @unchecked Sendable {
     func close() { lock.lock(); defer { lock.unlock() }; if let model { lilac_model_close(model) }; model = nil }
 }
 actor LocalInference {
+    static let shared = LocalInference()
     private var model: OpaquePointer?
     private nonisolated let state = NativeModelBox()
     nonisolated func cancel() { state.cancel() }

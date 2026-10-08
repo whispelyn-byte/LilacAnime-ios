@@ -9,12 +9,12 @@ final class TranslationCoordinator: ObservableObject {
     @Published var error: String?
     @Published var status: String?
     private let service = IosServices()
-    private let local = LocalInference()
+    private let local = LocalInference.shared
     private var task: Task<Void, Never>?
     private var generation = UUID()
     private var workingFiles: Set<URL> = []
     func translate(_ file: URL, preferences: AppPreferences, position: @escaping () -> Double = { 0 }, anime: SavedAnime? = nil, fresh: Bool = false, completion: @escaping (URL) -> Void) {
-        cancel(); running = true; error = nil; status = nil; progress = 0
+        cancel(); if fresh { service.clearTranslationCache() }; running = true; error = nil; status = nil; progress = 0
         let token = generation
         task = Task {
             do {
@@ -37,7 +37,7 @@ final class TranslationCoordinator: ObservableObject {
                     "temperature": preferences.temperature, "topP": preferences.topP, "topK": preferences.topK,
                     "repetition": preferences.repetitionPenalty, "before": preferences.contextCues,
                     "modelSampling": preferences.modelSampling ?? true, "after": preferences.prefetchAhead, "thinking": preferences.thinking, "prompt": preferences.prompt,
-                    "glossary": (preferences.translationGlossary ?? "") + AnimeGlossary.shared.characterTerms(characters: characters), "fallback": preferences.translationFallback ?? true
+                    "glossary": (preferences.translationGlossary ?? "") + AnimeGlossary.shared.characterTerms(characters: characters) + characters.map { $0.name + $0.gender }.joined(), "fallback": preferences.translationFallback ?? true
                 ]
                 let configuration = try JSONSerialization.data(withJSONObject: settings, options: [.sortedKeys])
                 let cacheID = SubtitleFiles.key(content + String(decoding: configuration, as: UTF8.self) + SubtitleFiles.key(credential))
@@ -66,11 +66,18 @@ final class TranslationCoordinator: ObservableObject {
                 }
                 if !kept.isEmpty { try publish(); status = "중단된 번역을 이어서 진행합니다." }
                 var provider = preferences.translationProvider
+                var triedProviders: Set<String> = [provider]
                 while lines.contains(where: { kept[$0] == nil }) {
                     try Task.checkCancellation()
                     guard token == generation else { return }
-                    let pending = TranslationPriority.indices(starts: cues.map(\.startSeconds), ends: cues.map(\.endSeconds),
-                        lines: lines, translated: kept, position: position(), limit: provider == "local" ? 1 : 16)
+                    let batchLimit = provider == "local" ? 1 : (kept.isEmpty ? 40 : (provider == "gemini" ? 250 : provider == "deepl" ? 50 : 100))
+                    let candidates = TranslationPriority.indices(starts: cues.map(\.startSeconds), ends: cues.map(\.endSeconds),
+                        lines: lines, translated: kept, position: position(), limit: batchLimit)
+                    var charactersInBatch = 0
+                    let pending = candidates.prefix { index in
+                        charactersInBatch += lines[index].count
+                        return charactersInBatch <= (provider == "gemini" || provider == "deepl" ? 20000 : 6000) || charactersInBatch == lines[index].count
+                    }
                     guard let first = pending.first else { break }
                     do {
                         if provider == "local" {
@@ -93,7 +100,7 @@ final class TranslationCoordinator: ObservableObject {
                             kept[lines[first]] = cleaned
                         } else {
                             let config = TranslationConfig(provider: provider, key: SecureKeys.load(provider),
-                                model: preferences.translationModel, region: preferences.qwenRegion, terminology: AnimeGlossary.shared.hints(text: pending.map { lines[$0] }.joined(separator: "\n"), characters: characters, custom: preferences.translationGlossary ?? ""))
+                                model: preferences.translationModels?[provider] ?? preferences.translationModel, region: preferences.qwenRegion, terminology: AnimeGlossary.shared.hints(text: pending.map { lines[$0] }.joined(separator: "\n"), characters: characters, custom: preferences.translationGlossary ?? ""))
                             let batch = pending.map { lines[$0] }
                             let output: [String] = try await withCheckedThrowingContinuation { continuation in
                                 service.translateLines(lines: batch, config: config) { result, failure in
@@ -108,7 +115,11 @@ final class TranslationCoordinator: ObservableObject {
                         try publish()
                     } catch is CancellationError { throw CancellationError() }
                     catch {
-                        if provider != "local", preferences.translationFallback != false, !preferences.selectedGGUF.isEmpty {
+                        if provider != "local", preferences.cloudFallback != false,
+                           let next = ["gemini", "openai", "deepl", "qwen"].first(where: { !triedProviders.contains($0) && !SecureKeys.load($0).isEmpty }) {
+                            status = provider + " 번역 실패 · " + next + "로 이어서 번역합니다."
+                            provider = next; triedProviders.insert(next)
+                        } else if provider != "local", preferences.translationFallback != false, !preferences.selectedGGUF.isEmpty {
                             status = provider + " 번역을 계속할 수 없어 로컬 AI로 이어서 번역합니다."
                             provider = "local"
                         } else { throw error }
@@ -124,7 +135,7 @@ final class TranslationCoordinator: ObservableObject {
             catch { if token == generation { self.error = error.localizedDescription; running = false } }
         }
     }
-    func cancel() { local.cancel(); generation = UUID(); task?.cancel(); task = nil; running = false }
+    func cancel() { if running { local.cancel() }; generation = UUID(); task?.cancel(); task = nil; running = false }
     func shutdown() { cancel(); workingFiles.forEach { try? FileManager.default.removeItem(at: $0) }; workingFiles.removeAll(); Task { await local.unload() } }
 }
 

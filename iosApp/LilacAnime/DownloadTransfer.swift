@@ -76,15 +76,21 @@ enum DownloadTransfer {
         !name.isEmpty && name != "." && name != ".." && !name.contains("/") && !name.contains("\\") && !name.contains(":") && !name.contains("\0")
     }
     static func files(_ entry: DownloadEntry, in source: URL) throws -> Set<String> {
-        var result = Set([entry.localFile, entry.rootFile].compactMap { $0 } + (entry.parts ?? []).map(\.name) + (entry.subtitleFiles ?? []) + (entry.fontFiles ?? []))
-        var pending = Array(result.filter { $0.hasSuffix(".m3u8") })
+        var result: Set<String> = []
+        if let file = entry.localFile { result.insert(file) }
+        if let root = entry.rootFile { result.insert(root) }
+        for part in entry.parts ?? [] { result.insert(part.name) }
+        result.formUnion(entry.subtitleFiles ?? [])
+        result.formUnion(entry.fontFiles ?? [])
+        var pending: [String] = Array(result.filter { $0.hasSuffix(".m3u8") })
         var visited: Set<String> = []
         let regex = try NSRegularExpression(pattern: "URI=\"([^\"]+)\"", options: .caseInsensitive)
         while let name = pending.popLast() {
             guard safeName(name), visited.insert(name).inserted else { continue }
             let content = try String(contentsOf: source.appendingPathComponent(name), encoding: .utf8)
-            let lines = content.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty && !$0.hasPrefix("#") }
-            let uri = regex.matches(in: content, range: NSRange(content.startIndex..., in: content)).compactMap { Range($0.range(at: 1), in: content).map { String(content[$0]) } }
+            let rawLines = content.components(separatedBy: CharacterSet.newlines)
+            let lines: [String] = rawLines.map { $0.trimmingCharacters(in: CharacterSet.whitespaces) }.filter { !$0.isEmpty && !$0.hasPrefix("#") }
+            let uri: [String] = regex.matches(in: content, range: NSRange(content.startIndex..., in: content)).compactMap { Range($0.range(at: 1), in: content).map { String(content[$0]) } }
             for resource in lines + uri {
                 guard safeName(resource) else { throw SubtitleFiles.failure("오프라인 HLS 파일 경로가 잘못되었습니다.") }
                 result.insert(resource)

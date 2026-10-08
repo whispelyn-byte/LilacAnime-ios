@@ -39,7 +39,9 @@ final class DesktopSubtitlePreparer {
                 service.findSubtitles(provider: provider, title: title, episode: Int32(item.number), episodeKey: item.displayNumber,
                     anilistId: item.anime.anime.anilistId?.int32Value ?? Int32(metadata?.anilist ?? 0)) { values, _ in continuation.resume(returning: values ?? []) }
             }
-            for asset in results where asset.source != "post" && (provider != "jimaku" || asset.score > 0) {
+            let previous = EpisodeSubtitleStore.shared.records.filter { $0.episodeKey.hasPrefix(item.anime.id + "#") && !$0.translated && $0.file != nil }.sorted { $0.date > $1.date }.first?.name ?? ""
+            let ordered = provider == "jimaku" ? JimakuRules.shared.rank(files: results, title: title, episode: Int32(item.number), preferred: previous) : results
+            for asset in ordered where asset.source != "post" && (provider != "jimaku" || asset.score > 0) {
                 try Task.checkCancellation()
                 guard let url = URL(string: asset.url), let files = try? await SubtitleFiles.prepare(url), let file = select(files) else { continue }
                 return (file, provider)

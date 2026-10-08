@@ -29,7 +29,7 @@
 | Anissia 제작자 | 제작자 목록, 사이트를 지정한 자막 검색, 블로그 게시물·첨부 |
 | 블로그 자막 | Kairan·Csora 페이지 인덱스, Naver 블로그 목록/검색/PostView/첨부, Tistory RSS/검색, Blogger JSON/RSS |
 | 시즌 누적 회차 | AniList PREQUEL 연결로 확인한 이전 시즌 회차 수; 명시된 다른 시즌을 제외 |
-| Jimaku 파일 | AniList ID 검색·목록·회차 파일 선택·다운로드 및 자동 번역 원본 |
+| Jimaku 파일 | AniList ID 검색·6시간 인덱스·시즌/회차/극장판 파일·ASS 품질·이전 릴리스 우선 선택·다운로드 및 자동 번역 원본 |
 | 파일/압축 자막·폰트 | ASS/SSA/SRT/VTT/SMI 등 기존 형식, ZIP/7z/지원 RAR; CP949 파일명, 폰트 추출·등록 |
 | 저장 자막 | 원본·번역 분리, 제공자/이름/회차 표시, 선택/삭제/파일 공유 |
 | 자막 캐시 | 크기 표시, 보관함/저장 자막을 보호한 오래된 캐시 정리, 명시적 전체 삭제 |
@@ -67,7 +67,7 @@
 
 ## 검증
 
-공통 JVM 테스트 32개: 파서·자막 타이밍/스타일·시즌/누적 회차·이름/호칭·모델 프롬프트·번역 모델 대체·OpenAI 과금 quota·캐시.
+공통 JVM 테스트 33개: 파서·자막 타이밍/스타일·시즌/누적 회차·이름/호칭·모델 프롬프트·번역 모델 대체·OpenAI 과금 quota·캐시.
 네이티브 테스트: 이전 설정 JSON, 시청 기록/회차 suffix, 실제 Gemma 4/ChatML Jinja, 실제 tiny GGUF CPU 추론·재사용·metrics, ZIP/7z/RAR/CP949·추출 경로, 폴더 이전의 HLS 자산 및 resume 제외, 기존 LAN/HLS 테스트.
 Actions는 KMP iOS 테스트·iPhone 테스트·iPhone/iPad 예시 캡처와 unsigned arm64 IPA를 생성합니다. 최신 통과 실행 링크는 [KMP_IOS.md](../KMP_IOS.md)에 기록합니다.
 

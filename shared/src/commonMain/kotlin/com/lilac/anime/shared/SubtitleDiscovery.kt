@@ -12,14 +12,14 @@ class SubtitleDiscovery(private val repository: SourceRepository = SourceReposit
     suspend fun search(provider: String, title: String, episode: Int, episodeKey: String, anilistId: Int): List<SubtitleAsset> {
         val offsets = if (provider == "jimaku") emptyList() else offsets(anilistId, title)
         return when (provider) {
-            "jimaku" -> jimaku(anilistId, episode)
+            "jimaku" -> jimaku(anilistId, title, episode)
             "anissia" -> AnissiaDiscovery(repository).search(title, episode, episodeKey, offsets = offsets)
             else -> blog(provider, title, episode, episodeKey, offsets)
         }
     }
     suspend fun makers(title: String) = AnissiaDiscovery(repository).makers(title)
-    suspend fun makerSubtitles(title: String, episode: Int, episodeKey: String, website: String) =
-        AnissiaDiscovery(repository).search(title, episode, episodeKey, website)
+    suspend fun makerSubtitles(title: String, episode: Int, episodeKey: String, website: String, anilistId: Int) =
+        AnissiaDiscovery(repository).search(title, episode, episodeKey, website, offsets(anilistId, title))
     private suspend fun blog(provider: String, title: String, episode: Int, episodeKey: String, offsets: List<Int>): List<SubtitleAsset> {
         require(provider in listOf("kairan", "csora"))
         val base = if (provider == "kairan") "https://kairan03.blogspot.com" else "https://csora556.blogspot.com"
@@ -58,22 +58,31 @@ class SubtitleDiscovery(private val repository: SourceRepository = SourceReposit
         }.toList()
         return assets.distinctBy { it.url } + SubtitleAsset("원본 자막 게시물", match.post.url, "post", match.similarity)
     }
-    private suspend fun jimaku(anilistId: Int, episode: Int): List<SubtitleAsset> {
+    private var jimakuEntries: Map<Int, String> = emptyMap()
+    private var jimakuLoaded = kotlin.time.TimeSource.Monotonic.markNow() - kotlin.time.Duration.parse("7h")
+    private suspend fun jimaku(anilistId: Int, title: String, episode: Int): List<SubtitleAsset> {
         require(anilistId > 0) { "Jimaku 검색에는 AniList ID가 필요합니다." }
         val base = "https://jimaku.cc"
-        val document = Ksoup.parse(repository.getText("$base/"), base)
-        val entry = document.select("div.entry[data-extra]").firstOrNull {
-            runCatching { JSONObject(it.attr("data-extra")).optInt("anilist_id") == anilistId }.getOrDefault(false)
-        } ?: return emptyList()
-        val href = entry.selectFirst("a[href*=/entry/]")?.absUrl("href") ?: return emptyList()
+        if (jimakuEntries.isEmpty() || jimakuLoaded.elapsedNow() > kotlin.time.Duration.parse("6h") ||
+            anilistId !in jimakuEntries && jimakuLoaded.elapsedNow() > kotlin.time.Duration.parse("10m")) {
+            val document = Ksoup.parse(repository.getText("$base/"), base)
+            val entries = document.select("div.entry[data-extra]").mapNotNull {
+                val id = runCatching { JSONObject(it.attr("data-extra")).optInt("anilist_id") }.getOrDefault(0)
+                val href = it.selectFirst("a[href*=/entry/]")?.absUrl("href").orEmpty()
+                if (id <= 0 || href.isEmpty()) null else id to href
+            }.toMap()
+            if (entries.isNotEmpty()) { jimakuEntries = entries; jimakuLoaded = kotlin.time.TimeSource.Monotonic.markNow() }
+        }
+        val href = jimakuEntries[anilistId] ?: return emptyList()
         val files = Ksoup.parse(repository.getText(href), href)
-        return files.select("div.entry[data-extra]").mapNotNull {
+        val assets = files.select("div.entry[data-extra]").mapNotNull {
             val extra = runCatching { JSONObject(it.attr("data-extra")) }.getOrNull()
             val name = extra?.optString("name").orEmpty().ifBlank { it.selectFirst("a.file-name")?.text().orEmpty() }
             val link = extra?.optString("url").orEmpty().ifBlank { it.selectFirst("a.file-name")?.absUrl("href").orEmpty() }
             if (name.substringAfterLast('.').lowercase() !in listOf("ass", "ssa", "srt", "vtt", "smi", "zip", "7z", "rar", "ttml", "sub")) return@mapNotNull null
             SubtitleAsset(name, if (link.startsWith("http")) link else "$base/" + link.trimStart('/'), "jimaku", if (SubtitleEpisodeMatcher.matches(name, episode)) 1.0 else 0.0)
-        }.sortedByDescending { it.score }.distinctBy { it.url }
+        }.distinctBy { it.url }
+        return JimakuRules.rank(assets, title, episode, "")
     }
     fun close() { repository.close(); metadata.close() }
 }

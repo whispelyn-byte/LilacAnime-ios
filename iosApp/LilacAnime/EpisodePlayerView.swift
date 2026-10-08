@@ -160,7 +160,7 @@ final class EpisodePlayerModel: ObservableObject {
     }
     private func performSubtitleSearch(_ provider: String, token: UUID) {
         service.findSubtitles(provider: provider, title: searchTitle, episode: Int32(item.number), episodeKey: item.displayNumber,
-            anilistId: item.anime.anime.anilistId?.int32Value ?? 0) { [weak self] assets, error in
+            anilistId: item.anime.anime.anilistId?.int32Value ?? Int32(DesktopCatalog.shared.record(item.anime)?.anilist ?? 0)) { [weak self] assets, error in
                 guard token == self?.generation else { return }
                 self?.assets = assets ?? []; self?.error = error; self?.searching = false
             }
@@ -213,7 +213,7 @@ final class EpisodePlayerModel: ObservableObject {
     private func findAutomaticSubtitle(_ providers: [String], library: LibraryStore, token: UUID, request: UUID) {
         guard token == generation, request == subtitleRequest, subtitle == nil, let provider = providers.first else { return }
         service.findSubtitles(provider: provider, title: searchTitle, episode: Int32(item.number), episodeKey: item.displayNumber,
-            anilistId: item.anime.anime.anilistId?.int32Value ?? 0) { [weak self] results, _ in
+            anilistId: item.anime.anime.anilistId?.int32Value ?? Int32(DesktopCatalog.shared.record(item.anime)?.anilist ?? 0)) { [weak self] results, _ in
             Task { @MainActor in
                 guard let self, token == self.generation, request == self.subtitleRequest, self.subtitle == nil else { return }
                 let files = (results ?? []).filter { $0.source != "post" }
@@ -256,7 +256,7 @@ final class EpisodePlayerModel: ObservableObject {
     func searchMaker(_ maker: SubtitleMaker) {
         searching = true
         let token = generation
-        service.makerSubtitles(title: searchTitle, episode: Int32(item.number), episodeKey: item.displayNumber, website: maker.website) { [weak self] values, failure in
+        service.makerSubtitles(title: searchTitle, episode: Int32(item.number), episodeKey: item.displayNumber, website: maker.website, anilistId: item.anime.anime.anilistId?.int32Value ?? Int32(DesktopCatalog.shared.record(item.anime)?.anilist ?? 0)) { [weak self] values, failure in
             guard token == self?.generation else { return }
             self?.assets = values ?? []; self?.error = failure; self?.searching = false
         }

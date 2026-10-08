@@ -37,8 +37,8 @@ class IosServices {
     fun schedule(week: Int, completion: (List<Anime>?, String?) -> Unit) { scope.launch { call(completion) { source.schedule(week) } } }
     fun episodeOffsets(anilistId: Int, title: String, completion: (List<Int>?, String?) -> Unit) { scope.launch { call(completion) { discovery.offsets(anilistId, title) } } }
     fun subtitleMakers(title: String, completion: (List<SubtitleMaker>?, String?) -> Unit) { scope.launch { call(completion) { discovery.makers(title) } } }
-    fun makerSubtitles(title: String, episode: Int, episodeKey: String, website: String, completion: (List<SubtitleAsset>?, String?) -> Unit) {
-        scope.launch { call(completion) { discovery.makerSubtitles(title, episode, episodeKey, website) } }
+    fun makerSubtitles(title: String, episode: Int, episodeKey: String, website: String, anilistId: Int, completion: (List<SubtitleAsset>?, String?) -> Unit) {
+        scope.launch { call(completion) { discovery.makerSubtitles(title, episode, episodeKey, website, anilistId) } }
     }
     fun titleVariants(query: String, credential: String, completion: (List<String>?, String?) -> Unit) { scope.launch { call(completion) { tmdb.variants(query, credential) } } }
     fun findSubtitles(provider: String, title: String, episode: Int, episodeKey: String, anilistId: Int, completion: (List<SubtitleAsset>?, String?) -> Unit) {

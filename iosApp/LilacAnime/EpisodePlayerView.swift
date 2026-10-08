@@ -317,6 +317,7 @@ struct EpisodePlayerView: View {
     @State private var subtitleSheet = false
     @State private var settings = false
     @State private var settingsTab = 0
+    @State private var originalOrientation: UIInterfaceOrientation = .portrait
     init(item: PlaybackItem) { _model = StateObject(wrappedValue: EpisodePlayerModel(item: item)) }
     var body: some View {
         ZStack {
@@ -358,8 +359,8 @@ struct EpisodePlayerView: View {
             .accessibilityIdentifier("fullscreen-player")
             .statusBarHidden(true).persistentSystemOverlays(.hidden)
             .toolbar(.hidden, for: .navigationBar).toolbar(.hidden, for: .tabBar)
-            .onAppear { OrientationController.landscape(); if UIShowcase.enabled { model.engine.position = 183; model.engine.duration = 1440 } else { model.begin(library: library) } }
-            .onDisappear { model.shutdown(library: library); OrientationController.portrait() }
+            .onAppear { originalOrientation = OrientationController.current; OrientationController.landscape(); if UIShowcase.enabled { model.engine.position = 183; model.engine.duration = 1440 } else { model.begin(library: library) } }
+            .onDisappear { model.shutdown(library: library); OrientationController.restore(originalOrientation) }
             .onChange(of: model.resolver.streams) { streams in
                 if let stream = streams.first(where: { $0.label == library.preferences.preferredStream }) ?? streams.first,
                     model.active == nil || (model.active?.url == stream.url && model.active?.manifestKey != stream.manifestKey) {
@@ -381,7 +382,7 @@ struct EpisodePlayerView: View {
     private var playerSettings: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                Picker("플레이어 설정", selection: $settingsTab) { Text("재생").tag(0); Text("자막").tag(1); Text("자막 모양").tag(2) }.pickerStyle(.segmented).padding(16)
+                Picker("플레이어 설정", selection: $settingsTab) { Text("재생").tag(0); Text("자막").tag(1); Text("자막 모양").tag(2) }.pickerStyle(.segmented).accessibilityIdentifier("player-settings-tabs").padding(16)
                 Form {
                     if settingsTab == 0 { playbackSettings }
                     else if settingsTab == 1 { subtitleSettings }
@@ -672,6 +673,10 @@ struct VolumeControl: UIViewRepresentable {
     func updateUIView(_ view: MPVolumeView, context: Context) {}
 }
 enum OrientationController {
+    static var current: UIInterfaceOrientation { UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first?.interfaceOrientation ?? .portrait }
+    static func restore(_ orientation: UIInterfaceOrientation) {
+        switch orientation { case .landscapeLeft: update(.landscapeLeft); case .landscapeRight: update(.landscapeRight); default: update(.portrait) }
+    }
     static func landscape() { update(.landscape) }
     static func portrait() { update(.portrait) }
     private static func update(_ mask: UIInterfaceOrientationMask) {

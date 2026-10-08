@@ -17,8 +17,9 @@ final class PlaybackTests: XCTestCase {
         XCTAssertFalse(app.buttons["전체 화면 해제"].exists)
         XCTAssertFalse(app.buttons["전체 화면"].exists)
         settings.tap()
-        XCTAssertTrue(app.segmentedControls["플레이어 설정"].waitForExistence(timeout: 5))
-        app.segmentedControls.buttons["자막 모양"].tap()
+        let tabs = app.segmentedControls["player-settings-tabs"]
+        XCTAssertTrue(tabs.waitForExistence(timeout: 5))
+        tabs.buttons["자막 모양"].tap()
         XCTAssertTrue(app.staticTexts["글꼴"].exists || app.textFields.count > 0)
         app.buttons["닫기"].tap()
         if !app.buttons["뒤로"].isHittable { app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }

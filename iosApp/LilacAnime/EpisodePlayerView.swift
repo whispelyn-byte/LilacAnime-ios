@@ -356,6 +356,7 @@ struct EpisodePlayerView: View {
                 }.padding(24).foregroundStyle(.white).background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 16))
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity).background(.black).ignoresSafeArea()
+            .background(PlayerOrientationView().allowsHitTesting(false))
             .accessibilityIdentifier("fullscreen-player")
             .statusBarHidden(true).persistentSystemOverlays(.hidden)
             .toolbar(.hidden, for: .navigationBar).toolbar(.hidden, for: .tabBar)
@@ -672,16 +673,39 @@ struct VolumeControl: UIViewRepresentable {
     func makeUIView(context: Context) -> MPVolumeView { MPVolumeView() }
     func updateUIView(_ view: MPVolumeView, context: Context) {}
 }
+struct PlayerOrientationView: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> Controller { Controller() }
+    func updateUIViewController(_ controller: Controller, context: Context) {}
+    final class Controller: UIViewController {
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            // The SwiftUI cover has completed presentation before requesting rotation.
+            OrientationController.landscape()
+        }
+    }
+}
+@MainActor
 enum OrientationController {
+    static var supported: UIInterfaceOrientationMask = .allButUpsideDown
     static var current: UIInterfaceOrientation { UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first?.interfaceOrientation ?? .portrait }
     static func restore(_ orientation: UIInterfaceOrientation) {
+        supported = .allButUpsideDown
         switch orientation { case .landscapeLeft: update(.landscapeLeft); case .landscapeRight: update(.landscapeRight); default: update(.portrait) }
     }
-    static func landscape() { update(.landscape) }
-    static func portrait() { update(.portrait) }
+    static func landscape() { supported = .landscape; update(.landscape) }
+    static func portrait() { supported = .allButUpsideDown; update(.portrait) }
     private static func update(_ mask: UIInterfaceOrientationMask) {
-        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else { return }
-        scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask))
+        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first(where: { $0.activationState == .foregroundActive }) else { return }
+        for window in scene.windows where window.isKeyWindow {
+            var controller = window.rootViewController
+            while let value = controller {
+                value.setNeedsUpdateOfSupportedInterfaceOrientations()
+                controller = value.presentedViewController
+            }
+        }
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { error in
+            NSLog("Player orientation request failed: %@", error.localizedDescription)
+        }
     }
 }
 struct SystemPlayerView: UIViewControllerRepresentable {

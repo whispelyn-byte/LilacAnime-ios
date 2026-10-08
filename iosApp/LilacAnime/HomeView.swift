@@ -98,6 +98,7 @@ struct HomeView: View {
                 .toolbar(.hidden, for: .navigationBar)
                 .refreshable { if !UIShowcase.enabled { model.load() } }
                 .task { if !UIShowcase.enabled && model.items.isEmpty { model.source = library.preferences.source; model.load() } }
+                .onChange(of: library.preferences.source) { source in if !UIShowcase.enabled && model.source != source { model.source = source; model.load() } }
         }
     }
     private func sourceName(_ source: String) -> String {

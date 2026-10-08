@@ -8,7 +8,7 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import kotlinx.coroutines.CancellationException
 
-data class TranslationConfig(val provider: String, val key: String, val model: String = "", val region: String = "international")
+data class TranslationConfig(val provider: String, val key: String, val model: String = "", val region: String = "international", val terminology: String = "")
 class CloudTranslator(private val client: HttpClient = HttpClient {
     expectSuccess = true
     install(HttpTimeout) { requestTimeoutMillis = 150_000; connectTimeoutMillis = 20_000 }
@@ -17,7 +17,7 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
     suspend fun translate(lines: List<String>, config: TranslationConfig): List<String> {
         if (lines.isEmpty()) return emptyList()
         require(config.key.isNotBlank()) { "API Key를 설정하세요." }
-        val cacheKey = config.provider + "|" + config.model + "|" + config.region + "|" + config.key.hashCode() + "|" + lines.joinToString("\u0000")
+        val cacheKey = config.provider + "|" + config.model + "|" + config.region + "|" + config.key.hashCode() + "|" + config.terminology + "|" + lines.joinToString("\u0000")
         cache[cacheKey]?.let { return it }
         val result = when (config.provider) {
             "deepl" -> deepl(lines, config)
@@ -38,7 +38,7 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
             apiKey?.let { header("x-goog-api-key", it) }
             setBody(body.toString())
         }.bodyAsText())
-    private val instruction = "Translate Japanese anime subtitles into natural Korean. Preserve meaning, names and tone. Return exactly one translated item per input, with its original 1-based index. Return JSON {\"lines\":[{\"i\":1,\"t\":\"translation\"}]}. Do not add explanations."
+    private fun instruction(config: TranslationConfig) = "Translate Japanese or English anime subtitles into natural Korean. Preserve meaning, names and tone. Return exactly one translated item per input, with its original 1-based index. Return JSON {\"lines\":[{\"i\":1,\"t\":\"translation\"}]}. Do not add explanations." + if (config.terminology.isBlank()) "" else "\nUse these spellings consistently:\n" + config.terminology
     private fun itemSchema() = JSONObject().put("type", "object").put("properties", JSONObject()
         .put("i", JSONObject().put("type", "integer")).put("t", JSONObject().put("type", "string")))
         .put("required", JSONArray().put("i").put("t")).put("additionalProperties", false)
@@ -48,7 +48,7 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
         val model = config.model.ifBlank { "gpt-4.1-mini" }
         for (shape in 0..2) {
             try {
-                val body = JSONObject().put("model", model).put("store", false).put("instructions", instruction)
+                val body = JSONObject().put("model", model).put("store", false).put("instructions", instruction(config))
                     .put("input", CloudTranslationText.markedInput(lines))
                 if (shape == 0) body.put("text", JSONObject().put("format", JSONObject().put("type", "json_schema").put("name", "subtitles").put("strict", true).put("schema", schema())))
                 if (shape == 1) body.put("text", JSONObject().put("format", JSONObject().put("type", "json_object")))
@@ -83,7 +83,7 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
         }
         for (model in models) {
             try {
-                val body = JSONObject().put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", instruction))))
+                val body = JSONObject().put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", instruction(config)))))
                     .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", CloudTranslationText.markedInput(lines))))))
                     .put("generationConfig", JSONObject().put("responseMimeType", "application/json").put("temperature", 0.3))
                 val root = post("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent", body, apiKey = config.key)
@@ -107,7 +107,7 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
         val host = if (config.region == "china") "dashscope.aliyuncs.com" else "dashscope-intl.aliyuncs.com"
         val model = config.model.ifBlank { "qwen-plus" }
         val body = JSONObject().put("model", model).put("messages", JSONArray()
-            .put(JSONObject().put("role", "system").put("content", instruction))
+            .put(JSONObject().put("role", "system").put("content", instruction(config)))
             .put(JSONObject().put("role", "user").put("content", CloudTranslationText.markedInput(lines))))
             .put("temperature", 0.3)
         if (model.contains("qwen3", true)) body.put("enable_thinking", false)

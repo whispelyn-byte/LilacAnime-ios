@@ -48,6 +48,8 @@ struct AppPreferences: Codable {
     var offlineAnalysis = true
     var backgroundAudio = true
     var subtitleProvider: String? = "auto"
+    var translationFallback: Bool? = true
+    var translationGlossary: String? = ""
     var autoTranslation = false
     var translationProvider = "local"
     var translationModel = ""

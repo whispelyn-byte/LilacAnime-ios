@@ -43,6 +43,9 @@ class IosServices {
             SubtitleTools.replace(content, extension, translated)
         } }
     }
+    fun translateLines(lines: List<String>, config: TranslationConfig, completion: (List<String>?, String?) -> Unit) {
+        scope.launch { call(completion) { translator.translate(lines, config) } }
+    }
     fun skipSegments(anilistId: Int, malId: Int, episode: Int, duration: Int, completion: (List<SkipSegment>?, String?) -> Unit) {
         scope.launch { call(completion) { skip.segments(anilistId, malId, episode, duration) } }
     }

@@ -12,13 +12,21 @@ cd iosApp
 APP_VERSION="$(python3 scripts/android-version.py --version)"
 APP_BUILD="$(python3 scripts/android-version.py --build)"
 if [ "${GITHUB_REF_TYPE:-}" = tag ]; then
+  test "$GITHUB_REF_NAME" = "$(python3 scripts/android-version.py --tag)"
   APP_VERSION="${GITHUB_REF_NAME#v}"
+  APP_VERSION="${APP_VERSION%%-ios.*}"
   python3 -c 'import re,sys; assert re.fullmatch(r"\d+\.\d+(?:\.\d+)?", sys.argv[1]), "Invalid release version"' "$APP_VERSION"
   test "$APP_VERSION" = "$(python3 scripts/android-version.py --version)"
 fi
 xcodegen generate
 mkdir -p build
-xcodebuild -resolvePackageDependencies -project LilacAnime.xcodeproj -scheme LilacAnime
+for ATTEMPT in 1 2 3; do
+  if xcodebuild -resolvePackageDependencies -project LilacAnime.xcodeproj -scheme LilacAnime -derivedDataPath build/DerivedData; then
+    break
+  fi
+  if [ "$ATTEMPT" = 3 ]; then exit 1; fi
+  sleep 5
+done
 SIMULATOR_ID="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); phones=[v for group in d["devices"].values() for v in group if v.get("isAvailable") and "iPhone" in v["name"]]; assert phones, "No available iPhone simulator"; print(phones[0]["udid"])')"
 RESULT="build/Tests-$(date +%Y%m%d-%H%M%S).xcresult"
 xcodebuild -project LilacAnime.xcodeproj -scheme LilacAnime -configuration Debug -derivedDataPath build/DerivedData -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -resultBundlePath "$RESULT" CODE_SIGNING_ALLOWED=NO MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$APP_BUILD" test

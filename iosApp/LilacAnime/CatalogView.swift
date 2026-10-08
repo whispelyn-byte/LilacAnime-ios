@@ -89,6 +89,7 @@ struct CatalogView: View {
                     }
                 }
                 .task { if model.items.isEmpty { model.source = library.preferences.source; model.load(); model.loadFilters() } }
+                .onChange(of: library.preferences.source) { source in if model.source != source { model.source = source } }
         }
     }
     private func filterInput(_ title: String, text: Binding<String>, values: [String]) -> some View {
@@ -126,6 +127,7 @@ struct DetailView: View {
     let source: String
     @EnvironmentObject private var library: LibraryStore
     @StateObject private var model = DetailModel()
+    @EnvironmentObject private var downloads: DownloadStore
     @State private var selectedTab = 0
     @State private var serverID: Int32 = 0
     private var anime: Anime { model.anime ?? summary }
@@ -208,6 +210,9 @@ struct DetailView: View {
                 }
             }
             if let server {
+                Button { downloads.enqueue(server.episodes.indices.map { playback(server.episodes, index: $0) }, quality: library.preferences.quality) } label: {
+                    Label("이 서버의 전체 회차 다운로드", systemImage: "arrow.down.circle").font(.subheadline)
+                }.disabled(downloads.pendingResolution > 0)
                 LazyVStack(spacing: 10) {
                     ForEach(Array(server.episodes.enumerated()), id: \.element.id) { index, episode in
                         NavigationLink { EpisodePlayerView(item: playback(server.episodes, index: index)) } label: {
@@ -223,7 +228,9 @@ struct DetailView: View {
                                 Spacer()
                                 Image(systemName: "play.circle.fill").font(.title2).foregroundStyle(LilacStyle.accent)
                             }.padding(14).background(LilacStyle.card, in: RoundedRectangle(cornerRadius: 18)).foregroundStyle(.primary)
-                        }.buttonStyle(.plain)
+                        }.buttonStyle(.plain).contextMenu {
+                            Button { downloads.enqueue([playback(server.episodes, index: index)], quality: library.preferences.quality) } label: { Label("회차 다운로드", systemImage: "arrow.down.circle") }
+                        }
                     }
                 }
             } else if !model.loading {

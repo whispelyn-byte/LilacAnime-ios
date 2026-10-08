@@ -13,14 +13,14 @@ parser.add_argument("--repo", default="whispelyn-byte/LilacAnime-ios")
 parser.add_argument("--tag", required=True)
 parser.add_argument("--output", type=Path, required=True)
 args = parser.parse_args()
-if not re.fullmatch(r"v\d+\.\d+(?:\.\d+)?", args.tag):
+if not re.fullmatch(r"v\d+\.\d+(?:\.\d+)?(?:-ios\.\d+)?", args.tag):
     raise SystemExit("Expected a release tag such as v1.0.1")
 with zipfile.ZipFile(args.ipa) as archive:
     info = plistlib.loads(archive.read("Payload/LilacAnime.app/Info.plist"))
     if archive.testzip() is not None:
         raise SystemExit("Invalid IPA archive")
 version = info["CFBundleShortVersionString"]
-if version != args.tag[1:]:
+if version != args.tag[1:].split("-ios.")[0]:
     raise SystemExit("IPA version does not match release tag")
 if info["CFBundleIdentifier"] != "com.lilac.anime.ios" or info.get("DTPlatformName") != "iphoneos":
     raise SystemExit("Expected the LilacAnime iPhoneOS app")

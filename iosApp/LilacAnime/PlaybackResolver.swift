@@ -27,6 +27,7 @@ struct PlaybackItem {
     let watchURL: URL
     let directURL: URL?
     var next: [PlaybackItem] = []
+    var localSubtitles: [URL] = []
     init(anime: SavedAnime, episode: Episode) {
         self.anime = anime; episodeID = episode.id; title = episode.title; number = Int(episode.number)
         displayNumber = episode.displayNumber; watchURL = URL(string: episode.videoUrl ?? anime.anime.detailUrl) ?? URL(string: "https://linkkf.app/")!

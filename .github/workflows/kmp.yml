@@ -39,6 +39,10 @@ jobs:
           fi
           xcodebuild -version
       - run: brew install xcodegen
+      - uses: actions/cache@v4
+        with:
+          path: iosApp/build/DerivedData/SourcePackages
+          key: swiftpm-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('iosApp/Native/Package.swift') }}
       - run: sh iosApp/scripts/verify.sh
       - uses: actions/upload-artifact@v4
         if: always()

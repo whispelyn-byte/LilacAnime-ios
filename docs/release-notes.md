@@ -1,13 +1,12 @@
-Android 원본과 동일한 **0.4.0 (빌드 30)** 버전입니다.
+Android와 같은 앱 버전 0.4.0, iOS 빌드 31입니다.
 
-홈·상세 UI, Android 구성을 참고한 플레이어, 자막·번역·다운로드·Cast 기능을 포함합니다. 직접 영상 URL 입력란을 제거했습니다.
+데스크탑 포트 추가:
+- Ohli24, Linkani, Miruro 영상 소스와 제공 자막 트랙.
+- Anissia 검색 및 한국어 자막 우선 자동 선택.
+- 서버 회차 일괄 다운로드와 제공 자막 오프라인 저장.
+- 재생 위치 우선 번역, 부분 번역 저장·재개, 로컬 AI 대체와 사용자 용어집.
 
-직전 Actions의 검증된 unsigned arm64 앱을 재사용하고, 버전 정보만 Android에 맞춰 다시 패키징했습니다. 영상 실행 파일과 프레임워크는 변경하지 않았습니다.
+LilacAnime-SideStore.ipa는 압축을 풀지 않고 SideStore에서 설치합니다.
+소스: https://github.com/whispelyn-byte/LilacAnime-ios/releases/latest/download/source.json
 
-## 설치·업데이트
-LilacAnime-SideStore.ipa를 다운로드해 SideStore의 My Apps → +에서 가져옵니다. IPA는 압축을 풀지 않습니다. 이전 1.0을 설치했다면 기존 앱을 삭제하지 말고 이 IPA로 덮어 설치합니다.
-
-## SideStore 소스
-https://github.com/whispelyn-byte/LilacAnime-ios/releases/latest/download/source.json
-
-검증 앱: https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37710922796 . 실제 기기 설치·외부 영상 재생과 소스 업데이트는 확인이 남아 있습니다.
+외부 서비스 재생·실기기 설치·Cast·로컬 AI 추론은 별도 기기 확인이 필요합니다.

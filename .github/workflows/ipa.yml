@@ -41,7 +41,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_REPO: ${{ github.repository }}
         run: |
-          TAG="v$(python3 iosApp/scripts/android-version.py --version)"
+          TAG="$(python3 iosApp/scripts/android-version.py --tag)"
           python3 iosApp/scripts/generate-source.py build/LilacAnime-SideStore.ipa --tag "$TAG" --repo "$RELEASE_REPO" --output build/source.json
           if ! gh release view "$TAG" --repo "$RELEASE_REPO" >/dev/null 2>&1; then
             gh release create "$TAG" --repo "$RELEASE_REPO" --target "$GITHUB_SHA" --title "LilacAnime iOS $TAG" --notes-file docs/release-notes.md --latest

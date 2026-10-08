@@ -70,6 +70,10 @@ struct SettingsView: View {
                 }
                 Section("AI 번역") {
                     Toggle("자막 자동 번역", isOn: $store.preferences.autoTranslation)
+                    Toggle("클라우드 실패 시 로컬 AI로 이어서 번역", isOn: Binding(get: { store.preferences.translationFallback ?? true }, set: { store.preferences.translationFallback = $0 }))
+                    Text("현재 재생 위치에 가까운 자막부터 번역하며, 중단한 번역은 다음 시도에 이어서 처리합니다.").font(.caption).foregroundStyle(.secondary)
+                    Text("이름·용어 표기 (원문=한국어)").font(.subheadline)
+                    TextEditor(text: Binding(get: { store.preferences.translationGlossary ?? "" }, set: { store.preferences.translationGlossary = $0 })).frame(minHeight: 70)
                     Picker("공급자", selection: $store.preferences.translationProvider) {
                         ForEach(["local", "gemini", "openai", "deepl", "qwen"], id: \.self) { Text($0) }
                     }

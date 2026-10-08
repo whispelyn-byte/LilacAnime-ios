@@ -19,6 +19,7 @@ class TmdbTitleResolver(private val client: HttpClient = HttpClient {
         val response = try { client.get("https://api.themoviedb.org/3/" + path) {
             timeout { requestTimeoutMillis = 12_000; connectTimeoutMillis = 8_000 }
             header("Accept", "application/json")
+            parameter("language", "ko-KR")
             if (credential.startsWith("Bearer ", true) || credential.contains('.')) {
                 header("Authorization", if (credential.startsWith("Bearer ", true)) credential else "Bearer " + credential)
             } else parameter("api_key", credential)
@@ -68,6 +69,33 @@ class TmdbTitleResolver(private val client: HttpClient = HttpClient {
         if (x == y) return 1.0
         val sx = x.toSet(); val sy = y.toSet()
         return sx.intersect(sy).size.toDouble() / sx.union(sy).size
+    }
+    suspend fun overview(titles: List<String>, credential: String, format: String): String {
+        if (credential.isBlank()) return ""
+        for (query in titles.filter(String::isNotBlank).distinct().take(6)) {
+            val rows = request("search/multi", credential, query).optJSONArray("results") ?: continue
+            val picks = (0 until rows.length()).mapNotNull(rows::optJSONObject).filter { row ->
+                row.optString("media_type") in listOf("tv", "movie") &&
+                    row.optJSONArray("genre_ids")?.let { genres -> (0 until genres.length()).any { genres.optInt(it) == 16 } } == true &&
+                    similarity(query, row.optString("original_name").ifBlank { row.optString("original_title") }) >= 0.2
+            }.sortedByDescending { row ->
+                similarity(query, row.optString("original_name").ifBlank { row.optString("original_title") }) +
+                    if (row.optString("media_type") == if (format == "MOVIE") "movie" else "tv") 0.2 else 0.0
+            }
+            for (pick in picks.take(2)) {
+                val type = pick.optString("media_type"); val id = pick.optInt("id")
+                val detail = request(type + "/" + id, credential)
+                var text = detail.optString("overview")
+                val season = DesktopTitleRules.season(titles.firstOrNull().orEmpty())
+                if (type == "tv" && season > 1) {
+                    val later = try { request("tv/" + id + "/season/" + season, credential).optString("overview") }
+                    catch (e: CancellationException) { throw e } catch (_: Exception) { "" }
+                    if (TitleCandidates.isKorean(later)) text = later
+                }
+                if (TitleCandidates.isKorean(text)) return text
+            }
+        }
+        return ""
     }
     fun close() { client.close() }
 }

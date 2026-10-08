@@ -15,6 +15,12 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section("화면과 콘텐츠") {
+                    Toggle("데스크탑 작업 공간", isOn: Binding(get: { store.preferences.desktopWorkspace ?? false }, set: { store.preferences.desktopWorkspace = $0 }))
+                    Picker("작품 제목 표시", selection: Binding(get: { store.preferences.titleLanguage ?? "original" }, set: { store.preferences.titleLanguage = $0 })) {
+                        Text("원래 제목").tag("original"); Text("한국어").tag("ko"); Text("영어").tag("en")
+                    }
+                    NavigationLink("한국어 전체 카탈로그", destination: CatalogIndexView())
+
                     Picker("테마", selection: $store.preferences.theme) { Text("시스템").tag("system"); Text("밝게").tag("light"); Text("어둡게").tag("dark") }
                     Picker("영상 소스", selection: $store.preferences.source) { ForEach(ContentSources.keys, id: \.self) { Text(ContentSources.name($0)).tag($0) } }
                     Picker("기본 화질", selection: $store.preferences.quality) { ForEach(["Auto", "720p", "1080p"], id: \.self) { Text($0) } }
@@ -70,6 +76,7 @@ struct SettingsView: View {
                 }
                 Section("AI 번역") {
                     Toggle("자막 자동 번역", isOn: $store.preferences.autoTranslation)
+                    Toggle("다음 화 자막 미리 번역", isOn: Binding(get: { store.preferences.pretranslateNext ?? true }, set: { store.preferences.pretranslateNext = $0 }))
                     Toggle("클라우드 실패 시 로컬 AI로 이어서 번역", isOn: Binding(get: { store.preferences.translationFallback ?? true }, set: { store.preferences.translationFallback = $0 }))
                     Text("현재 재생 위치에 가까운 자막부터 번역하며, 중단한 번역은 다음 시도에 이어서 처리합니다.").font(.caption).foregroundStyle(.secondary)
                     Text("이름·용어 표기 (원문=한국어)").font(.subheadline)
@@ -88,6 +95,7 @@ struct SettingsView: View {
                     if store.preferences.translationProvider == "qwen" {
                         Picker("지역", selection: $store.preferences.qwenRegion) { Text("International").tag("international"); Text("China").tag("china") }
                     }
+                    Toggle("모델별 권장 프롬프트·샘플링", isOn: Binding(get: { store.preferences.modelSampling ?? true }, set: { store.preferences.modelSampling = $0 }))
                     NavigationLink("로컬 GGUF 모델") { LocalModelsView() }
                     Stepper("컨텍스트 \(store.preferences.contextSize)", value: $store.preferences.contextSize, in: 512...32768, step: 512)
                     Stepper("스레드 \(store.preferences.threads) (0=자동)", value: $store.preferences.threads, in: 0...16)

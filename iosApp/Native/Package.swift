@@ -5,7 +5,7 @@ let package = Package(
     platforms: [.iOS(.v16)],
     products: [.library(name: "LilacLocalAI", targets: ["LilacLocalAI"])],
     targets: [
-        .binaryTarget(name: "llama", url: "https://github.com/ggml-org/llama.cpp/releases/download/b5046/llama-b5046-xcframework.zip",
-                      checksum: "c19be78b5f00d8d29a25da41042cb7afa094cbf6280a225abe614b03b20029ab"),
-        .target(name: "LilacLocalAI", dependencies: ["llama"], publicHeadersPath: "include")
+        .binaryTarget(name: "llama", url: "https://github.com/ggml-org/llama.cpp/releases/download/b11490/llama-b11490-xcframework.zip",
+                      checksum: "bc19f561ae2504cb2b3e7b189f44c8a81f8aa0fd84f70b9e81c2ff92a98a086c"),
+        .target(name: "LilacLocalAI", dependencies: ["llama"], exclude: ["Jinja/LICENSE.txt"], publicHeadersPath: "include")
     ], cxxLanguageStandard: .cxx17)

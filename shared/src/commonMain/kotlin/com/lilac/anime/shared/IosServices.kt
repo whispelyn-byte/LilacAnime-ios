@@ -8,6 +8,11 @@ class IosServices {
     private val skip = AniSkip()
     private val models = ModelRepository()
     private val tmdb = TmdbTitleResolver()
+    private val metadata = DesktopMetadataRepository()
+    fun catalogKoreanIndex(completion: (String?, String?) -> Unit) { scope.launch { call(completion) { metadata.wikidataIndex() } } }
+    fun desktopMetadata(anime: Anime, credential: String, includeCast: Boolean, completion: (DesktopMetadata?, String?) -> Unit) {
+        scope.launch { call(completion) { metadata.resolve(anime, credential, includeCast) } }
+    }
     fun koreanTitle(titles: List<String>, credential: String, completion: (String?, String?) -> Unit) {
         scope.launch { call(completion) { tmdb.resolve(titles, credential) } }
     }
@@ -24,6 +29,9 @@ class IosServices {
     fun desktopStreams(sourceKey: String, animeId: String, number: Int, url: String, completion: (List<DesktopPlaybackStream>?, String?) -> Unit) {
         scope.launch { call(completion) { source.desktopStreams(sourceKey, animeId, number, url) } }
     }
+    fun sourceSections(sourceKey: String, completion: (List<SourceSection>?, String?) -> Unit) { scope.launch { call(completion) { source.sourceSections(sourceKey) } } }
+    fun sourceSchedule(sourceKey: String, day: Int, completion: (List<Anime>?, String?) -> Unit) { scope.launch { call(completion) { source.sourceSchedule(sourceKey, day) } } }
+    fun sourceExtras(anime: Anime, completion: (SourceExtras?, String?) -> Unit) { scope.launch { call(completion) { source.extras(anime) } } }
     fun top(period: String, completion: (List<Anime>?, String?) -> Unit) { scope.launch { call(completion) { source.top(period) } } }
     fun schedule(week: Int, completion: (List<Anime>?, String?) -> Unit) { scope.launch { call(completion) { source.schedule(week) } } }
     fun findSubtitles(provider: String, title: String, episode: Int, episodeKey: String, anilistId: Int, completion: (List<SubtitleAsset>?, String?) -> Unit) {
@@ -61,5 +69,5 @@ class IosServices {
         scope.launch { call(completion) { models.files(repo) } }
     }
     fun cancel() { scope.coroutineContext.cancelChildren() }
-    fun close() { scope.cancel(); source.close(); discovery.close(); translator.close(); skip.close(); models.close(); tmdb.close() }
+    fun close() { scope.cancel(); source.close(); discovery.close(); translator.close(); skip.close(); models.close(); tmdb.close(); metadata.close() }
 }

@@ -217,9 +217,9 @@ final class EpisodePlayerModel: ObservableObject {
             }
         }
     }
-    func translate(library: LibraryStore) {
+    func translate(library: LibraryStore, fresh: Bool = false) {
         guard let sourceSubtitle else { error = "먼저 자막을 선택하세요."; return }
-        translation.translate(sourceSubtitle, preferences: library.preferences, position: { [weak self] in self?.engine.position ?? 0 }) { [weak self] output in
+        translation.translate(sourceSubtitle, preferences: library.preferences, position: { [weak self] in self?.engine.position ?? 0 }, anime: item.anime, fresh: fresh) { [weak self] output in
             guard let self else { return }
             if self.subtitle == output { self.engine.reloadSubtitle() }
             else { self.subtitle = output; self.engine.subtitle(output) }

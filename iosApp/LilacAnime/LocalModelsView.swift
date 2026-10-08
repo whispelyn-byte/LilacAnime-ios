@@ -42,7 +42,7 @@ actor LocalInference {
         if loaded != path || loadedContext != preferences.contextSize || loadedThreads != threads {
             if model != nil { state.close(); self.model = nil }
             model = lilac_model_open(path, Int32(preferences.contextSize), Int32(threads))
-            guard model != nil else { throw SubtitleFiles.failure("모델을 읽지 못했습니다. 기기 메모리 또는 llama.cpp b5046의 모델 지원을 확인하세요.") }
+            guard model != nil else { throw SubtitleFiles.failure("모델을 읽지 못했습니다. 기기 메모리 또는 llama.cpp b11490의 모델 지원을 확인하세요.") }
             state.assign(model)
             loaded = path; loadedContext = preferences.contextSize; loadedThreads = threads
         }

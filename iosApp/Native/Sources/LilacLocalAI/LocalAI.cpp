@@ -7,6 +7,8 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include "Jinja/parser.h"
+#include "Jinja/json.h"
 
 struct LilacModel {
     llama_model *model = nullptr;
@@ -40,26 +42,44 @@ extern "C" void lilac_string_free(char *text) { free(text); }
 extern "C" char *lilac_generate(LilacModel *state, const char *prompt, int max_tokens, float temperature, float top_p, int top_k, float repetition) {
     if (!state || !prompt) return nullptr;
     state->cancelled = false; state->error.clear();
-    const char *chat_template = llama_model_chat_template(state->model, nullptr);
-    llama_chat_message message{"user", prompt};
-    std::vector<char> formatted(strlen(prompt) + 4096);
-    int written = llama_chat_apply_template(chat_template, &message, 1, true, formatted.data(), (int)formatted.size());
-    if (written < 0) { state->error = "This model chat template is not supported by llama.cpp b5046"; return nullptr; }
-    if (written >= (int)formatted.size()) {
-        formatted.resize(written + 1);
-        written = llama_chat_apply_template(chat_template, &message, 1, true, formatted.data(), (int)formatted.size());
-    }
-    if (written < 0) { state->error = "Chat template formatting failed"; return nullptr; }
-    formatted.resize(written + 1); formatted[written] = 0;
-    prompt = formatted.data();
     const auto *vocab = llama_model_get_vocab(state->model);
+    const char *chat_template = llama_model_chat_template(state->model, nullptr);
+    std::string formatted;
+    try {
+        std::string input(prompt);
+        const auto separator = input.find('\x1e');
+        std::string system = separator == std::string::npos ? "" : input.substr(0, separator);
+        std::string user = separator == std::string::npos ? input : input.substr(separator + 1);
+        common_json messages = common_json::array();
+        if (!system.empty()) messages.push_back(common_json::object({{"role", "system"}, {"content", system}}));
+        messages.push_back(common_json::object({{"role", "user"}, {"content", user}}));
+        if (chat_template && chat_template[0]) {
+            auto tokenText = [&](llama_token token) {
+                char data[256]; int count = llama_token_to_piece(vocab, token, data, sizeof(data), 0, true);
+                return count > 0 ? std::string(data, count) : std::string();
+            };
+            common_json values = common_json::object({
+                {"messages", messages}, {"add_generation_prompt", true}, {"enable_thinking", false},
+                {"bos_token", tokenText(llama_vocab_bos(vocab))}, {"eos_token", tokenText(llama_vocab_eos(vocab))}
+            });
+            jinja::lexer lexer;
+            auto ast = jinja::parse_from_tokens(lexer.tokenize(chat_template));
+            jinja::context context(chat_template);
+            jinja::global_from_json(context, values, true);
+            jinja::runtime runtime(context);
+            formatted = jinja::runtime::gather_string_parts(runtime.execute(ast))->as_string().str();
+        } else {
+            formatted = system + "\n" + user;
+        }
+    } catch (const std::exception &error) { state->error = std::string("Chat template: ") + error.what(); return nullptr; }
+    prompt = formatted.c_str();
     int count = -llama_tokenize(vocab, prompt, (int)strlen(prompt), nullptr, 0, true, true);
     if (count <= 0 || count + max_tokens >= (int)llama_n_ctx(state->context)) {
         state->error = "Prompt exceeds the configured context; reduce context cues or increase context size"; return nullptr;
     }
     std::vector<llama_token> tokens(count);
     llama_tokenize(vocab, prompt, (int)strlen(prompt), tokens.data(), count, true, true);
-    llama_kv_self_clear(state->context);
+    llama_memory_clear(llama_get_memory(state->context), true);
     for (int start = 0; start < count; start += 512) {
         if (state->cancelled) { state->error = "Cancelled"; return nullptr; }
         auto batch = llama_batch_get_one(tokens.data() + start, std::min(512, count - start));

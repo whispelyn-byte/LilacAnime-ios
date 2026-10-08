@@ -7,6 +7,7 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.*
 import kotlinx.coroutines.*
+import kotlinx.serialization.json.jsonObject
 enum class AnimeSource(val key: String) { LINKKF("linkkf"), REANIME("reanime"), ANIMENOSUB("animenosub"), MIRURO("miruro"), OHLI24("ohli24"), LINKANI("linkani") }
 data class BrowseFilter(val genres: List<String> = emptyList(), val year: String = "", val season: String = "", val format: String = "", val status: String = "", val studio: String = "")
 data class SourceFilters(val genres: List<String> = emptyList(), val years: List<String> = emptyList(),
@@ -43,6 +44,14 @@ class SourceRepository(private val client: HttpClient = newSharedClient()) {
             "miruro", "ohli24", "linkani" -> desktop.detail(summary, source)
             "reanime" -> {
                 val slug = summary.id.removePrefix("reanime:").substringBefore('/')
+                try {
+                    val root = kotlinx.serialization.json.Json.parseToJsonElement(getText("https://reanime.to/api/v1/anime/" + slug)).jsonObject
+                    if (root.text("anime_id").isNotBlank()) {
+                        val parsed = DesktopReanimeParser.detail(root, summary)
+                        val episodes = DesktopReanimeParser.episodes(kotlinx.serialization.json.Json.parseToJsonElement(getText("https://reanime.to/api/v1/anime/" + slug + "/episodes", mapOf("limit" to "2000"))).jsonObject, parsed)
+                        if (episodes.isNotEmpty()) return@coroutineScope SourceDetail(parsed.copy(episodes = episodes), listOf(EpisodeServer(1, "ReAnime", episodes)))
+                    }
+                } catch (error: CancellationException) { throw error } catch (_: Exception) { /* Preserve the previous Svelte fallback. */ }
                 val detail = async { getText("https://reanime.to/anime/$slug/__data.json", mapOf("x-appkit-invalidated" to "001")) }
                 val watch = async { getText("https://reanime.to/watch/$slug/__data.json", mapOf("x-appkit-invalidated" to "001")) }
                 val detailJson = detail.await()
@@ -77,6 +86,28 @@ class SourceRepository(private val client: HttpClient = newSharedClient()) {
         header("Referer", Url(url).let { it.protocol.name + "://" + it.host + "/" })
         params.forEach { (key, value) -> parameter(key, value) }
     }.bodyAsText()
+    suspend fun sourceSections(source: String): List<SourceSection> {
+        if (source == "linkkf") return listOf("PV" to "5086", "극장판" to "5061", "16+" to "5085").map { (name, tag) ->
+            SourceSection(name, linkkf.filtered(1, BrowseFilter(format = tag)))
+        }
+        val year = currentCatalogDate().take(4)
+        return listOf(SourceSection("이번 시즌", browse(source, filter = BrowseFilter(year = year))),
+            SourceSection("인기 작품", if (source == "reanime") top("week") else browse(source)))
+    }
+    suspend fun sourceSchedule(source: String, day: Int): List<Anime> {
+        if (source == "linkkf") return parseCatalog(kotlinx.serialization.json.Json.parseToJsonElement(getText("https://linkkf1.5imgdarr.top/api/singlefilter.php", mapOf("categorytagid" to (21189 + day.coerceIn(0,6)).toString(), "limit" to "50"))))
+        if (source == "ohli24") return DesktopSourceParser.koreanList(getText("https://www.ohli24.net/ing"), source)
+        if (source == "reanime") return schedule(0)
+        return browse(source, filter = BrowseFilter(year = currentCatalogDate().take(4), status = "RELEASING"))
+    }
+    suspend fun extras(anime: Anime): SourceExtras {
+        if (anime.source != "linkkf" && anime.seriesTagIds.isEmpty()) return SourceExtras("", emptyList())
+        val rows = anime.seriesTagIds.flatMap { tag ->
+            parseCatalog(kotlinx.serialization.json.Json.parseToJsonElement(getText("https://linkkf1.5imgdarr.top/api/singlefilter.php", mapOf("postanisstagid" to tag.toString(), "limit" to "25"))))
+        }.filter { it.id != anime.id }.distinctBy { it.id }
+        val stats = runCatching { kotlinx.serialization.json.Json.parseToJsonElement(getText("https://linkkf1.5imgdarr.top/api/view.php", mapOf("action" to "get", "id" to anime.id))).jsonObject.obj("data").text("total_views") }.getOrDefault("")
+        return SourceExtras(stats, rows)
+    }
     fun close() = client.close()
 }
 internal fun newSharedClient() = HttpClient {

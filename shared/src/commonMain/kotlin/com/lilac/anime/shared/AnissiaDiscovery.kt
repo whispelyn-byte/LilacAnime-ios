@@ -8,8 +8,9 @@ import io.ktor.http.encodeURLPathPart
 import kotlinx.coroutines.CancellationException
 
 /** Anissia maker discovery and linked/RSS post lookup, following Desktop's community flow. */
+data class SubtitleMaker(val name: String, val website: String, val status: String)
 internal class AnissiaDiscovery(private val repository: SourceRepository) {
-    suspend fun search(title: String, episode: Int, episodeKey: String): List<SubtitleAsset> {
+    suspend fun search(title: String, episode: Int, episodeKey: String, makerWebsite: String = ""): List<SubtitleAsset> {
         val query = title.replace(Regex("[!?！？.,:;·'\"“”‘’♡♥☆★]"), " ").replace(Regex("\\s+"), " ").trim()
         val root = api("/anime/list/0", mapOf("q" to query)).optJSONObject("data") ?: return emptyList()
         val entries = root.optJSONArray("content") ?: return emptyList()
@@ -24,15 +25,53 @@ internal class AnissiaDiscovery(private val repository: SourceRepository) {
         for (index in 0 until captions.length()) {
             val maker = captions.optJSONObject(index) ?: continue
             val website = maker.optString("website")
-            if (!website.startsWith("https://")) continue
+            if (!website.startsWith("https://") || makerWebsite.isNotBlank() && website != makerWebsite) continue
             try {
                 val address = Url(website)
                 if (address.host in listOf("kairan03.blogspot.com", "csora556.blogspot.com")) continue
                 val origin = address.protocol.name + "://" + address.host
                 val subject = anime.optString("subject")
-                val linked = repository.getText(website)
-                val posts = mutableListOf(KairanPost(subject + " " + Ksoup.parse(linked).selectFirst("title")?.text().orEmpty(), website))
-                val pages = mutableMapOf(website to linked)
+                val naver = address.host in listOf("blog.naver.com", "m.blog.naver.com")
+                val parts = address.encodedPath.split('/').filter(String::isNotBlank)
+                val blogId = address.parameters["blogId"] ?: parts.firstOrNull()?.takeUnless { it.endsWith(".naver") }.orEmpty()
+                val logNo = address.parameters["logNo"] ?: parts.getOrNull(1)?.takeIf { it.toLongOrNull() != null }.orEmpty()
+                val postUrl = if (naver && logNo.isNotBlank()) "https://blog.naver.com/PostView.naver?blogId=" + blogId.encodeURLPathPart() + "&logNo=" + logNo else website
+                val linked = attempt { repository.getText(postUrl) }.orEmpty()
+                val posts = mutableListOf(KairanPost(subject + " " + Ksoup.parse(linked).selectFirst("title")?.text().orEmpty(), postUrl))
+                val pages = mutableMapOf(postUrl to linked)
+                if (naver && blogId.isNotBlank()) {
+                    val base = "https://m.blog.naver.com/api/blogs/" + blogId.encodeURLPathPart()
+                    fun addRows(rows: JSONArray?) {
+                        if (rows == null) return
+                        for (row in 0 until rows.length()) {
+                            val item = rows.optJSONObject(row) ?: continue
+                            val number = item.optString("logNo")
+                            val name = Ksoup.parse(item.optString("title").ifBlank { item.optString("titleWithInspectMessage") }).text()
+                            if (number.toLongOrNull() != null && name.isNotBlank()) posts += KairanPost(name,
+                                "https://blog.naver.com/PostView.naver?blogId=" + blogId.encodeURLPathPart() + "&logNo=" + number)
+                        }
+                    }
+                    attempt { JSONObject(repository.getText(base + "/post-list", mapOf("categoryNo" to "0", "itemCount" to "30", "page" to "1"))).optJSONObject("result") }
+                        ?.let { addRows(it.optJSONArray("items")) }
+                    val series = subject.replace(Regex("\\s*(?:\\d+\\s*기|season\\s*\\d+|시즌\\s*\\d+)\\s*$", RegexOption.IGNORE_CASE), "").trim()
+                    for (query in listOf(subject, series).distinct()) for (page in 1..4) {
+                        val result = attempt { JSONObject(repository.getText(base + "/search/post", mapOf("query" to query, "page" to page.toString()))).optJSONObject("result") } ?: break
+                        val list = result.optJSONArray("list") ?: break
+                        addRows(list)
+                        if (list.length() == 0 || page * list.length() >= result.optInt("totalCount")) break
+                    }
+                }
+                if (address.host.endsWith(".blogspot.com")) {
+                    val feed = attempt { JSONObject(repository.getText(origin + "/feeds/posts/default", mapOf("alt" to "json", "q" to subject, "max-results" to "100"))).optJSONObject("feed")?.optJSONArray("entry") }
+                    if (feed != null) for (row in 0 until feed.length()) {
+                        val entry = feed.optJSONObject(row) ?: continue
+                        val links = entry.optJSONArray("link") ?: continue
+                        for (i in 0 until links.length()) {
+                            val link = links.optJSONObject(i) ?: continue
+                            if (link.optString("rel") == "alternate") posts += KairanPost(entry.optJSONObject("title")?.optString("$"+"t").orEmpty(), link.optString("href"))
+                        }
+                    }
+                }
                 if (address.host.endsWith(".tistory.com") || address.host.endsWith(".blogspot.com")) {
                     val rss = attempt { repository.getText(origin + if (address.host.endsWith(".blogspot.com")) "/feeds/posts/default?alt=rss" else "/rss") }.orEmpty()
                     val document = Ksoup.parse(rss, parser = Parser.xmlParser())
@@ -59,7 +98,7 @@ internal class AnissiaDiscovery(private val repository: SourceRepository) {
         check(root.optString("code").let { it.isEmpty() || it == "ok" }) { "Anissia 요청이 실패했습니다." }
         return root
     }
-    private suspend fun attempt(block: suspend () -> String): String? = try { block() } catch (error: CancellationException) { throw error } catch (_: Exception) { null }
+    private suspend fun <T> attempt(block: suspend () -> T): T? = try { block() } catch (error: CancellationException) { throw error } catch (_: Exception) { null }
     private fun attachments(html: String, page: String, maker: String, episode: Int): List<SubtitleAsset> {
         val doc = Ksoup.parse(html, page)
         val links = doc.select("a[href]").map { it.text() to it.absUrl("href") }.toMutableList()

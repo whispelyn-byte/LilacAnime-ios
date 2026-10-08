@@ -30,6 +30,12 @@ struct WatchEntry: Codable, Identifiable {
 struct SubtitleChoice: Codable { var relativeFile: String?; var offset: Double }
 struct AppPreferences: Codable {
     var theme = "system"
+    var titleLanguage: String? = nil
+    var desktopWorkspace: Bool? = false
+    var preferredServer: String? = nil
+    var modelSampling: Bool? = true
+    var pretranslateNext: Bool? = true
+    var downloadSubtitles: Bool? = true
     var source = "linkkf"
     var quality = "Auto"
     var speed = 1.0

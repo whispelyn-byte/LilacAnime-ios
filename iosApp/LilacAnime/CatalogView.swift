@@ -26,12 +26,13 @@ final class CatalogModel: ObservableObject {
         else if loading || !canLoadMore { return }
         loading = true; error = nil
         let token = generation
+        let indexed = DesktopCatalog.shared.search(query, source: source)
         let callback: ([Anime]?, String?) -> Void = { [weak self] result, error in
             guard let self, token == self.generation else { return }
             self.loading = false; self.error = error
             if let result {
                 let known = Set(self.items.map(\.id))
-                self.items += result.filter { !known.contains($0.id) }
+                self.items += (indexed + result).filter { !known.contains($0.id) }.reduce(into: [Anime]()) { list, anime in if !list.contains(where: { $0.id == anime.id }) { list.append(anime) } }
                 self.canLoadMore = !result.isEmpty && self.mode == "browse"; self.page += 1
             }
         }
@@ -116,6 +117,7 @@ final class DetailModel: ObservableObject {
         loading = true; error = nil
         service.detail(summary: summary, sourceKey: source) { [weak self] detail, error in
             Task { @MainActor in
+                if let anime = detail?.anime { Task { await DesktopCatalog.shared.enrich(anime, source: source, cast: true) } }
                 self?.anime = detail?.anime; self?.servers = detail?.servers ?? []; self?.error = error; self?.loading = false
             }
         }
@@ -128,6 +130,7 @@ struct DetailView: View {
     @EnvironmentObject private var library: LibraryStore
     @StateObject private var model = DetailModel()
     @EnvironmentObject private var downloads: DownloadStore
+    @ObservedObject private var names = DesktopCatalog.shared
     @State private var selectedTab = 0
     @State private var serverID: Int32 = 0
     private var anime: Anime { model.anime ?? summary }
@@ -150,7 +153,7 @@ struct DetailView: View {
                     HStack(alignment: .bottom, spacing: 16) {
                         AnimeArtwork(url: anime.poster, width: 96, height: 140).clipShape(RoundedRectangle(cornerRadius: 16))
                         VStack(alignment: .leading, spacing: 9) {
-                            Text(anime.title).font(.title2.bold()).lineLimit(3).minimumScaleFactor(0.85)
+                            AnimeDisplayTitle(anime: anime, source: source).font(.title2.bold()).lineLimit(3).minimumScaleFactor(0.85)
                             Text([anime.format, anime.year].filter { !$0.isEmpty }.joined(separator: " · "))
                                 .font(.subheadline).foregroundStyle(.white.opacity(0.8))
                             Text(anime.genres.prefix(3).joined(separator: " · ")).font(.caption).foregroundStyle(.white.opacity(0.7))
@@ -241,7 +244,7 @@ struct DetailView: View {
     private var information: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("작품 소개").font(.title3.bold())
-            Text(anime.description.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression).isEmpty ? "등록된 소개가 없습니다." : anime.description.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression))
+            Text(names.record(SavedAnime(anime, source: source))?.overview.isEmpty == false ? names.record(SavedAnime(anime, source: source))!.overview : (anime.description.isEmpty ? "등록된 소개가 없습니다." : anime.description.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)))
                 .font(.subheadline).lineSpacing(6).foregroundStyle(.secondary)
             Divider()
             ForEach(Array([("원제", anime.native), ("로마자", anime.romaji), ("영문명", anime.english),

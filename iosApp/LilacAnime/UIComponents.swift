@@ -35,7 +35,7 @@ struct AnimePosterCard: View {
                             .background(.ultraThinMaterial, in: Capsule()).padding(8)
                     }
                 }
-            Text(anime.title).font(.subheadline.weight(.semibold)).lineLimit(2)
+            AnimeDisplayTitle(anime: anime).font(.subheadline.weight(.semibold)).lineLimit(2)
                 .frame(maxWidth: .infinity, minHeight: 38, alignment: .topLeading)
             Text([anime.year, anime.genres.first ?? ""].filter { !$0.isEmpty }.joined(separator: " · "))
                 .font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -50,7 +50,7 @@ struct FeaturedAnimeCard: View {
             LinearGradient(colors: [.clear, .black.opacity(0.25), .black.opacity(0.92)], startPoint: .top, endPoint: .bottom)
             VStack(alignment: .leading, spacing: 10) {
                 Text("FEATURED").font(.caption.weight(.heavy)).tracking(3).foregroundStyle(LilacStyle.accent)
-                Text(anime.title).font(.system(size: 27, weight: .bold)).lineLimit(2)
+                AnimeDisplayTitle(anime: anime).font(.system(size: 27, weight: .bold)).lineLimit(2)
                 Text([anime.format, anime.year, anime.genres.prefix(2).joined(separator: " · ")].filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.caption).foregroundStyle(.white.opacity(0.8))
                 Label("지금 보기", systemImage: "play.fill").font(.subheadline.bold())

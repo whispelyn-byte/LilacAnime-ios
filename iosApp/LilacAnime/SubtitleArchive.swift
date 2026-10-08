@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import libarchive
 
 enum SubtitleArchive {
@@ -18,7 +19,7 @@ enum SubtitleArchive {
             let result = archive_read_next_header(reader, &entry)
             if result == ARCHIVE_EOF { break }
             guard result >= ARCHIVE_WARN, let entry else { throw failure(reader) }
-            guard archive_entry_filetype(entry) == UInt32(AE_IFREG) else { archive_read_data_skip(reader); continue }
+            guard archive_entry_filetype(entry) == UInt32(S_IFREG) else { archive_read_data_skip(reader); continue }
             guard let path = archive_entry_pathname(entry) else { archive_read_data_skip(reader); continue }
             let name = String(cString: path)
             let ext = URL(fileURLWithPath: name).pathExtension.lowercased()

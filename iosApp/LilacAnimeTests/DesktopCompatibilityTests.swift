@@ -71,6 +71,18 @@ final class DesktopCompatibilityTests: XCTestCase {
             XCTAssertEqual(extracted.count, ext == "zip" ? 2 : 1)
         }
     }
+    func testDownloadedEpisodeSuffixIsNotSkipped() throws {
+        let anime = SavedAnime(AnimeSnapshot.shared.decode(content: """
+        {"id":"a","title":"보존","episodes":[{"id":"4","number":4,"title":"4화"},{"id":"4a","number":4,"title":"4a화","displayNumber":"4a"},{"id":"5","number":5,"title":"5화"}]}
+        """), source: "reanime")
+        let stream = ResolvedStream(label: "Auto", url: URL(string: "https://example.test/video.mp4")!, referer: "", headers: [:])
+        func entry(_ id: String, _ number: Int) -> DownloadEntry {
+            DownloadEntry(id: SubtitleFiles.key(anime.id + "#" + id), anime: anime, episodeID: id, title: id, number: number, watchURL: stream.url.absoluteString,
+                stream: stream, localFile: "video.mp4")
+        }
+        let current = entry("4", 4)
+        XCTAssertEqual(current.following([entry("5", 5), current, entry("4a", 4)]).map(\.episodeID), ["4a", "5"])
+    }
     func testPortableExportIncludesNestedHLSAndExcludesResumeSecrets() throws {
         let anime = SavedAnime(AnimeSnapshot.shared.decode(content: "{\"id\":\"a\",\"title\":\"보존\"}"), source: "reanime")
         let stream = ResolvedStream(label: "Auto", url: URL(string: "https://example.test/master.m3u8")!, referer: "", headers: [:], subtitles: [])

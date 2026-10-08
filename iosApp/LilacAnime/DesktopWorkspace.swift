@@ -46,7 +46,8 @@ struct DesktopFullCatalog: View {
     @State private var year = ""
     private var values: [SavedAnime] {
         let wanted = DesktopTitleRules.shared.key(title: query)
-        let result = (catalog.catalogs[library.preferences.source] ?? []).filter { item in
+        let items = UIShowcase.enabled ? UIShowcase.items.map { SavedAnime($0, source: library.preferences.source) } : (catalog.catalogs[library.preferences.source] ?? [])
+        let result = items.filter { item in
             (format.isEmpty || item.anime.format == format) && (year.isEmpty || item.anime.year == year) &&
             (wanted.isEmpty || ([item.title, catalog.record(item)?.korean ?? "", catalog.record(item)?.english ?? ""] + (catalog.record(item)?.aliases ?? []))
                 .contains { DesktopTitleRules.shared.key(title: $0).contains(wanted) })
@@ -83,7 +84,7 @@ struct DesktopFullCatalog: View {
                             ForEach(Array(Set((catalog.catalogs[library.preferences.source] ?? []).map { $0.anime.year }.filter { !$0.isEmpty })).sorted(by: >), id: \.self) { Text($0).tag($0) }
                         }
                     }
-                    Text("\(values.count)개 · \(catalog.status)").font(.caption).foregroundStyle(.secondary)
+                    Text("\(values.count)개 · " + (UIShowcase.enabled ? "UI PREVIEW · 예시 데이터" : catalog.status)).font(.caption).foregroundStyle(.secondary)
                     if let error = catalog.error { Text(error).foregroundStyle(.red) }
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 145))], spacing: 18) {
                         ForEach(values) { item in

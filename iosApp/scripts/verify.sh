@@ -36,7 +36,7 @@ mkdir -p build/screenshots
 xcrun simctl bootstatus "$SIMULATOR_ID" -b
 xcrun simctl install "$SIMULATOR_ID" build/DerivedData/Build/Products/Debug-iphonesimulator/LilacAnime.app
 xcrun simctl status_bar "$SIMULATOR_ID" override --time '9:41' --batteryState charged --batteryLevel 100
-for SCREEN in home detail player; do
+for SCREEN in home detail player catalog models; do
   xcrun simctl ui "$SIMULATOR_ID" appearance dark
   xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" com.lilac.anime.ios --ui-preview "$SCREEN"
   sleep 3

@@ -95,6 +95,8 @@ final class LibraryStore: ObservableObject {
             do {
                 let state = try JSONDecoder().decode(State.self, from: Data(contentsOf: file))
                 preferences = state.preferences; favorites = state.favorites; history = state.history; subtitleChoices = state.subtitles ?? [:]
+                // Existing custom prompts and sampling values remain active after upgrading.
+                if preferences.modelSampling == nil { preferences.modelSampling = false }
             } catch { persistenceError = "저장된 보관함을 읽지 못했습니다: " + error.localizedDescription }
         }
         ready = true

@@ -29,9 +29,11 @@ for ATTEMPT in 1 2 3; do
   if [ "$ATTEMPT" = 3 ]; then exit 1; fi
   sleep 5
 done
-SIMULATOR_ID="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); phones=[v for group in d["devices"].values() for v in group if v.get("isAvailable") and "iPhone" in v["name"]]; assert phones, "No available iPhone simulator"; print(phones[0]["udid"])')"
+SIMULATOR_ID="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); phones=[v for group in d["devices"].values() for v in group if v.get("isAvailable") and "iPhone" in v["name"]]; assert phones, "No available iPhone simulator"; print(next((v for v in phones if v.get("state") == "Booted"), phones[0])["udid"])')"
+xcrun simctl boot "$SIMULATOR_ID" || true
+xcrun simctl bootstatus "$SIMULATOR_ID" -b
 RESULT="build/Tests-$(date +%Y%m%d-%H%M%S).xcresult"
-xcodebuild -project LilacAnime.xcodeproj -scheme LilacAnime -configuration Debug -derivedDataPath build/DerivedData -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -resultBundlePath "$RESULT" CODE_SIGNING_ALLOWED=NO MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$APP_BUILD" test
+xcodebuild -project LilacAnime.xcodeproj -scheme LilacAnime -configuration Debug -derivedDataPath build/DerivedData -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -resultBundlePath "$RESULT" CODE_SIGNING_ALLOWED=NO MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$APP_BUILD" -parallel-testing-enabled NO test
 mkdir -p build/screenshots
 xcrun simctl bootstatus "$SIMULATOR_ID" -b
 xcrun simctl install "$SIMULATOR_ID" build/DerivedData/Build/Products/Debug-iphonesimulator/LilacAnime.app

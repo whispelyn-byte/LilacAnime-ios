@@ -2,11 +2,13 @@
   const send = body => window.webkit.messageHandlers.lilacMedia.postMessage(body);
   const seen = new Set(), pending = new Map(), loaded = new Set(), variantURLs = new Set();
   let selectedVariant = '';
+  let complete = false;
   const absolute = value => { try { return new URL(value, location.href).href; } catch { return ''; } };
   const report = (value, kind, manifest = '') => {
     const url = absolute(value);
     if (!/^https?:\/\//.test(url)) return false;
     if (!seen.has(url)) { seen.add(url); send({url, kind, referer: '', manifest}); }
+    if (kind === 'ohliVariant') complete = true;
     return true;
   };
   const playlist = (text, base, requested = base) => {
@@ -38,19 +40,30 @@
     return false;
   };
   const isPlaylist = url => /\/master\.txt(?:[?#]|$)|\.m3u8(?:[?#]|$)|\/m3\/[^/?#]+/i.test(String(url));
+  const isConfig = url => /\/player\/index\.php\?.*\bdo=getVideo\b/i.test(String(url));
+  const inspect = (text, base, requested) => {
+    if (isConfig(requested)) {
+      try {
+        const config = JSON.parse(text);
+        if (config.hls && typeof config.videoSource === 'string') requestPlaylist(config.videoSource);
+      } catch {}
+      return false;
+    }
+    return playlist(text, base, requested);
+  };
   const originalFetch = window.fetch;
   window.fetch = function(input, init) {
     const url = absolute(typeof input === 'string' || input instanceof URL ? String(input) : input.url);
     const response = originalFetch.apply(this, arguments);
-    if (isPlaylist(url)) response.then(r => r.clone().text().then(text => { if (playlist(text, r.url || url, url)) loaded.add(url); })).catch(() => {});
+    if (isPlaylist(url) || isConfig(url)) response.then(r => r.clone().text().then(text => { if (inspect(text, r.url || url, url)) loaded.add(url); })).catch(() => {});
     return response;
   };
   const originalOpen = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function(method, value) {
     const url = absolute(value);
-    if (isPlaylist(url)) this.addEventListener('load', () => { try {
+    if (isPlaylist(url) || isConfig(url)) this.addEventListener('load', () => { try {
       const text = this.responseType === 'arraybuffer' ? new TextDecoder().decode(this.response) : this.responseText;
-      if (playlist(text, this.responseURL || url, url)) loaded.add(url);
+      if (inspect(text, this.responseURL || url, url)) loaded.add(url);
     } catch {} });
     return originalOpen.apply(this, arguments);
   };
@@ -72,6 +85,11 @@
     performance.getEntriesByType('resource').forEach(entry => requestPlaylist(entry.name));
   } catch {}
   const scan = () => {
+    if (complete) {
+      try { window.jwplayer?.()?.pause?.(); } catch {}
+      document.querySelectorAll('video').forEach(video => { try { video.pause(); } catch {} });
+      return;
+    }
     const player = document.querySelector('iframe#video') || document.querySelector('iframe[src*="cdndania"]');
     if (player) report(player.src, 'ohliPlayer');
     try {

@@ -41,7 +41,8 @@ struct PlayerSettingsPanel<Content: View>: View {
                                 .accessibilityIdentifier("player-settings-tab-\(index)")
                                 .accessibilityAddTraits(tab == index ? .isSelected : [])
                         }
-                    }.padding(8).accessibilityIdentifier("player-settings-tabs")
+                    }.padding(8).accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("player-settings-tabs")
                     ScrollView {
                         VStack(alignment: .leading, spacing: 0) { content() }.padding(.bottom, 12)
                     }.id(tab).accessibilityIdentifier("player-settings-scroll")

@@ -241,11 +241,11 @@ final class EpisodePlayerModel: ObservableObject {
         subtitleRequest = UUID()
         let request = subtitleRequest
         guard library.preferences.subtitleProvider != "manual", subtitle == nil else { return }
-        guard !DesktopSubtitlePolicy.burnedKorean(source: item.anime.source) else { return }
+        guard !DesktopSubtitlePolicy.burnedKorean(source: item.anime.source, stream: stream) else { return }
         automaticTask?.cancel()
         automaticTask = Task {
             do {
-                if let prepared = try await preparer.prepare(item, tracks: stream.subtitles, preferences: library.preferences, prefersAI: library.aiSubtitleSeries[item.anime.id] == true) {
+                if let prepared = try await preparer.prepare(item, tracks: stream.subtitles, preferences: library.preferences, prefersAI: library.aiSubtitleSeries[item.anime.id] == true, stream: stream) {
                     guard token == generation, request == subtitleRequest, subtitle == nil, !Task.isCancelled else { return }
                     subtitleFiles = [prepared.0]
                     selectSubtitle(prepared.0, library: library, provider: prepared.1, automatic: true)
@@ -259,7 +259,7 @@ final class EpisodePlayerModel: ObservableObject {
         stopPrefetch(); alongsideTask?.cancel(); alongsideTranslation.cancel()
         var preferences = library.preferences
         if let provider { preferences.translationProvider = provider; preferences.translationModel = preferences.translationModels?[provider] ?? "" }
-        guard let configured = preferences.translationPreferences() else { error = "번역 API 키 또는 로컬 GGUF 모델을 먼저 설정하세요."; return }
+        guard let configured = preferences.translationPreferences(localOnly: manual && preferences.translationProvider == "local") else { error = "번역 API 키 또는 로컬 GGUF 모델을 먼저 설정하세요."; return }
         if let sourceSubtitle {
             runTranslation(sourceSubtitle, library: library, preferences: configured, fresh: fresh, manual: manual)
         } else {
@@ -278,7 +278,7 @@ final class EpisodePlayerModel: ObservableObject {
     private func runTranslation(_ original: URL, library: LibraryStore, preferences: AppPreferences, fresh: Bool, manual: Bool) {
         let token = generation; let request = subtitleRequest; let episode = item
         if manual { library.preferAI(true, animeID: item.anime.id) }
-        translation.translate(original, preferences: preferences, position: { [weak self] in self?.engine.position ?? 0 }, anime: item.anime, fresh: fresh) { [weak self] output in
+        translation.translate(original, preferences: preferences, position: { [weak self] in self?.engine.position ?? 0 }, seekRevision: { [weak self] in self?.engine.seekRevision ?? 0 }, anime: item.anime, fresh: fresh, localOnly: manual && preferences.translationProvider == "local") { [weak self] output in
             guard let self, token == self.generation, request == self.subtitleRequest else { return }
             EpisodeSubtitleStore.shared.save(output, item: episode, provider: preferences.translationProvider, translated: true, original: original)
             if self.subtitle == output { self.engine.reloadSubtitle() }
@@ -310,7 +310,7 @@ final class EpisodePlayerModel: ObservableObject {
         selectSubtitle(found.0, library: library, translate: false, provider: found.1)
     }
     private func prepareAlongside(library: LibraryStore) {
-        let site = DesktopSubtitlePolicy.siteKorean(source: item.anime.source, tracks: active?.subtitles ?? [])
+        let site = DesktopSubtitlePolicy.siteKorean(source: item.anime.source, tracks: active?.subtitles ?? [], stream: active)
         guard DesktopSubtitlePolicy.shouldTranslateAlongside(source: selectedProvider, siteKorean: site),
               let preferences = library.preferences.translationPreferences(automatic: true),
               !EpisodeSubtitleStore.shared.list(item).contains(where: \.translated) else { return }
@@ -351,7 +351,7 @@ final class EpisodePlayerModel: ObservableObject {
     private func prefetchNext(library: LibraryStore, token: UUID) {
         guard let preferences = library.preferences.translationPreferences(automatic: true), library.preferences.pretranslateNext != false, !item.next.isEmpty, prefetchTask == nil,
               DesktopSubtitlePolicy.shouldPrefetch(provider: preferences.translationProvider, cloud: preferences.prepareNextCloud == true,
-                siteKorean: DesktopSubtitlePolicy.siteKorean(source: item.anime.source, tracks: active?.subtitles ?? []), prefersAI: library.aiSubtitleSeries[item.anime.id] == true) else { return }
+                siteKorean: DesktopSubtitlePolicy.siteKorean(source: item.anime.source, tracks: active?.subtitles ?? [], stream: active), prefersAI: library.aiSubtitleSeries[item.anime.id] == true) else { return }
         let next = item.next[0]
         prefetchTask = Task {
             defer { if token == generation { prefetchTask = nil } }
@@ -366,7 +366,7 @@ final class EpisodePlayerModel: ObservableObject {
             }
             do {
                 try Task.checkCancellation()
-                guard token == generation, let prepared = try await preparer.prepare(next, tracks: nextResolver.streams.first?.subtitles ?? [], preferences: preferences, prefersAI: library.aiSubtitleSeries[next.anime.id] == true) else { prefetchStatus = nil; return }
+                guard token == generation, let prepared = try await preparer.prepare(next, tracks: nextResolver.streams.first?.subtitles ?? [], preferences: preferences, prefersAI: library.aiSubtitleSeries[next.anime.id] == true, stream: nextResolver.streams.first) else { prefetchStatus = nil; return }
                 if EpisodeSubtitleStore.shared.list(next).contains(where: { $0.file == prepared.0 && $0.translated }) { prefetchStatus = "다음 화 번역 자막 저장 완료"; return }
                 EpisodeSubtitleStore.shared.save(prepared.0, item: next, provider: prepared.1, translated: false)
                 if SubtitleFiles.isKorean(prepared.0) { prefetchStatus = "다음 화 한국어 자막 저장 완료"; return }

@@ -51,7 +51,7 @@ actor LocalInference {
     private var loadedThreads = 0
     private var loadedGPU = true
     private var idle: Task<Void, Never>?
-    func generate(_ prompt: String, preferences: AppPreferences, requestID: UUID) throws -> String {
+    private func prepare(_ preferences: AppPreferences) throws -> OpaquePointer {
         try Task.checkCancellation(); idle?.cancel()
         let path = LocalModelFiles.directory.appendingPathComponent(preferences.selectedGGUF).path
         let threads = preferences.threads == 0 ? max(1, ProcessInfo.processInfo.activeProcessorCount - 2) : preferences.threads
@@ -65,6 +65,13 @@ actor LocalInference {
             loaded = path; loadedContext = preferences.contextSize; loadedThreads = threads; loadedGPU = gpu
         }
         guard let model else { throw SubtitleFiles.failure("모델을 선택하세요.") }
+        return model
+    }
+    func chatTemplate(preferences: AppPreferences) throws -> String {
+        String(cString: lilac_chat_template(try prepare(preferences)))
+    }
+    func generate(_ prompt: String, preferences: AppPreferences, requestID: UUID) throws -> String {
+        let model = try prepare(preferences)
         try Task.checkCancellation(); state.begin(requestID)
         lilac_set_thinking(model, preferences.thinking == "on" ? 1 : 0)
         defer { state.end(requestID) }

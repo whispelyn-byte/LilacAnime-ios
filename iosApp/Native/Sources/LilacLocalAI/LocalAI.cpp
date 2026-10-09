@@ -45,6 +45,10 @@ extern "C" LilacModel *lilac_model_open(const char *path, int context, int threa
 }
 extern "C" void lilac_set_thinking(LilacModel *state, int enabled) { if (state) state->thinking = enabled != 0; }
 extern "C" const char *lilac_backend(LilacModel *state) { return state && state->gpu ? "Metal" : "CPU"; }
+extern "C" const char *lilac_chat_template(LilacModel *state) {
+    const char *value = state ? llama_model_chat_template(state->model, nullptr) : nullptr;
+    return value ? value : "";
+}
 extern "C" int lilac_output_tokens(LilacModel *state) { return state ? state->output_tokens : 0; }
 extern "C" double lilac_generation_seconds(LilacModel *state) { return state ? state->seconds : 0; }
 extern "C" void lilac_model_close(LilacModel *state) {
@@ -107,6 +111,7 @@ extern "C" char *lilac_generate(LilacModel *state, const char *prompt, int max_t
     llama_tokenize(vocab, prompt, (int)strlen(prompt), tokens.data(), count, true, true);
     llama_memory_clear(llama_get_memory(state->context), true);
     for (int start = 0; start < count; start += 512) {
+        if (std::chrono::steady_clock::now() - started >= std::chrono::seconds(120)) { state->error = "Generation timed out"; return nullptr; }
         if (state->cancelled) { state->error = "Cancelled"; return nullptr; }
         auto batch = llama_batch_get_one(tokens.data() + start, std::min(512, count - start));
         if (llama_decode(state->context, batch) != 0) { state->error = "Prompt decoding failed"; return nullptr; }
@@ -122,6 +127,7 @@ extern "C" char *lilac_generate(LilacModel *state, const char *prompt, int max_t
     }
     std::string output;
     for (int i = 0; i < max_tokens && !state->cancelled; ++i) {
+        if (std::chrono::steady_clock::now() - started >= std::chrono::seconds(120)) { state->error = "Generation timed out"; break; }
         auto token = llama_sampler_sample(sampler, state->context, -1);
         if (llama_vocab_is_eog(vocab, token)) break;
         ++state->output_tokens;

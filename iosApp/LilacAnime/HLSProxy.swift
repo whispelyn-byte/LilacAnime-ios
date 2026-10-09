@@ -67,9 +67,9 @@ enum HLSData {
     static func validatedFragment(_ raw: Data) throws -> Data {
         let decoded = fragment(raw)
         if isMedia(decoded) { return decoded }
-        let bytes = Array(decoded), limit = min(bytes.count - 376, 4096)
-        if limit > 1 {
-            for index in 1..<limit where bytes[index] == 71 && bytes[index + 188] == 71 && bytes[index + 376] == 71 { return Data(bytes[index...]) }
+        let bytes = Array(decoded), limit = min(bytes.count - 377, 65535)
+        if limit >= 1 {
+            for index in 1...limit where bytes[index] == 71 && bytes[index + 188] == 71 && bytes[index + 376] == 71 { return Data(bytes[index...]) }
         }
         throw SubtitleFiles.failure("영상 조각 복호화에 실패했습니다.")
     }
@@ -233,7 +233,7 @@ final class HLSProxy {
                     body = Data(self.queue.sync { HLSData.rewrite(text, base: url) { self.register($0).absoluteString } }.utf8)
                     contentType = "application/vnd.apple.mpegurl"
                 } else if segment { contentType = body.first == 71 ? "video/mp2t" : "video/mp4" }
-                else if stream.manifestKey != nil && (url.pathExtension == "ts" || contentType.hasPrefix("image/")) { body = HLSData.fragment(data); contentType = "video/mp2t" }
+                else if stream.manifestKey != nil && (url.pathExtension == "ts" || contentType.hasPrefix("image/")) { body = try HLSData.validatedFragment(data); contentType = "video/mp2t" }
                 var headers = ["Content-Type": contentType, "Accept-Ranges": "bytes"]
                 if !segment, let value = response.value(forHTTPHeaderField: "Content-Range") { headers["Content-Range"] = value }
                 var status = segment ? 200 : response.statusCode

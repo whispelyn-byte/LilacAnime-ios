@@ -30,6 +30,7 @@ final class DesktopCatalog: ObservableObject {
     private var lookups: [String: Task<Bool, Never>] = [:]
     private var titleRetry: Task<Void, Never>?
     private var nextLookup = Date.distantPast
+    private var titleFailures: [String: (code: String, retry: Double)] = [:]
     private let service = IosServices()
     private let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("DesktopCatalog")
     init() {
@@ -66,8 +67,10 @@ final class DesktopCatalog: ObservableObject {
             }
             guard let result, !Task.isCancelled else { return false }
             if !result.titleLookupFailure.isEmpty && result.korean.isEmpty {
+                titleFailures[key] = (result.titleFailureCode, Double(result.titleRetryAfterMs) / 1000)
                 error = result.titleLookupFailure; return false
             }
+            titleFailures[key] = nil
             let old = names[key]
             names[key] = CatalogName(korean: result.korean.isEmpty ? (old?.korean ?? "") : result.korean, english: result.english, overview: result.overview.isEmpty ? (old?.overview ?? "") : result.overview, aliases: result.aliases,
                 cast: result.characters.isEmpty ? (old?.cast ?? []) : result.characters.map { CastCharacter(name: $0.name, native: $0.native, first: $0.first, last: $0.last, gender: $0.gender) },
@@ -145,9 +148,11 @@ final class DesktopCatalog: ObservableObject {
                     }
                     if !success {
                         guard token == generation, !Task.isCancelled else { return }
-                        status = "\(knownCount(gathered))/\(gathered.count)개 한국어 제목 · TMDB 요청 실패, 30분 뒤 재시도"
+                        let failures = batch.compactMap { titleFailures[$0.id] }
+                        let delay = CatalogTitleRetry.delay(auth: failures.contains { $0.code == "auth" }, retryAfter: failures.map(\.retry).max() ?? 0)
+                        status = "\(knownCount(gathered))/\(gathered.count)개 한국어 제목 · \(error ?? "제목 조회 실패"), \(Int(ceil(delay / 60)))분 뒤 재시도"
                         titleRetry = Task { [weak self] in
-                            do { try await Task.sleep(nanoseconds: 1_800_000_000_000) } catch { return }
+                            do { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) } catch { return }
                             guard let self, generation == token, !SecureKeys.load("tmdb").isEmpty else { return }
                             self.start(source, titlesOnly: true)
                         }
@@ -168,6 +173,9 @@ final class DesktopCatalog: ObservableObject {
         try JSONEncoder().encode(value).write(to: directory.appendingPathComponent(name), options: .atomic)
     }
     private func saveNames() { do { try persist(names, name: "names.json") } catch { self.error = error.localizedDescription } }
+}
+enum CatalogTitleRetry {
+    static func delay(auth: Bool, retryAfter: Double) -> Double { max(auth ? 1800 : 60, retryAfter) }
 }
 struct AnimeDisplayTitle: View {
     let anime: Anime; var source: String? = nil

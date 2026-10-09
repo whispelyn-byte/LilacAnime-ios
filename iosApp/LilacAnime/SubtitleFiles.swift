@@ -43,14 +43,17 @@ enum SubtitleFiles {
         let safe = URL(fileURLWithPath: name.replacingOccurrences(of: "\\", with: "/")).lastPathComponent
         let file = folder.appendingPathComponent((safe.isEmpty || safe == "." || safe == ".." ? "source" : safe) + (ext.isEmpty ? ".ass" : ""))
         try data.write(to: file, options: .atomic)
-        if ["ttf", "otf", "ttc"].contains(ext) { _ = try importFont(file); return [] }
+        if ["ttf", "otf", "ttc"].contains(ext) { _ = try importFont(file); try associateFonts([file], with: folder.appendingPathComponent("asset")); return [] }
         if ["zip", "7z", "rar"].contains(ext) || data.starts(with: [0x50, 0x4b, 0x03, 0x04]) || data.starts(with: [0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c]) || data.starts(with: [0x52, 0x61, 0x72, 0x21]) {
             var results: [URL] = []
+            var fonts: [URL] = []
             for extracted in try SubtitleArchive.extract(file, into: folder) {
-                if ["ttf","otf","ttc"].contains(extracted.pathExtension.lowercased()) { _ = try importFont(extracted) }
+                if ["ttf","otf","ttc"].contains(extracted.pathExtension.lowercased()) { _ = try importFont(extracted); fonts.append(extracted) }
                 else { results.append(try normalize(extracted)) }
             }
-            guard !results.isEmpty else { throw failure("압축 파일에 지원하는 자막이 없습니다.") }
+            guard !results.isEmpty || !fonts.isEmpty else { throw failure("압축 파일에 지원하는 자막이 없습니다.") }
+            try associateFonts(fonts, with: folder.appendingPathComponent("asset"))
+            for subtitle in results { try associateFonts(fonts, with: subtitle) }
             return results
         }
         return [try normalize(file)]
@@ -60,6 +63,22 @@ enum SubtitleFiles {
         let lines = SubtitleTools.shared.lines(content: content, extension: file.pathExtension).prefix(40)
         let korean = lines.filter { $0.range(of: "[가-힣]", options: .regularExpression) != nil }.count
         return !lines.isEmpty && Double(korean) / Double(lines.count) > 0.4
+    }
+    static func preparedFonts(_ source: URL) -> [URL] {
+        fonts(for: root.appendingPathComponent(key(source.absoluteString)).appendingPathComponent("asset"))
+    }
+    static func fonts(for subtitle: URL) -> [URL] {
+        let index = subtitle.appendingPathExtension("fonts.json")
+        guard let data = try? Data(contentsOf: index), let values = try? JSONDecoder().decode([String].self, from: data) else { return [] }
+        return values.compactMap { value in
+            let file = root.appendingPathComponent(value).standardizedFileURL
+            return file.path.hasPrefix(root.path + "/") && FileManager.default.fileExists(atPath: file.path) ? file : nil
+        }
+    }
+    static func associateFonts(_ fonts: [URL], with subtitle: URL) throws {
+        let prefix = root.path + "/"
+        let files = Set(fonts.filter { $0.standardizedFileURL.path.hasPrefix(prefix) }.map { String($0.standardizedFileURL.path.dropFirst(prefix.count)) })
+        try JSONEncoder().encode(files.sorted()).write(to: subtitle.appendingPathExtension("fonts.json"), options: .atomic)
     }
     static func text(_ file: URL) throws -> String {
         let data = try Data(contentsOf: file)

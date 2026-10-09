@@ -8,6 +8,7 @@ LilacModel *lilac_model_open(const char *path, int context, int threads);
 LilacModel *lilac_model_open_with_backend(const char *path, int context, int threads, int gpu);
 void lilac_set_thinking(LilacModel *model, int enabled);
 const char *lilac_backend(LilacModel *model);
+const char *lilac_chat_template(LilacModel *model);
 int lilac_output_tokens(LilacModel *model);
 double lilac_generation_seconds(LilacModel *model);
 void lilac_model_close(LilacModel *model);

@@ -4,6 +4,8 @@ import com.lilac.anime.shared.compat.*
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.ResponseException
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.HttpRequestTimeoutException
+import io.ktor.client.network.sockets.SocketTimeoutException
 import kotlinx.coroutines.CancellationException
 import io.ktor.client.plugins.timeout
 import io.ktor.client.request.*
@@ -14,12 +16,15 @@ import kotlinx.coroutines.coroutineScope
 /** Credentials are used only on TMDB's fixed HTTPS API, never written to disk. */
 class TmdbTitleResolver(private val client: HttpClient = HttpClient {
     followRedirects = false
-    install(HttpTimeout) { requestTimeoutMillis = 12_000; connectTimeoutMillis = 8_000 }
-}) {
+    install(HttpTimeout) { requestTimeoutMillis = 20_000; connectTimeoutMillis = 20_000 }
+}, private val gate: TmdbRequestGate = TmdbRequestGate.shared) {
     private suspend fun request(path: String, credential: String, query: String? = null, language: String = "ko-KR"): JSONObject {
-        require(credential.isNotBlank()) { "TMDB 키를 설정하세요." }
+        if (credential.isBlank()) throw TmdbFailure("auth")
+        for (attempt in 0..2) {
+        gate.takeTurn()
+        val failure = try {
         val response = try { client.get("https://api.themoviedb.org/3/" + path) {
-            timeout { requestTimeoutMillis = 12_000; connectTimeoutMillis = 8_000 }
+            timeout { requestTimeoutMillis = 20_000; connectTimeoutMillis = 20_000 }
             header("Accept", "application/json")
             parameter("language", language)
             if (credential.startsWith("Bearer ", true) || credential.contains('.')) {
@@ -29,11 +34,22 @@ class TmdbTitleResolver(private val client: HttpClient = HttpClient {
                 parameter("query", query)
                 parameter("include_adult", "false"); parameter("page", 1)
             }
-        } } catch (error: CancellationException) { throw error }
-        catch (error: ResponseException) { throw IllegalStateException("TMDB HTTP " + error.response.status.value) }
-        catch (_: Exception) { throw IllegalStateException("TMDB에 연결할 수 없습니다.") }
-        require(response.status.value in 200..299) { "TMDB HTTP " + response.status.value }
-        return JSONObject(response.bodyAsText())
+        } } catch (error: ResponseException) { error.response }
+        if (response.status.value in 200..299) {
+            try { return JSONObject(response.bodyAsText()) }
+            catch (error: CancellationException) { throw error }
+            catch (_: Exception) { TmdbFailure("response") }
+        } else {
+            val status = response.status.value
+            TmdbFailure(if (status == 401 || status == 403) "auth" else if (status == 429) "rate-limit" else "http", status, gate.retryAfter(response.headers["Retry-After"]))
+        }
+        } catch (error: CancellationException) { throw error }
+        catch (_: HttpRequestTimeoutException) { TmdbFailure("timeout") }
+        catch (_: SocketTimeoutException) { TmdbFailure("timeout") }
+        catch (_: Exception) { TmdbFailure("network") }
+        if (!gate.retry(failure, attempt)) throw failure
+        }
+        error("Unreachable TMDB retry state")
     }
     suspend fun test(credential: String): String {
         request("configuration", credential.trim())

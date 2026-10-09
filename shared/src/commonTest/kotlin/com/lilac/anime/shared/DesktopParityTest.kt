@@ -10,6 +10,36 @@ import io.ktor.http.*
 import kotlin.io.encoding.Base64
 
 class DesktopParityTest {
+    @Test fun localPromptsAndSamplingMatchActualDesktopRequests() {
+        for (test in desktopOracle.list("localPrompts").filterIsInstance<JsonObject>()) {
+            val prompt = DesktopTranslationPrompt.build(test.text("model"), test.text("source"), test.text("before"), test.text("terms"), test.text("cast"))
+            assertEquals(test.text("prompt"), prompt.prompt, test.text("model"))
+            assertEquals(test.text("temperature").toDouble(), prompt.temperature)
+            assertEquals(test.text("topP").toDouble(), prompt.topP); assertEquals(test.number("topK"), prompt.topK)
+            assertEquals(test.text("repetition").toDouble(), prompt.repetition)
+        }
+        for (test in desktopOracle.list("localKinds").filterIsInstance<JsonObject>())
+            assertEquals(test.text("expected"), DesktopTranslationPrompt.kind(test.text("model"), test.text("template")))
+    }
+    @Test fun localCleanupContextTermsAndCastMatchDesktop() {
+        for (test in desktopOracle.list("localClean").filterIsInstance<JsonObject>())
+            assertEquals(test.text("expected"), DesktopTranslationPrompt.clean(test.text("output"), test.text("original")))
+        for (test in desktopOracle.list("localTerms").filterIsInstance<JsonObject>()) {
+            val cast = test.list("characters").filterIsInstance<JsonObject>().map { AnimeCharacter(it.text("name"), it.text("native"), it.text("first"), it.text("last"), it.text("gender")) }
+            assertEquals(test.text("expected"), AnimeGlossary.localTerms(test.text("source"), cast, ""))
+            assertEquals(test.text("cast"), AnimeGlossary.localCast(cast))
+        }
+        assertTrue(DesktopTranslationPrompt.needsRetry("先輩です")); assertTrue(DesktopTranslationPrompt.needsRetry(""))
+        assertFalse(DesktopTranslationPrompt.needsRetry("선배"))
+        assertEquals(54, DesktopTranslationPrompt.maxTokens("はい")); assertEquals(512, DesktopTranslationPrompt.maxTokens("長".repeat(200)))
+    }
+    @Test fun linkaniBurnedKoreanIsDisabledOnlyForOwnExternalSubtitle() {
+        fun stream(sub: String) = DesktopSourceParser.linkaniStreams("<script>var player_aaaa={\"url\":\"https://video.test/h/aa/bb/0123456789abcdef/video.m3u8\",\"subtitle_url\":\"$sub\"};</script>").single()
+        assertTrue(stream("").burnedKorean)
+        assertTrue(stream("https://video.test/s/aa/bb/fedcba9876543210/ko.ass").burnedKorean)
+        val own = stream("https://video.test/s/aa/bb/0123456789abcdef/ko.ass")
+        assertFalse(own.burnedKorean); assertEquals("ko", own.subtitles.single().language)
+    }
     @Test fun tmdbQueriesNamesAndFranchiseAliasesMatchDesktop() {
         for (test in desktopOracle.list("tmdbQueries").filterIsInstance<JsonObject>()) {
             assertEquals(test.list("expected").map { it.jsonPrimitive.content }, DesktopTmdbRules.queries(test.list("input").map { it.jsonPrimitive.content }))

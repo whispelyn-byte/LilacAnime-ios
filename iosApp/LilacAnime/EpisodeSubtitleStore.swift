@@ -20,8 +20,11 @@ final class EpisodeSubtitleStore: ObservableObject {
     static let shared = EpisodeSubtitleStore()
     @Published private(set) var records: [SavedSubtitle] = []
     @Published var error: String?
-    private let index = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("episode-subtitles.json")
-    init() { if let data = try? Data(contentsOf: index), let saved = try? JSONDecoder().decode([SavedSubtitle].self, from: data) { records = saved } }
+    private let index: URL
+    init(index: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("episode-subtitles.json")) {
+        self.index = index
+        if let data = try? Data(contentsOf: index), let saved = try? JSONDecoder().decode([SavedSubtitle].self, from: data) { records = saved }
+    }
     func list(_ item: PlaybackItem) -> [SavedSubtitle] { records.filter { $0.episodeKey == item.anime.id + "#" + item.episodeID && $0.file != nil }.sorted {
         if ($0.behind == true) != ($1.behind == true) { return $0.behind != true }
         return $0.behind == true ? $0.date < $1.date : $0.date > $1.date
@@ -38,6 +41,7 @@ final class EpisodeSubtitleStore: ObservableObject {
                 if !FileManager.default.fileExists(atPath: target.path) { try FileManager.default.copyItem(at: file, to: target) }
             }
             let episodeKey = item.anime.id + "#" + item.episodeID
+            try SubtitleFiles.associateFonts(SubtitleFiles.fonts(for: file) + (original.map { SubtitleFiles.fonts(for: $0) } ?? []), with: target)
             let relative = String(target.path.dropFirst(prefix.count))
             let id = SubtitleFiles.key(episodeKey + relative)
             let originalRelative = original.flatMap { value -> String? in
@@ -46,7 +50,8 @@ final class EpisodeSubtitleStore: ObservableObject {
             }
             records.removeAll { $0.id == id || (translated && $0.episodeKey == episodeKey && $0.translated && $0.provider == provider) }
             records.append(SavedSubtitle(id: id, episodeKey: episodeKey, name: file.lastPathComponent, relativeFile: relative, provider: provider, translated: translated, date: Date(), behind: behind, originalFile: originalRelative))
-            let keep = Set(list(item).prefix(20).map(\.id))
+            let previous = list(item).filter { $0.id != id }
+            let keep = Set(([id] + previous.prefix(19).map(\.id)))
             records.removeAll { $0.episodeKey == episodeKey && !keep.contains($0.id) }
             persist()
         } catch { self.error = error.localizedDescription }
@@ -59,7 +64,8 @@ final class EpisodeSubtitleStore: ObservableObject {
     func clear() { records.removeAll(); persist() }
     private func persist() { do { try JSONEncoder().encode(records).write(to: index, options: .atomic) } catch { self.error = error.localizedDescription } }
     func protectedFiles(library: LibraryStore) -> Set<URL> {
-        Set(records.compactMap(\.file) + records.compactMap(\.original) + library.subtitleChoices.values.compactMap { $0.relativeFile.map { SubtitleFiles.root.appendingPathComponent($0).standardizedFileURL } })
+        let subtitles = records.compactMap(\.file) + records.compactMap(\.original) + library.subtitleChoices.values.compactMap { $0.relativeFile.map { SubtitleFiles.root.appendingPathComponent($0).standardizedFileURL } }
+        return Set(subtitles + subtitles.map { $0.appendingPathExtension("fonts.json") } + subtitles.flatMap { SubtitleFiles.fonts(for: $0) })
     }
 }
 enum SubtitleCache {

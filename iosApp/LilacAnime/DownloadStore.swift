@@ -36,6 +36,8 @@ struct DownloadEntry: Codable, Identifiable {
     var subtitlesPrepared: Bool?
     var posterFile: String?
     var retries: Int?
+    var attemptID: String? = nil
+    var planIdentity: String? = nil
     var bytes: Int64?
     var status = "대기"
     var completed = 0
@@ -47,7 +49,7 @@ struct DownloadEntry: Codable, Identifiable {
             watchURL: watchURL, directURL: localFile.map { DownloadStore.directory.appendingPathComponent(id).appendingPathComponent($0).absoluteString },
             position: 0, duration: 0, updatedAt: date))
         item.localSubtitles = orderedSubtitles.map { DownloadStore.directory.appendingPathComponent(id).appendingPathComponent($0) }
-        item.localSubtitleTracks = localTracks
+        item.burnedKorean = stream.burnedKorean; item.localSubtitleTracks = localTracks
         item.next = following(DownloadStore.shared.entries)
         item.preceding = preceding(DownloadStore.shared.entries)
         return item
@@ -74,7 +76,7 @@ struct DownloadEntry: Codable, Identifiable {
     private var singlePlayback: PlaybackItem {
         var item = PlaybackItem(entry: WatchEntry(id: id, anime: anime, episodeID: episodeID, episodeTitle: title, number: number, watchURL: watchURL,
             directURL: localFile.map { DownloadStore.directory.appendingPathComponent(id).appendingPathComponent($0).absoluteString }, position: 0, duration: 0, updatedAt: date))
-        item.localSubtitles = orderedSubtitles.map { DownloadStore.directory.appendingPathComponent(id).appendingPathComponent($0) }; item.localSubtitleTracks = localTracks; return item
+        item.localSubtitles = orderedSubtitles.map { DownloadStore.directory.appendingPathComponent(id).appendingPathComponent($0) }; item.burnedKorean = stream.burnedKorean; item.localSubtitleTracks = localTracks; return item
     }
     private var orderedSubtitles: [String] { primarySubtitle.map { [$0] + (subtitleFiles ?? []).filter { $0 != primarySubtitle } } ?? (subtitleFiles ?? []) }
     private var localTracks: [RemoteSubtitle] {
@@ -119,19 +121,23 @@ final class DownloadStore: ObservableObject {
         configuration.httpMaximumConnectionsPerHost = 4
         return URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
     }()
-    private var file: URL { Self.directory.appendingPathComponent("index.json") }
-    init() {
+    private let indexFile: URL?
+    private var file: URL { indexFile ?? Self.directory.appendingPathComponent("index.json") }
+    init(index: URL? = nil, restoreSession: Bool = true) {
+        indexFile = index
         if let data = try? Data(contentsOf: file), let saved = try? JSONDecoder().decode([DownloadEntry].self, from: data) {
-            entries = saved.map { entry in var item = entry; if item.status == "다운로드 중" || item.status == "준비 중" { item.status = "중단됨" }; return item }
+            entries = saved.map { entry in var item = entry; if restoreSession && (item.status == "다운로드 중" || item.status == "준비 중") { item.status = "중단됨" }; return item }
         }
         delegate.owner = self
+        guard restoreSession else { restoring = false; return }
         session.getAllTasks { [weak self] found in
             Task { @MainActor in
                 guard let self else { return }
                 for task in found {
                     guard let task = task as? URLSessionDownloadTask, let description = task.taskDescription else { continue }
-                    self.backgroundTasks[description] = task
                     let id = description.components(separatedBy: "|")[0]
+                    guard let entry = self.entries.first(where: { $0.id == id }), DownloadIdentity.accepts(description, attempt: entry.attemptID) else { task.cancel(); continue }
+                    self.backgroundTasks[description] = task
                     self.update(id) { $0.status = "다운로드 중" }
                 }
                 self.restoring = false
@@ -149,9 +155,8 @@ final class DownloadStore: ObservableObject {
                 number: item.number, watchURL: item.watchURL.absoluteString, stream: stream, quality: quality), at: 0)
         } else {
             update(id) { entry in
-                if entry.stream.url != stream.url || entry.stream.manifestKey != stream.manifestKey || entry.stream.hlsManifest != stream.hlsManifest {
-                    entry.parts = nil; entry.rootFile = nil
-                }
+                // Rebuild requests with fresh tokens; start() checks selected-list identity before reusing data.
+                if entry.planIdentity == nil && (DownloadIdentity.resource(entry.stream.url) != DownloadIdentity.resource(stream.url) || entry.quality != quality) { entry.planIdentity = "legacy-source-changed" }
                 entry.stream = stream; entry.quality = quality
             }
         }
@@ -196,7 +201,8 @@ final class DownloadStore: ObservableObject {
     func retry(_ entry: DownloadEntry) { retryTasks[entry.id]?.cancel(); retryTasks[entry.id] = nil; update(entry.id) { $0.retries = 0 }; if entry.status == "실패" { enqueue([entry.playback], quality: entry.quality ?? "Auto") } else { start(entry.id) } }
     private func start(_ id: String) {
         guard !busy(id), let entry = entries.first(where: { $0.id == id }), entry.localFile == nil else { return }
-        update(id) { $0.status = "준비 중"; $0.error = nil }
+        let attempt = UUID().uuidString
+        update(id) { $0.status = "준비 중"; $0.error = nil; $0.attemptID = attempt }
         tasks[id] = Task {
             let background = UIApplication.shared.beginBackgroundTask(withName: "LilacManifestPlan") { [weak self] in Task { @MainActor in self?.cancel(id) } }
             defer { if background != .invalid { UIApplication.shared.endBackgroundTask(background) }; tasks[id] = nil }
@@ -205,22 +211,39 @@ final class DownloadStore: ObservableObject {
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
                 let root: String
                 var parts: [DownloadPart]
-                if let saved = entry.parts, let file = entry.rootFile {
-                    root = file; parts = saved
-                } else if ["mp4", "mkv", "webm", "m4v"].contains(entry.stream.url.pathExtension.lowercased()) {
+                var identity: String
+                if ["mp4", "mkv", "webm", "m4v"].contains(entry.stream.url.pathExtension.lowercased()) {
                     root = "video." + entry.stream.url.pathExtension.lowercased()
                     parts = [DownloadPart(url: entry.stream.url, name: root)]
+                    identity = DownloadIdentity.resource(entry.stream.url)
                 } else {
                     let planner = HLSPlanBuilder(stream: entry.stream, folder: folder, quality: entry.quality ?? "Auto")
                     let plan = try await planner.build()
-                    root = plan.0; parts = plan.1
+                    root = plan.0; parts = plan.1; identity = plan.2
                 }
                 try Task.checkCancellation()
+                let oldParts = entry.parts ?? []
+                let compatible = entry.planIdentity == identity || (entry.planIdentity == nil && oldParts.count == parts.count &&
+                    Set(oldParts.map { DownloadIdentity.resource($0.url) }) == Set(parts.map { DownloadIdentity.resource($0.url) }))
+                if !compatible {
+                    for old in oldParts {
+                        try? FileManager.default.removeItem(at: folder.appendingPathComponent(old.name))
+                        try? FileManager.default.removeItem(at: folder.appendingPathComponent(old.name + ".resume"))
+                    }
+                } else {
+                    // Upgrade pre-identity downloads without discarding their completed pieces.
+                    for part in parts {
+                        guard let old = oldParts.first(where: { DownloadIdentity.resource($0.url) == DownloadIdentity.resource(part.url) }) else { continue }
+                        let source = folder.appendingPathComponent(old.name), target = folder.appendingPathComponent(part.name)
+                        if source != target, FileManager.default.fileExists(atPath: source.path), !FileManager.default.fileExists(atPath: target.path) { try FileManager.default.copyItem(at: source, to: target) }
+                        if old.url != part.url { try? FileManager.default.removeItem(at: folder.appendingPathComponent(old.name + ".resume")) }
+                    }
+                }
                 for index in parts.indices {
                     parts[index].done = FileManager.default.fileExists(atPath: folder.appendingPathComponent(parts[index].name).path)
                 }
                 try Task.checkCancellation()
-                update(id) { $0.rootFile = root; $0.parts = parts; $0.completed = parts.filter(\.done).count; $0.total = parts.count; $0.status = "다운로드 중" }
+                update(id) { $0.planIdentity = identity; $0.rootFile = root; $0.parts = parts; $0.completed = parts.filter(\.done).count; $0.total = parts.count; $0.status = "다운로드 중" }
                 if parts.allSatisfy(\.done) { update(id) { $0.localFile = root; $0.status = "완료"; $0.retries = 0 }; prepareCompletedDownloads(); analyzeCompletedDownloads(); return }
                 pump()
             } catch is CancellationError { update(id) { $0.status = "중단됨" } }
@@ -230,9 +253,13 @@ final class DownloadStore: ObservableObject {
     func cancel(_ id: String) {
         retryTasks[id]?.cancel(); retryTasks[id] = nil
         tasks[id]?.cancel()
+        let attempt = entries.first { $0.id == id }?.attemptID
         for (description, task) in backgroundTasks where description.hasPrefix(id + "|") {
             task.cancel { data in
-                if let data, let destination = BackgroundDownloadDelegate.destination(description, suffix: ".resume") { try? data.write(to: destination, options: .atomic) }
+                Task { @MainActor [weak self] in
+                    guard let entry = self?.entries.first(where: { $0.id == id }), entry.attemptID == attempt, entry.status == "중단됨" else { return }
+                    if let data, let destination = BackgroundDownloadDelegate.destination(description, suffix: ".resume") { try? data.write(to: destination, options: .atomic) }
+                }
             }
         }
         update(id) { $0.status = "중단됨" }
@@ -248,16 +275,17 @@ final class DownloadStore: ObservableObject {
     }
     func backgroundFinished(_ description: String, staged: URL, mime: String) {
         let fields = description.components(separatedBy: "|")
-        guard fields.count == 2, let index = entries.firstIndex(where: { $0.id == fields[0] }),
+        guard fields.count >= 2, let index = entries.firstIndex(where: { $0.id == fields[0] }),
+              DownloadIdentity.accepts(description, attempt: entries[index].attemptID),
               let partIndex = entries[index].parts?.firstIndex(where: { $0.name == fields[1] }),
               let target = BackgroundDownloadDelegate.destination(description) else { try? FileManager.default.removeItem(at: staged); return }
-        guard entries[index].status != "중단됨" else { try? FileManager.default.removeItem(at: staged); return }
+        guard entries[index].status == "다운로드 중" else { try? FileManager.default.removeItem(at: staged); return }
         do {
             if entries[index].stream.hlsManifest != nil && entries[index].parts?[partIndex].url.pathExtension.lowercased() == "html" {
                 let decoded = try HLSData.validatedFragment(Data(contentsOf: staged))
                 try decoded.write(to: target, options: .atomic); try FileManager.default.removeItem(at: staged)
             } else if entries[index].stream.manifestKey != nil && (fields[1].hasSuffix(".ts") || mime.hasPrefix("image/")) {
-                let decoded = HLSData.fragment(try Data(contentsOf: staged))
+                let decoded = try HLSData.validatedFragment(Data(contentsOf: staged))
                 try decoded.write(to: target, options: .atomic); try FileManager.default.removeItem(at: staged)
             } else {
                 if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
@@ -276,10 +304,12 @@ final class DownloadStore: ObservableObject {
     }
     func backgroundFailed(_ description: String, error: Error) {
         let id = description.components(separatedBy: "|")[0]
+        guard let entry = entries.first(where: { $0.id == id }), entry.status == "다운로드 중",
+              DownloadIdentity.accepts(description, attempt: entry.attemptID) else { return }
         let ns = error as NSError
         if let resume = ns.userInfo["NSURLSessionDownloadTaskResumeData"] as? Data,
            let path = BackgroundDownloadDelegate.destination(description, suffix: ".resume") { try? resume.write(to: path, options: .atomic) }
-        if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled { update(id) { if $0.status != "완료" { $0.status = "중단됨" } } }
+        if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled { update(id) { $0.status = "중단됨" } }
         else { failed(id, error: error) }
     }
     func backgroundCompleted(_ description: String) { backgroundTasks.removeValue(forKey: description); pump() }
@@ -292,7 +322,7 @@ final class DownloadStore: ObservableObject {
             for part in entry.parts ?? [] where !part.done {
                 guard backgroundTasks.count < 12 else { return }
                 if backgroundTasks.keys.filter({ $0.hasPrefix(entry.id + "|") }).count >= 6 { break }
-                let description = entry.id + "|" + part.name
+                let description = entry.id + "|" + part.name + (entry.attemptID.map { "|" + $0 } ?? "")
                 guard backgroundTasks[description] == nil else { continue }
                 let resumed = Self.directory.appendingPathComponent(entry.id).appendingPathComponent(part.name + ".resume")
                 let task: URLSessionDownloadTask
@@ -373,13 +403,17 @@ final class DownloadStore: ObservableObject {
         }
     }
     private func failed(_ id: String, error: Error) {
-        guard entries.contains(where: { $0.id == id && $0.status != "중단됨" }) else { return }
+        guard entries.contains(where: { $0.id == id && ["준비 중", "다운로드 중"].contains($0.status) }) else { return }
         let attempt = (entries.first { $0.id == id }?.retries ?? 0) + 1
         update(id) { $0.status = "실패"; $0.retries = attempt; $0.error = error.localizedDescription + (attempt <= 2 ? (attempt == 1 ? " · 30초 뒤 다시 시도" : " · 2분 뒤 다시 시도") : "") }
+        for (description, task) in backgroundTasks where description.hasPrefix(id + "|") { task.cancel() }
         guard attempt <= 2 else { return }
         retryTasks[id]?.cancel()
         retryTasks[id] = Task {
             do { try await Task.sleep(nanoseconds: attempt == 1 ? 30_000_000_000 : 120_000_000_000) } catch { return }
+            while backgroundTasks.keys.contains(where: { $0.hasPrefix(id + "|") }) {
+                do { try await Task.sleep(nanoseconds: 200_000_000) } catch { return }
+            }
             guard let entry = entries.first(where: { $0.id == id && $0.status == "실패" }) else { return }
             // Keep existing segments, but resolve a fresh expiring media URL.
             enqueue([entry.playback], quality: entry.quality ?? "Auto")
@@ -406,8 +440,10 @@ final class DownloadStore: ObservableObject {
         var files = entry.subtitleFiles ?? []
         var tracks = entry.subtitleTracks ?? []
         var primary = entry.primarySubtitle
-        let siteKorean = DesktopSubtitlePolicy.siteKorean(source: entry.anime.source, tracks: entry.stream.subtitles)
+        var scopedFonts: Set<URL> = []
+        let siteKorean = DesktopSubtitlePolicy.siteKorean(source: entry.anime.source, tracks: entry.stream.subtitles, stream: entry.stream)
         func copy(_ file: URL, label: String, language: String, provider: String) throws -> String {
+            scopedFonts.formUnion(SubtitleFiles.fonts(for: file))
             let name = "subtitle-" + String(SubtitleFiles.key(file.path).prefix(16)) + "." + file.pathExtension
             let target = folder.appendingPathComponent(name)
             if file.standardizedFileURL != target.standardizedFileURL && !FileManager.default.fileExists(atPath: target.path) { try FileManager.default.copyItem(at: file, to: target) }
@@ -415,8 +451,8 @@ final class DownloadStore: ObservableObject {
             if !tracks.contains(where: { $0.file == name }) { tracks.append(DownloadSubtitleTrack(file: name, label: label, language: language, provider: provider)) }
             return name
         }
-        if preferences.downloadSubtitles != false && !DesktopSubtitlePolicy.burnedKorean(source: entry.anime.source) {
-            if let prepared = try await subtitlePreparer.prepare(entry.playback, tracks: entry.stream.subtitles, preferences: preferences) {
+        if preferences.downloadSubtitles != false && !DesktopSubtitlePolicy.burnedKorean(source: entry.anime.source, stream: entry.stream) {
+            if let prepared = try await subtitlePreparer.prepare(entry.playback, tracks: entry.stream.subtitles, preferences: preferences, stream: entry.stream) {
                 primary = try copy(prepared.0, label: prepared.1, language: SubtitleFiles.isKorean(prepared.0) ? "ko" : prepared.1 == "jimaku" ? "ja" : "", provider: prepared.1)
                 EpisodeSubtitleStore.shared.save(prepared.0, item: entry.playback, provider: prepared.1, translated: EpisodeSubtitleStore.shared.list(entry.playback).contains { $0.file == prepared.0 && $0.translated })
             }
@@ -433,12 +469,12 @@ final class DownloadStore: ObservableObject {
                 EpisodeSubtitleStore.shared.save(source.0, item: entry.playback, provider: source.1, translated: false, behind: primary != nil)
                 if primary == nil && !entry.stream.label.hasPrefix("SUB") { primary = name }
             }
-            var fonts: [String] = []
-            for file in (try? FileManager.default.contentsOfDirectory(at: SubtitleFiles.fontDirectory, includingPropertiesForKeys: nil)) ?? [] where ["ttf", "otf", "ttc"].contains(file.pathExtension.lowercased()) {
-                let name = "font-" + String(SubtitleFiles.key(file.lastPathComponent).prefix(12)) + "-" + file.lastPathComponent
+            var fonts = entry.fontFiles ?? []
+            for file in scopedFonts.sorted(by: { $0.path < $1.path }) {
+                let name = "font-" + String(SubtitleFiles.key(file.path).prefix(12)) + "-" + file.lastPathComponent
                 let target = folder.appendingPathComponent(name)
                 if !FileManager.default.fileExists(atPath: target.path) { try FileManager.default.copyItem(at: file, to: target) }
-                fonts.append(name)
+                if !fonts.contains(name) { fonts.append(name) }
             }
             update(entry.id) { $0.subtitleFiles = files; $0.subtitleTracks = tracks; $0.primarySubtitle = primary; $0.siteKorean = siteKorean; $0.fontFiles = fonts }
         }
@@ -480,7 +516,7 @@ final class DownloadStore: ObservableObject {
                 translatedDownloads.insert(entry.id)
                 let folder = Self.directory.appendingPathComponent(entry.id)
                 let files = (entry.subtitleFiles ?? []).map { folder.appendingPathComponent($0) }
-                guard !DesktopSubtitlePolicy.burnedKorean(source: entry.anime.source), entry.siteKorean != true,
+                guard !DesktopSubtitlePolicy.burnedKorean(source: entry.anime.source, stream: entry.stream), entry.siteKorean != true,
                       !files.contains(where: { $0.lastPathComponent.hasPrefix("translated-") }),
                       let preferences = library.preferences.translationPreferences() else { continue }
                 let tracks = entry.subtitleTracks ?? []

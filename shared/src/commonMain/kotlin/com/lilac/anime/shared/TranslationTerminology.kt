@@ -18,7 +18,7 @@ object TranslationTerminology {
             if (parts.size == 2 && parts.all(String::isNotBlank)) Triple(parts[0], parts[1], false) else null
         }
         val matches = (customTerms + phrases).filter { term ->
-            if (!term.third) text.contains(term.first) else Regex("(^|[\\s、。，．！？!?…「」『』（）()〜~])" + Regex.escape(term.first) + "($|[\\s、。，．！？!?…「」『』（）()〜~])").containsMatchIn(text)
+            if (!term.third) text.contains(term.first) else Regex("(^|[\\s、。，．！？!?…‥「」『』（）()〜~ー・])" + Regex.escape(term.first) + "($|[\\s、。，．！？!?…‥「」『』（）()〜~ー・])").containsMatchIn(text)
         }.distinctBy { it.first }
         return matches.filter { term -> matches.none { other -> other.first.length > term.first.length && other.first.contains(term.first) } }
             .joinToString("\n") { it.first + " = " + it.second }

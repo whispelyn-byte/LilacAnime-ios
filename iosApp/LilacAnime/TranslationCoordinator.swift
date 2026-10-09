@@ -13,7 +13,7 @@ final class TranslationCoordinator: ObservableObject {
     private var task: Task<Void, Never>?
     private var generation = UUID()
     private var workingFiles: Set<URL> = []
-    func translate(_ file: URL, preferences: AppPreferences, position: @escaping () -> Double = { 0 }, anime: SavedAnime? = nil, fresh: Bool = false, background: Bool = false, completion: @escaping (URL) -> Void) {
+    func translate(_ file: URL, preferences: AppPreferences, position: @escaping () -> Double = { 0 }, seekRevision: @escaping () -> UInt64 = { 0 }, anime: SavedAnime? = nil, fresh: Bool = false, background: Bool = false, localOnly: Bool = false, completion: @escaping (URL) -> Void) {
         cancel(); if fresh { service.clearTranslationCache() }; running = true; error = nil; status = nil; progress = 0
         let token = generation
         task = Task(priority: background ? .utility : .userInitiated) {
@@ -31,7 +31,7 @@ final class TranslationCoordinator: ObservableObject {
                 guard !lines.isEmpty else { throw SubtitleFiles.failure("번역할 자막이 없습니다.") }
                 let credential = SecureKeys.load(preferences.translationProvider)
                 let settings: [String: Any] = [
-                    "desktopPrompt": "prompt-3/local-4/bilingual-1",
+                    "desktopPrompt": "prompt-3/local-5/bilingual-1", "localOnly": localOnly,
                     "provider": preferences.translationProvider, "model": preferences.translationModel,
                     "region": preferences.qwenRegion, "local": preferences.selectedGGUF,
                     "context": preferences.contextSize, "maxTokens": preferences.maxTokens,
@@ -59,6 +59,8 @@ final class TranslationCoordinator: ObservableObject {
                 }
                 for line in lines where line.rangeOfCharacter(from: .letters) == nil { kept[line] = line }
                 let working = SubtitleFiles.translations.appendingPathComponent("working-" + token.uuidString + "." + ext)
+                try SubtitleFiles.associateFonts(SubtitleFiles.fonts(for: file), with: working)
+                try SubtitleFiles.associateFonts(SubtitleFiles.fonts(for: file), with: resultFile)
                 workingFiles.insert(working)
                 @MainActor func publish() throws {
                     guard token == generation else { return }
@@ -72,6 +74,10 @@ final class TranslationCoordinator: ObservableObject {
                 if !kept.isEmpty { try publish(); status = "중단된 번역을 이어서 진행합니다." }
                 var provider = preferences.translationProvider
                 var triedProviders: Set<String> = [provider]
+                var localLines: [String] = []
+                var localKind: String?
+                var attemptedLocal: Set<String> = []
+                var localFailure: Error?
                 while lines.contains(where: { kept[$0] == nil }) {
                     try Task.checkCancellation()
                     guard token == generation else { return }
@@ -87,22 +93,45 @@ final class TranslationCoordinator: ObservableObject {
                     do {
                         if provider == "local" {
                             guard !preferences.selectedGGUF.isEmpty else { throw SubtitleFiles.failure("설정에서 GGUF 모델을 선택하세요.") }
-                            let before = lines[max(0, first - preferences.contextCues)..<first].joined(separator: "\n")
+                            if localKind == nil {
+                                var seen: Set<String> = []
+                                localLines = lines.filter { kept[$0] == nil && seen.insert($0).inserted }
+                                let template = try await local.chatTemplate(preferences: preferences)
+                                localKind = DesktopTranslationPrompt.shared.kind(modelName: preferences.selectedGGUF, template: template)
+                            }
+                            let available = TranslationPriority.indices(starts: cues.map(\.startSeconds), ends: cues.map(\.endSeconds), lines: lines,
+                                translated: kept.merging(Dictionary(uniqueKeysWithValues: attemptedLocal.map { ($0, "") })) { old, _ in old }, position: position(), limit: 1)
+                            guard let first = available.first else { throw localFailure ?? SubtitleFiles.failure("로컬 모델이 일부 자막을 번역하지 못했습니다.") }
+                            let source = lines[first]
+                            let index = localLines.firstIndex(of: source) ?? 0
+                            let before = preferences.modelSampling == false ? lines[max(0, first - preferences.contextCues)..<first].joined(separator: "\n") : localLines[max(0, index - 2)..<index].joined(separator: "\n")
                             let after = lines.dropFirst(first + 1).prefix(preferences.prefetchAhead).joined(separator: "\n")
                             let terms = AnimeGlossary.shared.hints(text: lines[first], characters: characters, custom: preferences.translationGlossary ?? "")
                             let prompt = LocalTranslationPrompt.shared.build(modelName: preferences.selectedGGUF, template: preferences.prompt,
                                 text: lines[first], before: before, after: after, thinking: preferences.thinking) + (terms.isEmpty ? "" : "\n표기 기준:\n" + terms)
-                            let desktop = DesktopTranslationPrompt.shared.build(modelName: preferences.selectedGGUF, text: lines[first], before: before, terms: terms,
-                                cast: characters.map { $0.native + " (" + $0.gender + ")" }.joined(separator: "\n"))
+                            let desktop = DesktopTranslationPrompt.shared.request(kind: localKind ?? "chat", text: source, before: before,
+                                terms: AnimeGlossary.shared.localTerms(text: source, characters: characters, custom: preferences.translationGlossary ?? ""),
+                                cast: AnimeGlossary.shared.localCast(characters: characters))
                             var settings = preferences
                             if preferences.modelSampling != false {
                                 settings.temperature = desktop.temperature; settings.topP = desktop.topP; settings.topK = Int(desktop.topK); settings.repetitionPenalty = desktop.repetition
+                                settings.maxTokens = Int(DesktopTranslationPrompt.shared.maxTokens(source: source))
+                                settings.thinking = "off"
                             }
-                            let response = try await local.generate(preferences.modelSampling == false ? prompt : desktop.prompt, preferences: settings, requestID: token)
-                            try Task.checkCancellation()
-                            let cleaned = LocalTranslationPrompt.shared.clean(text: response)
-                            guard !cleaned.isEmpty else { throw SubtitleFiles.failure("로컬 모델이 빈 번역을 반환했습니다.") }
-                            kept[lines[first]] = cleaned
+                            attemptedLocal.insert(source)
+                            do {
+                                var cleaned = ""
+                                for attempt in 0..<(preferences.modelSampling == false ? 1 : 3) {
+                                    if attempt > 0 && localKind == "jako" { settings.temperature = 0.5 }
+                                    let response = try await local.generate(preferences.modelSampling == false ? prompt : desktop.prompt, preferences: settings, requestID: token)
+                                    try Task.checkCancellation()
+                                    cleaned = preferences.modelSampling == false ? LocalTranslationPrompt.shared.clean(text: response) : DesktopTranslationPrompt.shared.clean(output: response, original: source)
+                                    if !DesktopTranslationPrompt.shared.needsRetry(text: cleaned) { break }
+                                }
+                                if !cleaned.isEmpty { kept[source] = cleaned }
+                                else { localFailure = SubtitleFiles.failure("로컬 모델이 빈 번역을 반환했습니다.") }
+                            } catch is CancellationError { throw CancellationError() }
+                            catch { localFailure = error }
                         } else {
                             let metadata = anime.flatMap { DesktopCatalog.shared.record($0) }
                             var contextParts: [String] = []
@@ -120,7 +149,7 @@ final class TranslationCoordinator: ObservableObject {
                             let config = TranslationConfig(provider: provider, key: SecureKeys.load(provider),
                                 model: preferences.translationModels?[provider] ?? (provider == preferences.translationProvider ? preferences.translationModel : ""), region: preferences.qwenRegion, terminology: context)
                             try await CloudSubtitleScheduler.translate(lines: lines, cues: cues, provider: provider, config: config,
-                                service: service, position: position, cached: { kept }) { additions in
+                                service: service, position: position, seekRevision: seekRevision, cached: { kept }) { additions in
                                     kept.merge(additions) { old, _ in old }
                                     try publish()
                                 }
@@ -137,8 +166,8 @@ final class TranslationCoordinator: ObservableObject {
                         } else if provider != "local", !triedProviders.contains("local"), preferences.translationFallback != false, !preferences.selectedGGUF.isEmpty {
                             status = provider + " 번역을 계속할 수 없어 로컬 AI로 이어서 번역합니다."
                             provider = "local"; triedProviders.insert("local")
-                        } else if provider == "local", preferences.translationFallback != false,
-                                  let next = ["gemini", "openai", "deepl", "qwen"].first(where: { !triedProviders.contains($0) && !SecureKeys.load($0).isEmpty }) {
+                        } else if provider == "local",
+                                  let next = TranslationFallbackPolicy.cloudAfterLocal(localOnly: localOnly, enabled: preferences.translationFallback != false, tried: triedProviders, hasKey: { !SecureKeys.load($0).isEmpty }) {
                             status = "로컬 AI 번역 실패 · " + next + "로 이어서 번역합니다."
                             provider = next; triedProviders.insert(next)
                         } else { throw error }

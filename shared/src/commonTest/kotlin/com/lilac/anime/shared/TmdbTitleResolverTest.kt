@@ -76,8 +76,8 @@ class TmdbTitleResolverTest {
         try {
             val resolver = TmdbTitleResolver(client)
             assertNull(resolver.resolve(listOf("Title"), "")); assertEquals(0, count)
-            val error = assertFailsWith<IllegalStateException> { resolver.test("private-test-key") }
-            assertEquals("TMDB HTTP 401", error.message)
+            val error = assertFailsWith<TmdbFailure> { resolver.test("private-test-key") }
+            assertEquals("auth", error.code); assertEquals(401, error.status); assertEquals(1, count)
             assertFalse(error.message.orEmpty().contains("private-test-key"))
         } finally { client.close() }
     }

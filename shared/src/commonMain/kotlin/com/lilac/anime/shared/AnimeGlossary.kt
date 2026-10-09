@@ -201,4 +201,19 @@ object AnimeGlossary {
         }.joinToString("\n")
         return TranslationTerminology.hints(text, terms)
     }
+    fun localTerms(text: String, characters: List<AnimeCharacter>, custom: String): String {
+        val names = (custom + "\n" + characterTerms(characters)).lines().filter { it.contains('=') }
+        val words = TranslationTerminology.hints(text, names.joinToString("\n")).lines().filter { it.contains('=') }
+            .map { it.substringBefore('=').trim() to it.substringAfter('=').trim() }
+        val selected = words.filter { (name, _) -> name.length != 1 ||
+            Regex("(^|[\\s、。，．！？!?…‥「」『』（）()〜~ー・])" + Regex.escape(name) + "($|[\\s、。，．！？!?…‥「」『』（）()〜~ー・さくち様殿君氏先っ])").containsMatchIn(text) }
+        return (selected.map { it.first + "=" + it.second } + speakerTerms(text, characters).lines().filter { it.isNotEmpty() }).joinToString("\n")
+    }
+    fun localCast(characters: List<AnimeCharacter>): String {
+        val names = characterTerms(characters).lines().filter { it.contains('=') }.associate { it.substringBefore('=') to it.substringAfter('=') }
+        return characters.take(15).mapNotNull { character ->
+            val native = character.native.trim()
+            names[native]?.let { native + " = " + it + if (character.gender.lowercase() in listOf("male", "female")) " (" + character.gender.lowercase() + ")" else "" }
+        }.joinToString("\n")
+    }
 }

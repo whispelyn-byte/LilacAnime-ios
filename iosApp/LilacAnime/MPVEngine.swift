@@ -125,7 +125,8 @@ final class MPVEngine: ObservableObject {
     func play() { paused = false; set("pause", "no") }
     func pause() { finishSpaceHold(); paused = true; set("pause", "yes") }
     func toggle() { paused ? play() : pause() }
-    func seek(_ seconds: Double) { command(["seek", max(0, seconds).description, "absolute+exact"]) }
+    private(set) var seekRevision: UInt64 = 0
+    func seek(_ seconds: Double) { seekRevision &+= 1; command(["seek", max(0, seconds).description, "absolute+exact"]) }
     func skip(_ delta: Double) { seek(position + delta) }
     func subtitle(_ file: URL) { pendingSubtitle = file; configure(preferences); if fileLoaded { command(["sub-add", file.path, "select"]) } }
     func reloadSubtitle() { command(["sub-reload"]) }

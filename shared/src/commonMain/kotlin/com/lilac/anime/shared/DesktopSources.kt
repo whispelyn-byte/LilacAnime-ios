@@ -139,7 +139,7 @@ object DesktopSourceParser {
         fun fileID(value: String) = Regex("/[hs]/[0-9a-f]{2}/[0-9a-f]{2}/([0-9a-f]{16,})/", RegexOption.IGNORE_CASE).find(value)?.groupValues?.get(1)
         val own = fileID(url) == null || fileID(subtitle) == null || fileID(url) == fileID(subtitle)
         val tracks = if (subtitle.startsWith("https://") && own) listOf(PlaybackTrack("링크애니 한국어", subtitle, "https://linkani.tv/", "ko", "subtitle")) else emptyList()
-        return listOf(DesktopPlaybackStream("링크애니", url, "https://linkani.tv/", mapOf("Referer" to "https://linkani.tv/"), tracks))
+        return listOf(DesktopPlaybackStream("링크애니", url, "https://linkani.tv/", mapOf("Referer" to "https://linkani.tv/"), tracks, burnedKorean = tracks.isEmpty()))
     }
     fun miruroStreams(root: JsonObject): List<DesktopPlaybackStream> {
         val streams = mutableListOf<DesktopPlaybackStream>()
@@ -164,7 +164,7 @@ object DesktopSourceParser {
     }
 }
 
-data class DesktopPlaybackStream(val label: String, val url: String, val referer: String, val headers: Map<String, String>, val subtitles: List<PlaybackTrack> = emptyList())
+data class DesktopPlaybackStream(val label: String, val url: String, val referer: String, val headers: Map<String, String>, val subtitles: List<PlaybackTrack> = emptyList(), val burnedKorean: Boolean = false)
 data class DesktopPlaybackServer(val label: String, val kind: String, val url: String)
 
 internal class DesktopSourceRepository(private val client: HttpClient) {

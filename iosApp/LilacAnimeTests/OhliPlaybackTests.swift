@@ -32,7 +32,7 @@ final class OhliPlaybackTests: XCTestCase {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
-        let (root, parts) = try await HLSPlanBuilder(stream: capturedStream(), folder: folder, quality: "Auto").build()
+        let (root, parts, _) = try await HLSPlanBuilder(stream: capturedStream(), folder: folder, quality: "Auto").build()
         XCTAssertEqual(parts.count, 2)
         XCTAssertTrue(parts.allSatisfy { $0.name.hasSuffix(".ts") && $0.url.pathExtension == "html" })
         let text = try String(contentsOf: folder.appendingPathComponent(root), encoding: .utf8)

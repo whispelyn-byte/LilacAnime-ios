@@ -9,7 +9,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.*
 
 data class AnimeCharacter(val name: String, val native: String, val first: String, val last: String, val gender: String)
-data class DesktopMetadata(val korean: String, val english: String, val overview: String, val aliases: List<String>, val characters: List<AnimeCharacter>, val anilistId: Int, val malId: Int, val titleLookupFailure: String = "")
+data class DesktopMetadata(val korean: String, val english: String, val overview: String, val aliases: List<String>, val characters: List<AnimeCharacter>, val anilistId: Int, val malId: Int, val titleLookupFailure: String = "", val titleFailureCode: String = "", val titleRetryAfterMs: Long = 0)
 internal expect fun normalizeDesktopTitle(value: String): String
 object DesktopTitleRules {
     fun explicitSeason(title: String): Int? = Regex("(?:season|시즌)\\s*(\\d+)|(\\d+)\\s*기(?![가-힣])|(\\d+)(?:st|nd|rd|th)(?:\\s*season)?\\b|[가-힣](\\d)(?=\\s|$)", RegexOption.IGNORE_CASE)
@@ -106,10 +106,11 @@ class DesktopMetadataRepository(private val client: HttpClient = newSharedClient
         val names = listOf(anime.title, anime.native, anime.romaji, anime.english).filter(String::isNotBlank).distinct()
         val aliases = names.filter { TitleCandidates.isKorean(it) }.toMutableList()
         var titleFailure = ""
+        var tmdbFailure: TmdbFailure? = null
         if (aliases.isEmpty() && credential.isNotBlank()) {
             try { aliases += tmdb.desktopTitles(names, credential, light = !includeCast) }
             catch (error: CancellationException) { throw error }
-            catch (error: Exception) { titleFailure = error.message ?: "TMDB 요청 실패" }
+            catch (error: Exception) { titleFailure = error.message ?: "TMDB 요청 실패"; tmdbFailure = error as? TmdbFailure }
         }
         val media = if (includeCast || aliases.isEmpty() || anime.english.isBlank()) attempt { media(anime, includeCast) } ?: JsonObject(emptyMap()) else JsonObject(emptyMap())
         if (aliases.isEmpty()) aliases += media.list("synonyms").mapNotNull { (it as? JsonPrimitive)?.content }.filter { TitleCandidates.isKorean(it) }
@@ -122,7 +123,7 @@ class DesktopMetadataRepository(private val client: HttpClient = newSharedClient
         return DesktopMetadata(aliases.firstOrNull()?.let { DesktopTitleRules.seasonal(it, anime.title, anime.format) }.orEmpty(),
             anime.english.ifBlank { media.obj("title").text("english").ifBlank { anime.romaji.ifBlank { media.obj("title").text("romaji") } } },
             if (credential.isBlank() || !includeCast) "" else attempt { tmdb.desktopOverview(listOf(anime.english) + names, credential, anime.format) }.orEmpty(),
-            (aliases.map { DesktopTitleRules.seasonal(it, anime.title, anime.format) } + names).distinct(), cast, anilist, mal, titleFailure)
+            (aliases.map { DesktopTitleRules.seasonal(it, anime.title, anime.format) } + names).distinct(), cast, anilist, mal, titleFailure, tmdbFailure?.code.orEmpty(), tmdbFailure?.retryAfterMs ?: 0)
     }
     private suspend fun <T> attempt(block: suspend () -> T): T? = try { block() } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
     fun close() = client.close()

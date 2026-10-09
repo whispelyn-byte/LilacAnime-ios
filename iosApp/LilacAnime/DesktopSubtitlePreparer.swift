@@ -2,10 +2,27 @@ import Foundation
 import LilacShared
 
 @MainActor
+final class SubtitleSearchCache {
+    private var searches: [String: (UUID, Task<(URL, String)?, Never>)] = [:]
+    func task(_ key: String, load: @escaping @MainActor () async -> (URL, String)?) -> Task<(URL, String)?, Never> {
+        if let previous = searches[key] { return previous.1 }
+        let token = UUID()
+        let task = Task { @MainActor in
+            let result = await load()
+            if result == nil, searches[key]?.0 == token { searches[key] = nil }
+            return result
+        }
+        searches[key] = (token, task)
+        return task
+    }
+    func cancel() { searches.values.forEach { $0.1.cancel() }; searches.removeAll() }
+}
+
+@MainActor
 final class DesktopSubtitlePreparer {
     private let service = IosServices()
     private let titleLookup = TitleLookup()
-    private var searches: [String: Task<(URL, String)?, Never>] = [:]
+    private let searches = SubtitleSearchCache()
     private var contexts: [String: (String, Int32, [Int])] = [:]
 
     func preferRaw(_ item: PlaybackItem, preferences: AppPreferences, downloading: Bool = false) async -> Bool {
@@ -34,8 +51,8 @@ final class DesktopSubtitlePreparer {
         return false
     }
 
-    func prepare(_ item: PlaybackItem, tracks: [RemoteSubtitle], preferences: AppPreferences, prefersAI: Bool = false, skipSaved: Bool = false) async throws -> (URL, String)? {
-        guard preferences.subtitleProvider != "manual", !DesktopSubtitlePolicy.burnedKorean(source: item.anime.source) else { return nil }
+    func prepare(_ item: PlaybackItem, tracks: [RemoteSubtitle], preferences: AppPreferences, prefersAI: Bool = false, skipSaved: Bool = false, stream: ResolvedStream? = nil) async throws -> (URL, String)? {
+        guard preferences.subtitleProvider != "manual", !DesktopSubtitlePolicy.burnedKorean(source: item.anime.source, stream: stream) else { return nil }
         let saved = skipSaved ? [] : EpisodeSubtitleStore.shared.list(item)
         if prefersAI {
             if let translated = saved.first(where: \.translated), let file = translated.file { return (file, translated.provider) }
@@ -58,15 +75,16 @@ final class DesktopSubtitlePreparer {
         let context = await context(item)
         let pending = DesktopSubtitlePolicy.providers(preferences.subtitleProvider).map { provider -> Task<(URL, String)?, Never> in
             let key = item.anime.id + "#" + item.episodeID + "#" + context.0 + "#" + provider
-            if let previous = searches[key] { return previous }
-            let task = Task { [weak self] () -> (URL, String)? in
+            return searches.task(key) { [weak self] () -> (URL, String)? in
                 guard let self else { return nil }
                 let assets = await self.find(provider, item: item, context: context)
                 var candidates: [URL] = []
+                var fonts: [URL] = []
                 for asset in assets where asset.source != "post" {
                     if Task.isCancelled { return nil }
-                    if let url = URL(string: asset.url), let files = try? await SubtitleFiles.prepare(url) { candidates += files }
+                    if let url = URL(string: asset.url), let files = try? await SubtitleFiles.prepare(url) { candidates += files; fonts += SubtitleFiles.preparedFonts(url) }
                 }
+                for file in candidates { try? SubtitleFiles.associateFonts(SubtitleFiles.fonts(for: file) + fonts, with: file) }
                 if let first = assets.first(where: { $0.source != "post" }), let file = self.select(candidates, item: item, offsets: context.2, episode: first.episode?.intValue, strict: first.strict) { return (file, provider) }
                 if provider == "anissia" {
                     for asset in assets where asset.source == "post" {
@@ -76,8 +94,6 @@ final class DesktopSubtitlePreparer {
                 }
                 return nil
             }
-            searches[key] = task
-            return task
         }
         for task in pending {
             let result = await task.value
@@ -148,6 +164,6 @@ final class DesktopSubtitlePreparer {
         }
         return nil
     }
-    func cancel() { searches.values.forEach { $0.cancel() }; searches.removeAll(); service.cancel(); titleLookup.cancel() }
+    func cancel() { searches.cancel(); service.cancel(); titleLookup.cancel() }
     deinit { service.close() }
 }

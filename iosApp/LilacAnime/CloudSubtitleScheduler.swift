@@ -8,11 +8,11 @@ enum CloudSubtitleScheduler {
         case result(UUID, [Int], [String]?, String?)
     }
     static func translate(lines: [String], cues: [SubtitleCue], provider: String, config: TranslationConfig,
-                          service: IosServices, position: @escaping () -> Double, cached: @escaping () -> [String: String],
+                          service: IosServices, position: @escaping () -> Double, seekRevision: @escaping () -> UInt64 = { 0 }, cached: @escaping () -> [String: String],
                           save: @escaping ([String: String]) throws -> Void) async throws {
         try await withThrowingTaskGroup(of: Event.self) { group in
             var active: [UUID: [Int]] = [:]
-            var lastPosition = position()
+            var lastSeek = seekRevision()
             var first = true
             var missingAttempts: [String: Int] = [:]
             let batchLines = provider == "gemini" ? 600 : provider == "openai" ? 150 : provider == "deepl" ? 50 : 100
@@ -51,11 +51,11 @@ enum CloudSubtitleScheduler {
                 switch event {
                 case .tick:
                     let current = position()
-                    if abs(current - lastPosition) >= 20 && active.count <= parallel {
+                    if seekRevision() != lastSeek && active.count <= parallel {
                         let missing = pending(rush: true)
                         if let next = missing.first, cues[next].startSeconds <= current + 60,
                            !active.values.contains(where: { $0.contains(next) && $0.count <= 40 }) { launch(missing) }
-                        lastPosition = current
+                        lastSeek = seekRevision()
                     }
                     tick()
                 case let .result(id, indices, output, failure):

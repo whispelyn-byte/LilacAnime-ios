@@ -12,6 +12,7 @@ struct ResolvedStream: Codable, Identifiable, Hashable {
     var manifestKey: String?
     var subtitles: [RemoteSubtitle] = []
     var hlsManifest: String? = nil
+    var burnedKorean: Bool? = nil
 }
 struct RemoteSubtitle: Codable, Identifiable, Hashable {
     var id: String { url.absoluteString }
@@ -32,6 +33,7 @@ struct PlaybackItem {
     var preceding: [PlaybackItem] = []
     var localSubtitles: [URL] = []
     var localSubtitleTracks: [RemoteSubtitle] = []
+    var burnedKorean: Bool? = nil
     init(anime: SavedAnime, episode: Episode) {
         self.anime = anime; episodeID = episode.id; title = episode.title; number = Int(episode.number)
         displayNumber = episode.displayNumber; watchURL = URL(string: episode.videoUrl ?? anime.anime.detailUrl) ?? URL(string: "https://linkkf.app/")!
@@ -120,7 +122,7 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
         installCaptureScripts(ohli: item.anime.source == "ohli24")
         let token = generation
         if let direct = item.directURL, direct.isFileURL || ["m3u8", "mp4", "mkv", "webm"].contains(direct.pathExtension.lowercased()) {
-            streams = [ResolvedStream(label: "영상", url: direct, referer: "", headers: [:], subtitles: item.localSubtitleTracks)]; loading = false; return
+            streams = [ResolvedStream(label: "영상", url: direct, referer: "", headers: [:], subtitles: item.localSubtitleTracks, burnedKorean: item.burnedKorean)]; loading = false; return
         }
         if ["miruro", "linkani"].contains(item.anime.source) {
             desktop.desktopStreams(sourceKey: item.anime.source, animeId: item.anime.anime.id, number: Int32(item.number), url: item.watchURL.absoluteString) { [weak self] results, failure in
@@ -133,7 +135,7 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
                             guard let url = URL(string: track.url) else { return nil }
                             return RemoteSubtitle(label: track.label, url: url, language: track.language, headers: stream.headers)
                         }
-                        return ResolvedStream(label: stream.label, url: url, referer: stream.referer, headers: stream.headers, subtitles: tracks)
+                        return ResolvedStream(label: stream.label, url: url, referer: stream.referer, headers: stream.headers, subtitles: tracks, burnedKorean: stream.burnedKorean)
                     }
                     self.subtitles = self.streams.first?.subtitles ?? []
                     if self.streams.isEmpty { self.error = failure ?? "이 회차의 영상 서버를 찾지 못했습니다." }

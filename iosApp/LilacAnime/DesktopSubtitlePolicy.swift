@@ -35,9 +35,13 @@ enum DesktopSubtitlePolicy {
         if ["reanime", "jimaku"].contains(preferred), let first = saved.first, first.translated { return first }
         return saved.first { source($0.provider) == preferred && !$0.translated }
     }
-    static func burnedKorean(source: String) -> Bool { source == "ohli24" }
-    static func siteKorean(source: String, tracks: [RemoteSubtitle]) -> Bool {
-        burnedKorean(source: source) || source == "linkkf" || tracks.contains(where: isKorean)
+    static func burnedKorean(source: String, stream: ResolvedStream? = nil) -> Bool {
+        if source == "ohli24" { return true }
+        if let value = stream?.burnedKorean { return value }
+        return source == "linkani" && !(stream?.subtitles.contains(where: isKorean) ?? false)
+    }
+    static func siteKorean(source: String, tracks: [RemoteSubtitle], stream: ResolvedStream? = nil) -> Bool {
+        burnedKorean(source: source, stream: stream) || source == "linkkf" || tracks.contains(where: isKorean)
     }
     static func shouldTranslateAlongside(source: String, siteKorean: Bool) -> Bool {
         !siteKorean && ["kairan", "csora", "anissia", "provider", "download"].contains(source)
@@ -52,23 +56,30 @@ enum DesktopSubtitlePolicy {
 
 extension AppPreferences {
     /// Desktop automatically uses a configured API, then the installed local model.
-    func translationPreferences(automatic: Bool = false) -> AppPreferences? {
+    func translationPreferences(automatic: Bool = false, localOnly: Bool = false, models: [URL]? = nil, hasKey: (String) -> Bool = { !SecureKeys.load($0).isEmpty }) -> AppPreferences? {
         if automatic && !autoTranslation { return nil }
         var result = self
         let clouds = ["gemini", "openai", "deepl", "qwen"]
         let wanted = translationProvider
-        let files = (try? FileManager.default.contentsOfDirectory(at: LocalModelFiles.directory, includingPropertiesForKeys: nil))?.filter { $0.pathExtension.lowercased() == "gguf" } ?? []
+        let files = models ?? (try? FileManager.default.contentsOfDirectory(at: LocalModelFiles.directory, includingPropertiesForKeys: nil))?.filter { $0.pathExtension.lowercased() == "gguf" } ?? []
         let installedFile = files.first(where: { $0.lastPathComponent == selectedGGUF }) ?? files.first(where: { $0.lastPathComponent == DesktopModelPreset.all.first(where: { $0.id == "gemma-4-e4b" })?.file }) ?? files.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }).first
         let installed = installedFile != nil
         if let installedFile { result.selectedGGUF = installedFile.lastPathComponent }
+        if localOnly { return wanted == "local" && installed ? result : nil }
         if wanted == "local" && installed { return result }
         let preferred = clouds.contains(wanted) ? [wanted] + clouds.filter { $0 != wanted } : clouds
-        if let provider = preferred.first(where: { !SecureKeys.load($0).isEmpty }) {
+        if let provider = preferred.first(where: hasKey) {
             result.translationProvider = provider
             result.translationModel = translationModels?[provider] ?? (wanted == provider ? translationModel : "")
             return result
         }
         if installed { result.translationProvider = "local"; return result }
         return nil
+    }
+}
+enum TranslationFallbackPolicy {
+    static func cloudAfterLocal(localOnly: Bool, enabled: Bool, tried: Set<String>, hasKey: (String) -> Bool) -> String? {
+        guard !localOnly && enabled else { return nil }
+        return ["gemini", "openai", "deepl", "qwen"].first { !tried.contains($0) && hasKey($0) }
     }
 }

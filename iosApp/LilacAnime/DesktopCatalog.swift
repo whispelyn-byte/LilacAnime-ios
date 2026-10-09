@@ -9,6 +9,12 @@ struct CastCharacter: Codable {
 struct CatalogName: Codable {
     var korean: String; var english: String; var overview: String; var aliases: [String]; var cast: [CastCharacter]
     var anilist: Int; var mal: Int; var updated: Date; var credential: String
+    var titleLookupRevision: Int? = nil
+    var castPrepared: Bool? = nil
+    func isFresh(credential: String, cast: Bool, now: Date = Date()) -> Bool {
+        self.credential == credential && (!korean.isEmpty || titleLookupRevision == 1) &&
+            now.timeIntervalSince(updated) < 30 * 86400 && (!cast || castPrepared == true || !self.cast.isEmpty)
+    }
 }
 @MainActor
 final class DesktopCatalog: ObservableObject {
@@ -21,7 +27,8 @@ final class DesktopCatalog: ObservableObject {
     @Published var error: String?
     private var task: Task<Void, Never>?
     private var generation = UUID()
-    private var lookups: [String: Task<Void, Never>] = [:]
+    private var lookups: [String: Task<Bool, Never>] = [:]
+    private var titleRetry: Task<Void, Never>?
     private var nextLookup = Date.distantPast
     private let service = IosServices()
     private let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("DesktopCatalog")
@@ -38,30 +45,38 @@ final class DesktopCatalog: ObservableObject {
         return anime.title
     }
     func record(_ anime: SavedAnime) -> CatalogName? { names[anime.id] }
-    func enrich(_ anime: Anime, source: String, cast: Bool = false, force: Bool = false) async {
+    @discardableResult
+    func enrich(_ anime: Anime, source: String, cast: Bool = false, force: Bool = false, bulk: Bool = false) async -> Bool {
         let key = source + ":" + anime.id
         let credential = SubtitleFiles.key(SecureKeys.load("tmdb"))
-        if !force, let name = names[key], name.credential == credential,
-           Date().timeIntervalSince(name.updated) < 7 * 86400, !cast || !name.cast.isEmpty { return }
-        if let pending = lookups[key] { await pending.value; if !cast || !(names[key]?.cast.isEmpty ?? true) { return } }
-        let delay = max(0, nextLookup.timeIntervalSinceNow)
-        nextLookup = Date().addingTimeInterval(delay + 1)
-        let pending = Task { [weak self] in
-            guard let self else { return }
+        if !force, let name = names[key], name.isFresh(credential: credential, cast: cast) { return true }
+        if let pending = lookups[key] {
+            let success = await pending.value
+            if !success || !cast || names[key]?.castPrepared == true || !(names[key]?.cast.isEmpty ?? true) { return success }
+        }
+        let delay = bulk ? 0 : max(0, nextLookup.timeIntervalSinceNow)
+        if !bulk { nextLookup = Date().addingTimeInterval(delay + 1) }
+        let pending = Task { [weak self] () -> Bool in
+            guard let self else { return false }
             defer { lookups[key] = nil }
             if delay > 0 { try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else { return false }
             let result: DesktopMetadata? = await withCheckedContinuation { continuation in
                 service.desktopMetadata(anime: anime, credential: SecureKeys.load("tmdb"), includeCast: cast) { value, _ in continuation.resume(returning: value) }
             }
-            guard let result, !Task.isCancelled else { return }
+            guard let result, !Task.isCancelled else { return false }
+            if !result.titleLookupFailure.isEmpty && result.korean.isEmpty {
+                error = result.titleLookupFailure; return false
+            }
             let old = names[key]
             names[key] = CatalogName(korean: result.korean.isEmpty ? (old?.korean ?? "") : result.korean, english: result.english, overview: result.overview.isEmpty ? (old?.overview ?? "") : result.overview, aliases: result.aliases,
                 cast: result.characters.isEmpty ? (old?.cast ?? []) : result.characters.map { CastCharacter(name: $0.name, native: $0.native, first: $0.first, last: $0.last, gender: $0.gender) },
-                anilist: Int(result.anilistId), mal: Int(result.malId), updated: Date(), credential: credential)
+                anilist: Int(result.anilistId), mal: Int(result.malId), updated: Date(), credential: credential,
+                titleLookupRevision: 1, castPrepared: cast || old?.castPrepared == true)
             saveNames()
+            return true
         }
-        lookups[key] = pending; await pending.value
+        lookups[key] = pending; return await pending.value
     }
     func search(_ query: String, source: String) -> [Anime] {
         let wanted = DesktopTitleRules.shared.key(title: query)
@@ -73,7 +88,7 @@ final class DesktopCatalog: ObservableObject {
         }.map(\.anime)
     }
     var known: Int { (catalogs[source] ?? []).filter { names[$0.id]?.korean.isEmpty == false || TitleCandidates.shared.isKorean(title: $0.title) }.count }
-    func start(_ source: String, refresh: Bool = false) {
+    func start(_ source: String, refresh: Bool = false, titlesOnly: Bool = false) {
         stop(); self.source = source; running = true; error = nil
         let token = generation
         task = Task {
@@ -83,7 +98,7 @@ final class DesktopCatalog: ObservableObject {
                 var known = Set(gathered.map(\.id))
                 var page: Int32 = 1
                 var seenPages: Set<String> = []
-                while !Task.isCancelled, token == generation {
+                while !titlesOnly, !Task.isCancelled, token == generation {
                     status = "전체 목록 수집 · \(gathered.count)개"
                     let result: [Anime] = try await withCheckedThrowingContinuation { continuation in
                         service.browse(sourceKey: source, query: "", page: page, filter: AnimeSnapshot.shared.filter(genre: "", year: "", format: "", status: "")) { value, failure in
@@ -107,15 +122,38 @@ final class DesktopCatalog: ObservableObject {
                     let credential = SubtitleFiles.key(SecureKeys.load("tmdb"))
                     for item in gathered where names[item.id]?.korean.isEmpty != false {
                         guard let id = item.anime.anilistId, let korean = titles[String(id.intValue)] else { continue }
-                        names[item.id] = CatalogName(korean: DesktopTitleRules.shared.seasonal(title: korean, original: item.title), english: item.anime.english,
+                        names[item.id] = CatalogName(korean: DesktopTitleRules.shared.seasonal(title: korean, original: item.title, format: item.anime.format), english: item.anime.english,
                             overview: "", aliases: [korean], cast: [], anilist: id.intValue, mal: item.anime.malId?.intValue ?? 0, updated: Date(), credential: credential)
                     }
                     saveNames()
                 }
-                for item in gathered where !Task.isCancelled && token == generation {
+                guard !SecureKeys.load("tmdb").isEmpty else {
+                    status = "\(knownCount(gathered))/\(gathered.count)개 한국어 제목 · 나머지는 TMDB 키를 설정하면 찾습니다."
+                    return
+                }
+                let pending = gathered.filter { !TitleCandidates.shared.isKorean(title: $0.title) && names[$0.id]?.korean.isEmpty != false }
+                for start in stride(from: 0, to: pending.count, by: 6) {
+                    try Task.checkCancellation()
+                    guard token == generation else { return }
                     status = "한국어 제목 · \(knownCount(gathered))/\(gathered.count)"
-                    await enrich(item.anime, source: source)
-                    try await Task.sleep(nanoseconds: 1_000_000_000)
+                    let batch = Array(pending[start..<min(start + 6, pending.count)])
+                    let success = await withTaskGroup(of: Bool.self, returning: Bool.self) { group in
+                        for item in batch { group.addTask { @MainActor in await self.enrich(item.anime, source: source, bulk: true) } }
+                        var complete = true
+                        for await result in group { if !result { complete = false } }
+                        return complete
+                    }
+                    if !success {
+                        guard token == generation, !Task.isCancelled else { return }
+                        status = "\(knownCount(gathered))/\(gathered.count)개 한국어 제목 · TMDB 요청 실패, 30분 뒤 재시도"
+                        titleRetry = Task { [weak self] in
+                            do { try await Task.sleep(nanoseconds: 1_800_000_000_000) } catch { return }
+                            guard let self, generation == token, !SecureKeys.load("tmdb").isEmpty else { return }
+                            self.start(source, titlesOnly: true)
+                        }
+                        return
+                    }
+                    try await Task.sleep(nanoseconds: 200_000_000)
                 }
                 if token == generation { status = "완료 · \(knownCount(gathered))/\(gathered.count)개 한국어 제목" }
             } catch is CancellationError { }
@@ -123,7 +161,7 @@ final class DesktopCatalog: ObservableObject {
         }
     }
     private func knownCount(_ values: [SavedAnime]) -> Int { values.filter { names[$0.id]?.korean.isEmpty == false || TitleCandidates.shared.isKorean(title: $0.title) }.count }
-    func stop() { generation = UUID(); task?.cancel(); task = nil; running = false; status = "일시 중지" }
+    func stop() { generation = UUID(); task?.cancel(); task = nil; titleRetry?.cancel(); titleRetry = nil; running = false; status = "일시 중지" }
     func clear() { stop(); lookups.values.forEach { $0.cancel() }; lookups = [:]; nextLookup = .distantPast; names = [:]; catalogs = [:]; try? FileManager.default.removeItem(at: directory) }
     private func persist<T: Encodable>(_ value: T, name: String) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

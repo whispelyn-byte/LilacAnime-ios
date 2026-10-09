@@ -10,6 +10,19 @@ import io.ktor.http.*
 import kotlin.io.encoding.Base64
 
 class DesktopParityTest {
+    @Test fun tmdbQueriesNamesAndFranchiseAliasesMatchDesktop() {
+        for (test in desktopOracle.list("tmdbQueries").filterIsInstance<JsonObject>()) {
+            assertEquals(test.list("expected").map { it.jsonPrimitive.content }, DesktopTmdbRules.queries(test.list("input").map { it.jsonPrimitive.content }))
+        }
+        for (test in desktopOracle.list("tmdbSiblings").filterIsInstance<JsonObject>()) {
+            val input = test.list("input").map { it.jsonPrimitive.content }
+            assertEquals(test["expected"]!!.jsonPrimitive.boolean, DesktopTmdbRules.sibling(input[0], input[1]))
+        }
+        for (test in desktopOracle.list("seasonNames").filterIsInstance<JsonObject>()) {
+            val input = test.list("input").map { it.jsonPrimitive.content }
+            assertEquals(test.text("expected"), DesktopTitleRules.seasonal(input[0], input[1], input[2]))
+        }
+    }
     @Test fun titleKeysSeasonNumbersAndCleanedNamesMatchDesktop() {
         for (test in desktopOracle.list("titles").filterIsInstance<JsonObject>()) {
             val title = test.text("input")

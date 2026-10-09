@@ -118,9 +118,16 @@ final class DesktopSubtitlePreparer {
         return result
     }
     private func find(_ provider: String, item: PlaybackItem, context: (String, Int32, [Int])) async -> [SubtitleAsset] {
-        await withCheckedContinuation { continuation in
-            service.findSubtitles(provider: provider, title: context.0, episode: Int32(item.number), episodeKey: item.displayNumber, anilistId: context.1) { values, _ in continuation.resume(returning: values ?? []) }
+        let alternatives = provider == "jimaku" ? [] : (DesktopCatalog.shared.record(item.anime)?.aliases ?? []).filter { TitleCandidates.shared.isKorean(title: $0) }
+        var tried = Set<String>()
+        for title in ([context.0] + alternatives).prefix(8) where tried.insert(title).inserted {
+            if Task.isCancelled { return [] }
+            let assets: [SubtitleAsset] = await withCheckedContinuation { continuation in
+                service.findSubtitles(provider: provider, title: title, episode: Int32(item.number), episodeKey: item.displayNumber, anilistId: context.1) { values, _ in continuation.resume(returning: values ?? []) }
+            }
+            if !assets.isEmpty { return assets }
         }
+        return []
     }
     private func select(_ files: [URL], item: PlaybackItem, offsets: [Int], episode: Int? = nil, strict: Bool = false) -> URL? {
         let wanted = [episode ?? item.number] + offsets.map { item.number + $0 }

@@ -162,7 +162,11 @@ final class DownloadStore: ObservableObject {
         guard resolutionTask == nil else { return }
         error = nil
         resolutionTask = Task {
-            defer { resolver.cancel(); resolutionTask = nil; pendingResolution = 0; resolvingTitle = "" }
+            defer {
+                resolver.cancel(); resolutionTask = nil; pendingResolution = resolutionQueue.count; resolvingTitle = ""
+                // An enqueue immediately after pause/cancel must survive the old worker's cleanup.
+                if !resolutionQueue.isEmpty { enqueue([], quality: quality) }
+            }
             while !resolutionQueue.isEmpty {
                 let (item, quality) = resolutionQueue.removeFirst()
                 if Task.isCancelled { return }
@@ -185,7 +189,7 @@ final class DownloadStore: ObservableObject {
             }
         }
     }
-    func stopResolving() { resolutionQueue.removeAll(); resolutionTask?.cancel(); resolver.cancel() }
+    func stopResolving() { resolutionQueue.removeAll(); pendingResolution = 0; resolutionTask?.cancel(); resolver.cancel() }
     private func busy(_ id: String) -> Bool {
         restoring || tasks[id] != nil || backgroundTasks.keys.contains { $0.hasPrefix(id + "|") }
     }

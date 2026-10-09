@@ -201,7 +201,7 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
             val pages = cursors.getOrPut(key) { mutableMapOf() }
             if (page > 1 && pages[page] == null) return emptyList()
             val params = mutableMapOf("limit" to "15", "sort" to "-popularity")
-            params["sort"] = when(filter.sort) { "score" -> "-score"; "year" -> "-season_year"; else -> "-popularity" }
+            params["sort"] = when(filter.sort) { "score" -> "-score"; "year" -> "-started_on"; else -> "-popularity" }
             if (query.isNotBlank()) params["q"] = query
             pages[page]?.let { params["cursor"] = it }
             if (filter.year.isNotBlank()) params["season_year"] = filter.year

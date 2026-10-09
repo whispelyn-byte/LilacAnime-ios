@@ -59,7 +59,7 @@ enum OfflineAnalyzer {
     private static func pcm(_ url: URL) async throws -> [Float] {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
-        let identity = url.path + String(describing: attributes[.modificationDate])
+        let identity = "desktop-s16-v1:" + url.path + String(describing: attributes[.modificationDate])
         let file = directory.appendingPathComponent(SubtitleFiles.key(identity) + ".f32")
         if !FileManager.default.fileExists(atPath: file.path) {
             var message: UnsafeMutablePointer<CChar>?

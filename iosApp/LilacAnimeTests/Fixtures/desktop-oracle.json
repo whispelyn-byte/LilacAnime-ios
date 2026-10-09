@@ -1,4 +1,106 @@
 {
+  "tmdbQueries": [
+    {
+      "input": [
+        "Kamisama Kiss◎ OVA"
+      ],
+      "expected": [
+        "Kamisama Kiss"
+      ]
+    },
+    {
+      "input": [
+        "Ascendance of a Bookworm: Adopted Daughter of an Archduke Season 3"
+      ],
+      "expected": [
+        "Ascendance of a Bookworm: Adopted Daughter of an Archduke",
+        "Ascendance of a Bookworm"
+      ]
+    },
+    {
+      "input": [
+        "Anime 2nd Season",
+        "Anime 2nd Season",
+        "한글 제목"
+      ],
+      "expected": [
+        "Anime"
+      ]
+    },
+    {
+      "input": [
+        "Rascal Does Not Dream of Santa Claus"
+      ],
+      "expected": [
+        "Rascal Does Not Dream of Santa Claus"
+      ]
+    }
+  ],
+  "tmdbSiblings": [
+    {
+      "input": [
+        "청춘 돼지는 바니걸 선배의 꿈을 꾸지 않는다",
+        "청춘 돼지는 산타클로스의 꿈을 꾸지 않는다"
+      ],
+      "expected": true
+    },
+    {
+      "input": [
+        "외톨이 THE ROCK!",
+        "봇치 더 록!"
+      ],
+      "expected": false
+    },
+    {
+      "input": [
+        "장송의 프리렌",
+        "장송의 프리렌"
+      ],
+      "expected": false
+    }
+  ],
+  "seasonNames": [
+    {
+      "input": [
+        "오늘부터 신령님",
+        "Kamisama Kiss◎ OVA",
+        "OVA"
+      ],
+      "expected": "오늘부터 신령님 2기 OVA"
+    },
+    {
+      "input": [
+        "진격의 거인",
+        "Attack on Titan Season 2",
+        "TV"
+      ],
+      "expected": "진격의 거인 2기"
+    },
+    {
+      "input": [
+        "작품",
+        "Anime",
+        "SPECIAL"
+      ],
+      "expected": "작품 스페셜"
+    },
+    {
+      "input": [
+        "작품 OVA",
+        "Anime OVA",
+        "OVA"
+      ],
+      "expected": "작품 OVA"
+    },
+    {
+      "input": [
+        "한글 이름",
+        "한글 원제",
+        "TV"
+      ],
+      "expected": "한글 이름"
+    }
+  ],
   "titles": [
     {
       "input": "Overlord IV",

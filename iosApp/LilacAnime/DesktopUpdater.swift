@@ -31,7 +31,9 @@ final class DesktopUpdater: ObservableObject {
                 request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
                 let (data, response) = try await URLSession.shared.data(for: request)
                 guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw SubtitleFiles.failure("릴리즈를 확인할 수 없습니다.") }
-                let result = try JSONDecoder().decode(DesktopRelease.self, from: data); release = result
+                let result = try JSONDecoder().decode(DesktopRelease.self, from: data)
+                if release?.tag_name != result.tag_name { downloaded = nil }
+                release = result; latestBuild = nil; updateAvailable = false
                 if let asset = result.assets.first(where: { $0.name == "source.json" }), let url = URL(string: asset.browser_download_url) {
                     let (source, _) = try await URLSession.shared.data(from: url)
                     if let root = try JSONSerialization.jsonObject(with: source) as? [String: Any],

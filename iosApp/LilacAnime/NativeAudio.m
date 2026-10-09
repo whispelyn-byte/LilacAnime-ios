@@ -25,14 +25,23 @@ static void fail(AudioDecodeState *state, const char *message, int code) {
 }
 static bool writeSamples(AudioDecodeState *state, const uint8_t **input, int inputCount, int capacity) {
     if (capacity <= 0) return true;
-    float *samples = calloc((size_t)capacity, sizeof(float));
+    int16_t *samples = calloc((size_t)capacity, sizeof(int16_t));
     if (!samples) { fail(state, "Cannot allocate audio samples", 0); return false; }
     uint8_t *bytes = (uint8_t *)samples;
     int count = swr_convert(state->resampler, &bytes, capacity, input, inputCount);
     bool success = count >= 0;
     if (count < 0) fail(state, "Audio resampling failed", count);
-    else if (fwrite(samples, sizeof(float), (size_t)count, state->output) != (size_t)count) {
-        fail(state, "Audio cache write failed", 0); success = false;
+    else {
+        float *normalized = calloc((size_t)(count > 0 ? count : 1), sizeof(float));
+        if (!normalized) { fail(state, "Cannot allocate normalized audio samples", 0); success = false; }
+        else {
+            // Match desktop ffmpeg -f s16le and readInt16LE / 32768 before fingerprinting.
+            for (int i = 0; i < count; i++) normalized[i] = samples[i] / 32768.0f;
+            if (fwrite(normalized, sizeof(float), (size_t)count, state->output) != (size_t)count) {
+                fail(state, "Audio cache write failed", 0); success = false;
+            }
+            free(normalized);
+        }
     }
     free(samples);
     return success;
@@ -77,7 +86,7 @@ int LilacDecodeAudio(const char *source, const char *destination, bool (*cancell
     status = avcodec_open2(state.codec, decoder, NULL);
     if (status < 0) { fail(&state, "Cannot initialize audio decoder", status); goto cleanup; }
     AVChannelLayout mono = AV_CHANNEL_LAYOUT_MONO;
-    status = swr_alloc_set_opts2(&state.resampler, &mono, AV_SAMPLE_FMT_FLT, 8000, &state.codec->ch_layout,
+    status = swr_alloc_set_opts2(&state.resampler, &mono, AV_SAMPLE_FMT_S16, 8000, &state.codec->ch_layout,
                                 state.codec->sample_fmt, state.codec->sample_rate, 0, NULL);
     if (status < 0) { fail(&state, "Cannot allocate audio resampling", status); goto cleanup; }
     status = swr_init(state.resampler);

@@ -19,7 +19,7 @@ mapping = {
  'electron/download-manager.cjs': [ios+'DownloadStore.swift',ios+'DownloadTransfer.swift',ios+'DesktopDownloads.swift'],
  'electron/flix-proxy.cjs': [ios+'HLSProxy.swift'],
  'electron/local-ai.cjs': [ios+'LocalModelsView.swift',ios+'DesktopModelInstaller.swift',shared+'DesktopTranslationPrompt.kt'],
- 'electron/main.cjs': [shared+'SourceRepository.kt',shared+'DesktopSources.kt',shared+'DesktopMetadata.kt',shared+'SubtitleDiscovery.kt',shared+'DesktopCommunity.kt',ios+'PlaybackResolver.swift',ios+'WinPNGReader.swift'],
+ 'electron/main.cjs': [shared+'SourceRepository.kt',shared+'DesktopSources.kt',shared+'DesktopMetadata.kt',shared+'DesktopTmdbRules.kt',shared+'TmdbTitleResolver.kt',shared+'SubtitleDiscovery.kt',shared+'DesktopCommunity.kt',ios+'PlaybackResolver.swift',ios+'OhliPlayback.swift',ios+'Resources/ohli-capture.js',ios+'WinPNGReader.swift'],
  'electron/oped-fingerprint.cjs': [shared+'AudioFingerprint.kt',shared+'DesktopAudioFingerprint.kt',ios+'OfflineAnalyzer.swift',ios+'NativeAudio.m'],
  'electron/preload.cjs': [shared+'IosServices.kt',ios+'LibraryStore.swift'],
  'electron/subtitle-store.cjs': [ios+'EpisodeSubtitleStore.swift'],
@@ -58,7 +58,7 @@ api_map = {name: targets for names,targets in groups for name in names.split()}
 apis = re.findall(r'^  (\w+):', (desktop/'electron/preload.cjs').read_text(encoding='utf-8'), re.M)
 assert apis, 'No preload APIs found'
 assert not set(apis)-api_map.keys(), 'Unmapped APIs: '+str(set(apis)-api_map.keys())
-files = git('ls-files').decode().splitlines()
+files = git('ls-files', '--cached', '--others', '--exclude-standard').decode().splitlines()
 inventory = []
 for file in files:
     path = desktop/file
@@ -77,7 +77,10 @@ for file in files:
     assert targets is not None, 'Unmapped source: '+file
     for target in targets: assert (root/target).exists(), 'Missing target: '+target
     data = path.read_bytes().replace(b'\r\n',b'\n')
-    committed = git('show','HEAD:'+file).replace(b'\r\n',b'\n')
+    try:
+        committed = subprocess.check_output(['git', '-c', 'safe.directory='+desktop.as_posix(), '-C', str(desktop), 'show', 'HEAD:'+file], stderr=subprocess.PIPE).replace(b'\r\n',b'\n')
+    except subprocess.CalledProcessError:
+        committed = None
     inventory.append(dict(desktop=file,sha256=hashlib.sha256(data).hexdigest(),uncommitted=data!=committed,category=category,ios=targets))
 manifest = dict(desktopCommit=git('rev-parse','HEAD').decode().strip(),desktopVersion=json.loads((desktop/'package.json').read_text())['version'], files=inventory,preloadAPIs=[dict(name=name,ios=api_map[name]) for name in apis])
 (root/'docs/desktop-audit.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')

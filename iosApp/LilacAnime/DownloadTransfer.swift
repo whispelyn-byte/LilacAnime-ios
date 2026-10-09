@@ -54,7 +54,7 @@ enum DownloadTransfer {
                     guard attributes.isRegularFile == true, attributes.isSymbolicLink != true, safeName(file.lastPathComponent) else { throw SubtitleFiles.failure("다운로드 폴더에는 일반 파일만 넣을 수 있습니다.") }
                 }
                 guard FileManager.default.fileExists(atPath: source.appendingPathComponent(root).path),
-                      ((entry.subtitleFiles ?? []) + (entry.fontFiles ?? [])).allSatisfy({ FileManager.default.fileExists(atPath: source.appendingPathComponent($0).path) }) else { throw SubtitleFiles.failure("영상 또는 자막 파일이 빠져 있습니다.") }
+                      try files(entry, in: source).allSatisfy({ FileManager.default.fileExists(atPath: source.appendingPathComponent($0).path) }) else { throw SubtitleFiles.failure("영상 또는 자막 파일이 빠져 있습니다.") }
                 for manifest in resources where manifest.pathExtension == "m3u8" {
                     let content = try String(contentsOf: manifest, encoding: .utf8)
                     let lines = content.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty && !$0.hasPrefix("#") }
@@ -86,6 +86,9 @@ enum DownloadTransfer {
         for part in entry.parts ?? [] { result.insert(part.name) }
         result.formUnion(entry.subtitleFiles ?? [])
         result.formUnion(entry.fontFiles ?? [])
+        if let poster = entry.posterFile { result.insert(poster) }
+        if let subtitle = entry.primarySubtitle { result.insert(subtitle) }
+        for track in entry.subtitleTracks ?? [] { result.insert(track.file); if let translated = track.translatedFile { result.insert(translated) } }
         var pending: [String] = Array(result.filter { $0.hasSuffix(".m3u8") })
         var visited: Set<String> = []
         let regex = try NSRegularExpression(pattern: "URI=\"([^\"]+)\"", options: .caseInsensitive)
@@ -106,7 +109,9 @@ enum DownloadTransfer {
     }
     static func valid(_ entry: DownloadEntry) -> Bool {
         entry.id == SubtitleFiles.key(entry.anime.id + "#" + entry.episodeID) && entry.localFile.map(safeName) == true &&
-        (entry.rootFile == nil || entry.rootFile.map(safeName) == true) && ((entry.subtitleFiles ?? []) + (entry.fontFiles ?? [])).allSatisfy(safeName) && (entry.parts ?? []).allSatisfy { safeName($0.name) }
+        (entry.rootFile == nil || entry.rootFile.map(safeName) == true) && ((entry.subtitleFiles ?? []) + (entry.fontFiles ?? [])).allSatisfy(safeName) && (entry.parts ?? []).allSatisfy { safeName($0.name) } &&
+        (entry.posterFile == nil || entry.posterFile.map(safeName) == true) && (entry.primarySubtitle == nil || entry.primarySubtitle.map(safeName) == true) &&
+        (entry.subtitleTracks ?? []).allSatisfy { safeName($0.file) && ($0.translatedFile == nil || $0.translatedFile.map(safeName) == true) }
     }
 }
 struct DownloadTransferView: View {

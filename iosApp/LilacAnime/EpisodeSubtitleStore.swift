@@ -3,8 +3,15 @@ import SwiftUI
 
 struct SavedSubtitle: Codable, Identifiable {
     var id: String; var episodeKey: String; var name: String; var relativeFile: String; var provider: String; var translated: Bool; var date: Date
+    var behind: Bool? = nil
+    var originalFile: String? = nil
     var file: URL? {
         let result = SubtitleFiles.root.appendingPathComponent(relativeFile).standardizedFileURL
+        return result.path.hasPrefix(SubtitleFiles.root.path + "/") && FileManager.default.fileExists(atPath: result.path) ? result : nil
+    }
+    var original: URL? {
+        guard let originalFile else { return nil }
+        let result = SubtitleFiles.root.appendingPathComponent(originalFile).standardizedFileURL
         return result.path.hasPrefix(SubtitleFiles.root.path + "/") && FileManager.default.fileExists(atPath: result.path) ? result : nil
     }
 }
@@ -15,8 +22,11 @@ final class EpisodeSubtitleStore: ObservableObject {
     @Published var error: String?
     private let index = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("episode-subtitles.json")
     init() { if let data = try? Data(contentsOf: index), let saved = try? JSONDecoder().decode([SavedSubtitle].self, from: data) { records = saved } }
-    func list(_ item: PlaybackItem) -> [SavedSubtitle] { records.filter { $0.episodeKey == item.anime.id + "#" + item.episodeID && $0.file != nil }.sorted { $0.date > $1.date } }
-    func save(_ file: URL, item: PlaybackItem, provider: String, translated: Bool) {
+    func list(_ item: PlaybackItem) -> [SavedSubtitle] { records.filter { $0.episodeKey == item.anime.id + "#" + item.episodeID && $0.file != nil }.sorted {
+        if ($0.behind == true) != ($1.behind == true) { return $0.behind != true }
+        return $0.behind == true ? $0.date < $1.date : $0.date > $1.date
+    } }
+    func save(_ file: URL, item: PlaybackItem, provider: String, translated: Bool, behind: Bool = false, original: URL? = nil) {
         guard !file.lastPathComponent.hasPrefix("working-") else { return }
         do {
             let prefix = SubtitleFiles.root.path + "/"
@@ -30,16 +40,26 @@ final class EpisodeSubtitleStore: ObservableObject {
             let episodeKey = item.anime.id + "#" + item.episodeID
             let relative = String(target.path.dropFirst(prefix.count))
             let id = SubtitleFiles.key(episodeKey + relative)
-            records.removeAll { $0.id == id }
-            records.append(SavedSubtitle(id: id, episodeKey: episodeKey, name: file.lastPathComponent, relativeFile: relative, provider: provider, translated: translated, date: Date()))
+            let originalRelative = original.flatMap { value -> String? in
+                if value.path.hasPrefix(prefix) { return String(value.path.dropFirst(prefix.count)) }
+                return records.first { $0.episodeKey == episodeKey && !$0.translated && $0.name == value.lastPathComponent }?.relativeFile
+            }
+            records.removeAll { $0.id == id || (translated && $0.episodeKey == episodeKey && $0.translated && $0.provider == provider) }
+            records.append(SavedSubtitle(id: id, episodeKey: episodeKey, name: file.lastPathComponent, relativeFile: relative, provider: provider, translated: translated, date: Date(), behind: behind, originalFile: originalRelative))
+            let keep = Set(list(item).prefix(20).map(\.id))
+            records.removeAll { $0.episodeKey == episodeKey && !keep.contains($0.id) }
             persist()
         } catch { self.error = error.localizedDescription }
     }
-    func remove(_ id: String) { records.removeAll { $0.id == id }; persist() }
+    func remove(_ id: String) {
+        let file = records.first { $0.id == id }?.file
+        records.removeAll { $0.id == id }; persist()
+        if let file, !records.contains(where: { $0.file == file || $0.original == file }) { try? FileManager.default.removeItem(at: file) }
+    }
     func clear() { records.removeAll(); persist() }
     private func persist() { do { try JSONEncoder().encode(records).write(to: index, options: .atomic) } catch { self.error = error.localizedDescription } }
     func protectedFiles(library: LibraryStore) -> Set<URL> {
-        Set(records.compactMap(\.file) + library.subtitleChoices.values.compactMap { $0.relativeFile.map { SubtitleFiles.root.appendingPathComponent($0).standardizedFileURL } })
+        Set(records.compactMap(\.file) + records.compactMap(\.original) + library.subtitleChoices.values.compactMap { $0.relativeFile.map { SubtitleFiles.root.appendingPathComponent($0).standardizedFileURL } })
     }
 }
 enum SubtitleCache {
@@ -54,7 +74,7 @@ enum SubtitleCache {
             if file.path.hasPrefix(SubtitleFiles.fontDirectory.path + "/") || file.lastPathComponent.hasPrefix("working-") { continue }
             if protected.contains(file.standardizedFileURL) { continue }
             let date = (try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date.distantPast
-            if all || date < Date().addingTimeInterval(-7 * 86400) { try FileManager.default.removeItem(at: file) }
+            if DesktopSubtitlePolicy.cacheRemovable(age: Date().timeIntervalSince(date), all: all, protected: protected.contains(file.standardizedFileURL)) { try FileManager.default.removeItem(at: file) }
         }
         if all { EpisodeSubtitleStore.shared.clear(); library.clearSubtitleFiles() }
     }
@@ -69,7 +89,7 @@ struct SubtitleStorageView: View {
         List {
             Section("자막 캐시") {
                 Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
-                Text("정리는 저장한 자막·현재 선택한 자막·글꼴을 보존하고 7일 이상 지난 임시 파일을 지웁니다.").font(.caption)
+                Text("정리는 저장한 자막·현재 선택한 자막·글꼴을 보존하고 1시간 이상 지난 임시 파일을 지웁니다.").font(.caption)
                 Button("사용하지 않는 오래된 캐시 정리") { clean(false) }
                 Button("모든 자막·번역 캐시 삭제", role: .destructive) { confirm = true }
                 if let error { Text(error).foregroundStyle(.red) }

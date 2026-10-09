@@ -1,11 +1,19 @@
 import Foundation
 import SwiftUI
 import UIKit
+import LilacShared
 
 struct DownloadPart: Codable {
     var url: URL
     var name: String
     var done = false
+}
+struct DownloadSubtitleTrack: Codable, Equatable {
+    var file: String
+    var label: String
+    var language: String
+    var provider: String
+    var translatedFile: String? = nil
 }
 struct DownloadEntry: Codable, Identifiable {
     var id: String
@@ -22,6 +30,12 @@ struct DownloadEntry: Codable, Identifiable {
     var quality: String?
     var fontFiles: [String]?
     var chapters: [OfflineChapter]?
+    var subtitleTracks: [DownloadSubtitleTrack]?
+    var primarySubtitle: String?
+    var siteKorean: Bool?
+    var subtitlesPrepared: Bool?
+    var posterFile: String?
+    var retries: Int?
     var bytes: Int64?
     var status = "대기"
     var completed = 0
@@ -32,7 +46,8 @@ struct DownloadEntry: Codable, Identifiable {
         var item = PlaybackItem(entry: WatchEntry(id: id, anime: anime, episodeID: episodeID, episodeTitle: title, number: number,
             watchURL: watchURL, directURL: localFile.map { DownloadStore.directory.appendingPathComponent(id).appendingPathComponent($0).absoluteString },
             position: 0, duration: 0, updatedAt: date))
-        item.localSubtitles = (subtitleFiles ?? []).map { DownloadStore.directory.appendingPathComponent(id).appendingPathComponent($0) }
+        item.localSubtitles = orderedSubtitles.map { DownloadStore.directory.appendingPathComponent(id).appendingPathComponent($0) }
+        item.localSubtitleTracks = localTracks
         item.next = following(DownloadStore.shared.entries)
         item.preceding = preceding(DownloadStore.shared.entries)
         return item
@@ -59,7 +74,11 @@ struct DownloadEntry: Codable, Identifiable {
     private var singlePlayback: PlaybackItem {
         var item = PlaybackItem(entry: WatchEntry(id: id, anime: anime, episodeID: episodeID, episodeTitle: title, number: number, watchURL: watchURL,
             directURL: localFile.map { DownloadStore.directory.appendingPathComponent(id).appendingPathComponent($0).absoluteString }, position: 0, duration: 0, updatedAt: date))
-        item.localSubtitles = (subtitleFiles ?? []).map { DownloadStore.directory.appendingPathComponent(id).appendingPathComponent($0) }; return item
+        item.localSubtitles = orderedSubtitles.map { DownloadStore.directory.appendingPathComponent(id).appendingPathComponent($0) }; item.localSubtitleTracks = localTracks; return item
+    }
+    private var orderedSubtitles: [String] { primarySubtitle.map { [$0] + (subtitleFiles ?? []).filter { $0 != primarySubtitle } } ?? (subtitleFiles ?? []) }
+    private var localTracks: [RemoteSubtitle] {
+        (subtitleTracks ?? []).map { track in RemoteSubtitle(label: track.label, url: DownloadStore.directory.appendingPathComponent(id).appendingPathComponent(track.translatedFile ?? track.file), language: track.translatedFile == nil ? track.language : "ko") }
     }
 }
 @MainActor
@@ -68,11 +87,13 @@ final class DownloadStore: ObservableObject {
     static let shared = DownloadStore()
     @Published private(set) var entries: [DownloadEntry] = []
     private var savedManifests: [String: Data] = [:]
-    weak var library: LibraryStore? { didSet { translateSavedDownloads(); analyzeCompletedDownloads() } }
+    weak var library: LibraryStore? { didSet { prepareCompletedDownloads(); analyzeCompletedDownloads() } }
     @Published var translationStatus: String?
     private let downloadTranslator = TranslationCoordinator()
     private var subtitleTask: Task<Void, Never>?
     private var translatedDownloads: Set<String> = []
+    private var preparationTask: Task<Void, Never>?
+    private var retryTasks: [String: Task<Void, Never>] = [:]
     @Published var analysisStatus: String?
     @Published private(set) var clearing = false
     private var analysisTask: Task<Void, Never>?
@@ -85,6 +106,7 @@ final class DownloadStore: ObservableObject {
     @Published private(set) var pendingResolution = 0
     @Published private(set) var resolvingTitle = ""
     private var resolutionTask: Task<Void, Never>?
+    private var resolutionQueue: [(PlaybackItem, String)] = []
     private let resolver = PlaybackResolver()
     private var tasks: [String: Task<Void, Never>] = [:]
     private var backgroundTasks: [String: URLSessionDownloadTask] = [:]
@@ -113,12 +135,15 @@ final class DownloadStore: ObservableObject {
                     self.update(id) { $0.status = "다운로드 중" }
                 }
                 self.restoring = false
+                self.pump()
             }
         }
     }
     func download(_ item: PlaybackItem, stream: ResolvedStream, quality: String = "Auto") {
         let id = SubtitleFiles.key(item.anime.id + "#" + item.episodeID)
         guard !busy(id) else { return }
+        if let existing = entries.first(where: { $0.id == id }), let local = existing.localFile,
+           FileManager.default.fileExists(atPath: Self.directory.appendingPathComponent(id).appendingPathComponent(local).path) { prepareCompletedDownloads(); return }
         if !entries.contains(where: { $0.id == id }) {
             entries.insert(DownloadEntry(id: id, anime: item.anime, episodeID: item.episodeID, title: item.title,
                 number: item.number, watchURL: item.watchURL.absoluteString, stream: stream, quality: quality), at: 0)
@@ -133,21 +158,26 @@ final class DownloadStore: ObservableObject {
         start(id)
     }
     func enqueue(_ items: [PlaybackItem], quality: String) {
-        guard resolutionTask == nil else { error = "다른 회차의 영상 주소를 준비 중입니다."; return }
-        pendingResolution = items.count; error = nil
+        for item in items where !resolutionQueue.contains(where: { $0.0.anime.id == item.anime.id && $0.0.episodeID == item.episodeID }) { resolutionQueue.append((item, quality)); pendingResolution += 1 }
+        guard resolutionTask == nil else { return }
+        error = nil
         resolutionTask = Task {
             defer { resolver.cancel(); resolutionTask = nil; pendingResolution = 0; resolvingTitle = "" }
-            for item in items {
+            while !resolutionQueue.isEmpty {
+                let (item, quality) = resolutionQueue.removeFirst()
                 if Task.isCancelled { return }
                 resolvingTitle = item.anime.title + " · " + item.title
                 let id = SubtitleFiles.key(item.anime.id + "#" + item.episodeID)
                 if entries.contains(where: { $0.id == id && ($0.localFile != nil || busy(id)) }) { pendingResolution -= 1; continue }
-                resolver.resolve(item)
+                let preferRaw = await subtitlePreparer.preferRaw(item, preferences: library?.preferences ?? AppPreferences(), downloading: true)
+                if Task.isCancelled { return }
+                resolver.resolve(item, preferRaw: preferRaw, preferred: library?.preferences.preferredServers?[item.anime.source])
                 while resolver.loading && resolver.streams.isEmpty && !Task.isCancelled {
                     do { try await Task.sleep(nanoseconds: 200_000_000) } catch { return }
                 }
                 if Task.isCancelled { return }
-                let chosen = item.anime.source == "miruro" ? await DownloadStreamSelector.choose(resolver.streams, quality: quality) : resolver.streams.first
+                let ordered = DesktopStreamPolicy.ordered(resolver.streams, preferRaw: preferRaw, preferred: library?.preferences.preferredServers?[item.anime.source], workingProvider: UserDefaults.standard.string(forKey: "miruro.working-provider"))
+                let chosen = item.anime.source == "miruro" ? await DownloadStreamSelector.choose(ordered, quality: quality) : resolver.streams.first
                 if Task.isCancelled { return }
                 if let stream = chosen { download(item, stream: stream, quality: quality) }
                 else { error = item.title + ": " + (resolver.error ?? "영상 주소를 찾지 못했습니다.") }
@@ -155,11 +185,11 @@ final class DownloadStore: ObservableObject {
             }
         }
     }
-    func stopResolving() { resolutionTask?.cancel(); resolver.cancel() }
+    func stopResolving() { resolutionQueue.removeAll(); resolutionTask?.cancel(); resolver.cancel() }
     private func busy(_ id: String) -> Bool {
         restoring || tasks[id] != nil || backgroundTasks.keys.contains { $0.hasPrefix(id + "|") }
     }
-    func retry(_ entry: DownloadEntry) { if entry.status == "실패" { enqueue([entry.playback], quality: entry.quality ?? "Auto") } else { start(entry.id) } }
+    func retry(_ entry: DownloadEntry) { retryTasks[entry.id]?.cancel(); retryTasks[entry.id] = nil; update(entry.id) { $0.retries = 0 }; if entry.status == "실패" { enqueue([entry.playback], quality: entry.quality ?? "Auto") } else { start(entry.id) } }
     private func start(_ id: String) {
         guard !busy(id), let entry = entries.first(where: { $0.id == id }), entry.localFile == nil else { return }
         update(id) { $0.status = "준비 중"; $0.error = nil }
@@ -185,58 +215,16 @@ final class DownloadStore: ObservableObject {
                 for index in parts.indices {
                     parts[index].done = FileManager.default.fileExists(atPath: folder.appendingPathComponent(parts[index].name).path)
                 }
-                var subtitles = entry.subtitleFiles ?? []
-                if subtitles.isEmpty && library?.preferences.downloadSubtitles != false {
-                    let tracks = entry.stream.subtitles.sorted { lhs, rhs in
-                        func rank(_ track: RemoteSubtitle) -> Int {
-                            let name = track.label.lowercased()
-                            return track.language.lowercased().hasPrefix("ko") || name.contains("한국") || name.contains("korean") ? 0 : 1
-                        }
-                        return rank(lhs) < rank(rhs)
-                    }
-                    for (index, track) in tracks.enumerated() {
-                        do {
-                            let prepared = try await SubtitleFiles.prepare(track.url, headers: track.headers ?? [:])
-                            for (part, file) in prepared.enumerated() {
-                                let label = track.label.replacingOccurrences(of: "[^\\p{L}\\p{N}_-]", with: "_", options: .regularExpression)
-                                let name = "subtitle-\(index)-\(part)-" + String(label.prefix(60)) + "." + file.pathExtension
-                                let destination = folder.appendingPathComponent(name)
-                                if !FileManager.default.fileExists(atPath: destination.path) { try FileManager.default.copyItem(at: file, to: destination) }
-                                subtitles.append(name)
-                            }
-                        } catch { /* Keep video download available when a subtitle host fails. */ }
-                    }
-                    let preferences = library?.preferences ?? AppPreferences()
-                    var extra = EpisodeSubtitleStore.shared.list(entry.playback).compactMap(\.file)
-                    if extra.isEmpty, let prepared = try? await subtitlePreparer.prepare(entry.playback, tracks: entry.stream.subtitles, preferences: preferences) { extra.append(prepared.0) }
-                    for file in extra {
-                        let name = "saved-" + file.lastPathComponent
-                        let target = folder.appendingPathComponent(name)
-                        if !FileManager.default.fileExists(atPath: target.path) { try FileManager.default.copyItem(at: file, to: target) }
-                        if !subtitles.contains(name) { subtitles.append(name) }
-                    }
-                    update(id) { $0.subtitleFiles = subtitles }
-                }
-                if library?.preferences.downloadSubtitles != false {
-                    var fonts: [String] = []
-                    for file in (try? FileManager.default.contentsOfDirectory(at: SubtitleFiles.fontDirectory, includingPropertiesForKeys: nil)) ?? [] {
-                        guard ["ttf","otf","ttc"].contains(file.pathExtension.lowercased()) else { continue }
-                        let name = "font-" + String(SubtitleFiles.key(file.lastPathComponent).prefix(12)) + "-" + file.lastPathComponent
-                        let target = folder.appendingPathComponent(name)
-                        if !FileManager.default.fileExists(atPath: target.path) { try FileManager.default.copyItem(at: file, to: target) }
-                        fonts.append(name)
-                    }
-                    update(id) { $0.fontFiles = fonts }
-                }
                 try Task.checkCancellation()
                 update(id) { $0.rootFile = root; $0.parts = parts; $0.completed = parts.filter(\.done).count; $0.total = parts.count; $0.status = "다운로드 중" }
-                if parts.allSatisfy(\.done) { update(id) { $0.localFile = root; $0.status = "완료" }; translateSavedDownloads(); analyzeCompletedDownloads(); return }
+                if parts.allSatisfy(\.done) { update(id) { $0.localFile = root; $0.status = "완료"; $0.retries = 0 }; prepareCompletedDownloads(); analyzeCompletedDownloads(); return }
                 pump()
             } catch is CancellationError { update(id) { $0.status = "중단됨" } }
-            catch { update(id) { $0.status = "실패"; $0.error = error.localizedDescription } }
+            catch { failed(id, error: error) }
         }
     }
     func cancel(_ id: String) {
+        retryTasks[id]?.cancel(); retryTasks[id] = nil
         tasks[id]?.cancel()
         for (description, task) in backgroundTasks where description.hasPrefix(id + "|") {
             task.cancel { data in
@@ -246,6 +234,7 @@ final class DownloadStore: ObservableObject {
         update(id) { $0.status = "중단됨" }
     }
     func delete(_ id: String) {
+        retryTasks[id]?.cancel(); retryTasks[id] = nil
         guard !busy(id) else { cancel(id); error = "다운로드를 중단한 뒤 삭제하세요."; return }
         do {
             let folder = Self.directory.appendingPathComponent(id)
@@ -258,6 +247,7 @@ final class DownloadStore: ObservableObject {
         guard fields.count == 2, let index = entries.firstIndex(where: { $0.id == fields[0] }),
               let partIndex = entries[index].parts?.firstIndex(where: { $0.name == fields[1] }),
               let target = BackgroundDownloadDelegate.destination(description) else { try? FileManager.default.removeItem(at: staged); return }
+        guard entries[index].status != "중단됨" else { try? FileManager.default.removeItem(at: staged); return }
         do {
             if entries[index].stream.manifestKey != nil && (fields[1].hasSuffix(".ts") || mime.hasPrefix("image/")) {
                 let decoded = HLSData.fragment(try Data(contentsOf: staged))
@@ -271,8 +261,8 @@ final class DownloadStore: ObservableObject {
             entries[index].parts?[partIndex].done = true
             entries[index].completed = entries[index].parts?.filter(\.done).count ?? 0
             if entries[index].parts?.allSatisfy(\.done) == true {
-                entries[index].localFile = entries[index].rootFile; entries[index].status = "완료"; entries[index].error = nil
-                translateSavedDownloads(); analyzeCompletedDownloads()
+                entries[index].localFile = entries[index].rootFile; entries[index].status = "완료"; entries[index].error = nil; entries[index].retries = 0
+                prepareCompletedDownloads(); analyzeCompletedDownloads()
             }
             persist()
         } catch { backgroundFailed(description, error: error) }
@@ -283,14 +273,18 @@ final class DownloadStore: ObservableObject {
         if let resume = ns.userInfo["NSURLSessionDownloadTaskResumeData"] as? Data,
            let path = BackgroundDownloadDelegate.destination(description, suffix: ".resume") { try? resume.write(to: path, options: .atomic) }
         if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled { update(id) { if $0.status != "완료" { $0.status = "중단됨" } } }
-        else { update(id) { $0.status = "실패"; $0.error = error.localizedDescription } }
+        else { failed(id, error: error) }
     }
     func backgroundCompleted(_ description: String) { backgroundTasks.removeValue(forKey: description); pump() }
     private func pump() {
         guard !restoring else { return }
-        for entry in entries where entry.status == "다운로드 중" && entry.localFile == nil {
+        var active = Set(backgroundTasks.keys.map { $0.components(separatedBy: "|")[0] })
+        for entry in entries.reversed() where entry.status == "다운로드 중" && entry.localFile == nil {
+            if !active.contains(entry.id) && active.count >= 2 { continue }
+            active.insert(entry.id)
             for part in entry.parts ?? [] where !part.done {
-                guard backgroundTasks.count < 6 else { return }
+                guard backgroundTasks.count < 12 else { return }
+                if backgroundTasks.keys.filter({ $0.hasPrefix(entry.id + "|") }).count >= 6 { break }
                 let description = entry.id + "|" + part.name
                 guard backgroundTasks[description] == nil else { continue }
                 let resumed = Self.directory.appendingPathComponent(entry.id).appendingPathComponent(part.name + ".resume")
@@ -314,7 +308,7 @@ final class DownloadStore: ObservableObject {
             samples[description] = (Date(), written)
         } else if samples[description] == nil { samples[description] = (Date(), written) }
     }
-    func pauseAll() { analysisTask?.cancel(); subtitleTask?.cancel(); downloadTranslator.cancel(); stopResolving(); for entry in entries where entry.localFile == nil { cancel(entry.id) } }
+    func pauseAll() { analysisTask?.cancel(); subtitleTask?.cancel(); preparationTask?.cancel(); downloadTranslator.cancel(); stopResolving(); for entry in entries where entry.localFile == nil { cancel(entry.id) } }
     func resumeAll() { enqueue(entries.filter { $0.localFile == nil }.map(\.playback), quality: library?.preferences.quality ?? "Auto") }
     func clearCompleted() { for entry in entries where entry.localFile != nil { delete(entry.id) } }
     func clearList() {
@@ -343,10 +337,10 @@ final class DownloadStore: ObservableObject {
         defer { clearing = false }
         pauseAll()
         for _ in 0..<100 {
-            if tasks.isEmpty && backgroundTasks.isEmpty && resolutionTask == nil && subtitleTask == nil && analysisTask == nil && !restoring { break }
+            if tasks.isEmpty && backgroundTasks.isEmpty && resolutionTask == nil && subtitleTask == nil && preparationTask == nil && analysisTask == nil && !restoring { break }
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
-        guard tasks.isEmpty && backgroundTasks.isEmpty && resolutionTask == nil && subtitleTask == nil && analysisTask == nil && !restoring else {
+        guard tasks.isEmpty && backgroundTasks.isEmpty && resolutionTask == nil && subtitleTask == nil && preparationTask == nil && analysisTask == nil && !restoring else {
             error = "다운로드 중단이 끝나면 다시 삭제하세요."; return
         }
         for entry in entries { delete(entry.id) }
@@ -371,9 +365,107 @@ final class DownloadStore: ObservableObject {
             }
         }
     }
+    private func failed(_ id: String, error: Error) {
+        guard entries.contains(where: { $0.id == id && $0.status != "중단됨" }) else { return }
+        let attempt = (entries.first { $0.id == id }?.retries ?? 0) + 1
+        update(id) { $0.status = "실패"; $0.retries = attempt; $0.error = error.localizedDescription + (attempt <= 2 ? (attempt == 1 ? " · 30초 뒤 다시 시도" : " · 2분 뒤 다시 시도") : "") }
+        guard attempt <= 2 else { return }
+        retryTasks[id]?.cancel()
+        retryTasks[id] = Task {
+            do { try await Task.sleep(nanoseconds: attempt == 1 ? 30_000_000_000 : 120_000_000_000) } catch { return }
+            guard let entry = entries.first(where: { $0.id == id && $0.status == "실패" }) else { return }
+            // Keep existing segments, but resolve a fresh expiring media URL.
+            enqueue([entry.playback], quality: entry.quality ?? "Auto")
+        }
+    }
+    /// Subtitles, fonts, poster and skip metadata run after the media transfer, outside its slots.
+    func prepareCompletedDownloads() {
+        guard preparationTask == nil, library != nil, !clearing else { return }
+        preparationTask = Task(priority: .utility) {
+            defer { preparationTask = nil; translateSavedDownloads() }
+            for entry in entries.reversed() where entry.localFile != nil && entry.subtitlesPrepared != true {
+                if Task.isCancelled { return }
+                do { try await prepareAssets(entry) }
+                catch is CancellationError { return }
+                catch { self.error = entry.title + ": " + error.localizedDescription }
+            }
+        }
+    }
+    private func prepareAssets(_ entry: DownloadEntry) async throws {
+        guard let library else { return }
+        let folder = Self.directory.appendingPathComponent(entry.id)
+        guard entries.contains(where: { $0.id == entry.id }), FileManager.default.fileExists(atPath: folder.path) else { return }
+        let preferences = library.preferences
+        var files = entry.subtitleFiles ?? []
+        var tracks = entry.subtitleTracks ?? []
+        var primary = entry.primarySubtitle
+        let siteKorean = DesktopSubtitlePolicy.siteKorean(source: entry.anime.source, tracks: entry.stream.subtitles)
+        func copy(_ file: URL, label: String, language: String, provider: String) throws -> String {
+            let name = "subtitle-" + String(SubtitleFiles.key(file.path).prefix(16)) + "." + file.pathExtension
+            let target = folder.appendingPathComponent(name)
+            if file.standardizedFileURL != target.standardizedFileURL && !FileManager.default.fileExists(atPath: target.path) { try FileManager.default.copyItem(at: file, to: target) }
+            if !files.contains(name) { files.append(name) }
+            if !tracks.contains(where: { $0.file == name }) { tracks.append(DownloadSubtitleTrack(file: name, label: label, language: language, provider: provider)) }
+            return name
+        }
+        if preferences.downloadSubtitles != false && !DesktopSubtitlePolicy.burnedKorean(source: entry.anime.source) {
+            if let prepared = try await subtitlePreparer.prepare(entry.playback, tracks: entry.stream.subtitles, preferences: preferences) {
+                primary = try copy(prepared.0, label: prepared.1, language: SubtitleFiles.isKorean(prepared.0) ? "ko" : prepared.1 == "jimaku" ? "ja" : "", provider: prepared.1)
+                EpisodeSubtitleStore.shared.save(prepared.0, item: entry.playback, provider: prepared.1, translated: EpisodeSubtitleStore.shared.list(entry.playback).contains { $0.file == prepared.0 && $0.translated })
+            }
+            for track in entry.stream.subtitles {
+                try Task.checkCancellation()
+                if let prepared = try? await SubtitleFiles.prepare(track.url, headers: track.headers ?? [:]) {
+                    for file in prepared { _ = try copy(file, label: track.label, language: track.language, provider: "reanime") }
+                }
+            }
+            // Keep a separate translation source beside fansubs, never beside the site's own Korean track.
+            if !siteKorean, preferences.translationPreferences(automatic: true) != nil,
+               let source = try await subtitlePreparer.translationSource(entry.playback, tracks: entry.stream.subtitles, preferences: preferences) {
+                let name = try copy(source.0, label: source.1, language: source.1 == "jimaku" ? "ja" : "", provider: source.1)
+                EpisodeSubtitleStore.shared.save(source.0, item: entry.playback, provider: source.1, translated: false, behind: primary != nil)
+                if primary == nil && !entry.stream.label.hasPrefix("SUB") { primary = name }
+            }
+            var fonts: [String] = []
+            for file in (try? FileManager.default.contentsOfDirectory(at: SubtitleFiles.fontDirectory, includingPropertiesForKeys: nil)) ?? [] where ["ttf", "otf", "ttc"].contains(file.pathExtension.lowercased()) {
+                let name = "font-" + String(SubtitleFiles.key(file.lastPathComponent).prefix(12)) + "-" + file.lastPathComponent
+                let target = folder.appendingPathComponent(name)
+                if !FileManager.default.fileExists(atPath: target.path) { try FileManager.default.copyItem(at: file, to: target) }
+                fonts.append(name)
+            }
+            update(entry.id) { $0.subtitleFiles = files; $0.subtitleTracks = tracks; $0.primarySubtitle = primary; $0.siteKorean = siteKorean; $0.fontFiles = fonts }
+        }
+        if entry.posterFile == nil, let url = URL(string: entry.anime.poster), ["http", "https"].contains(url.scheme ?? "") {
+            if let response = try? await URLSession.shared.data(from: url), let http = response.1 as? HTTPURLResponse,
+               (200..<300).contains(http.statusCode), http.mimeType?.hasPrefix("image/") == true, response.0.count <= 16_000_000 {
+                let name = "poster." + (http.mimeType == "image/png" ? "png" : http.mimeType == "image/webp" ? "webp" : "jpg")
+                try response.0.write(to: folder.appendingPathComponent(name), options: .atomic)
+                update(entry.id) { $0.posterFile = name }
+            }
+        }
+        if (entry.chapters ?? []).isEmpty {
+            let service = IosServices()
+            defer { service.close() }
+            for attempt in 0..<2 {
+                let segments: [SkipSegment] = await withCheckedContinuation { continuation in
+                    service.skipSegments(anilistId: entry.anime.anime.anilistId?.int32Value ?? 0, malId: entry.anime.anime.malId?.int32Value ?? 0, episode: Int32(entry.number), duration: 0) { values, _ in continuation.resume(returning: values ?? []) }
+                }
+                if !segments.isEmpty {
+                    let chapters = segments.map { OfflineChapter(type: $0.type, start: $0.start, end: $0.end, score: 1) }
+                    update(entry.id) { $0.chapters = chapters }
+                    try FileManager.default.createDirectory(at: OfflineAnalyzer.directory, withIntermediateDirectories: true)
+                    try JSONEncoder().encode(chapters).write(to: OfflineAnalyzer.directory.appendingPathComponent(SubtitleFiles.key(entry.anime.id + "#" + entry.episodeID) + ".json"), options: .atomic)
+                    break
+                }
+                if attempt == 0 { try await Task.sleep(nanoseconds: 500_000_000) }
+            }
+        }
+        try Task.checkCancellation()
+        update(entry.id) { $0.subtitlesPrepared = true }
+    }
     func translateSavedDownloads() {
         guard subtitleTask == nil, let library, library.preferences.translateDownloads != false,
-              library.preferences.autoTranslation, library.preferences.downloadSubtitles != false else { return }
+              library.preferences.translationPreferences() != nil, library.preferences.downloadSubtitles != false else { return }
         subtitleTask = Task(priority: .utility) {
             defer { subtitleTask = nil; translationStatus = nil }
             while let entry = entries.first(where: { $0.localFile != nil && !translatedDownloads.contains($0.id) }) {
@@ -381,19 +473,28 @@ final class DownloadStore: ObservableObject {
                 translatedDownloads.insert(entry.id)
                 let folder = Self.directory.appendingPathComponent(entry.id)
                 let files = (entry.subtitleFiles ?? []).map { folder.appendingPathComponent($0) }
-                guard !files.contains(where: { $0.lastPathComponent.hasPrefix("translated-") || SubtitleFiles.isKorean($0) }),
-                      let original = files.first(where: { !SubtitleFiles.isKorean($0) }) else { continue }
+                guard !DesktopSubtitlePolicy.burnedKorean(source: entry.anime.source), entry.siteKorean != true,
+                      !files.contains(where: { $0.lastPathComponent.hasPrefix("translated-") }),
+                      let preferences = library.preferences.translationPreferences() else { continue }
+                let tracks = entry.subtitleTracks ?? []
+                let jimaku = library.preferences.autoTranslation ? tracks.first { $0.provider == "jimaku" } : nil
+                let remote = tracks.map { RemoteSubtitle(label: $0.label, url: folder.appendingPathComponent($0.file), language: $0.language) }
+                guard let original = jimaku.map({ folder.appendingPathComponent($0.file) }) ?? DesktopSubtitlePolicy.translationTrack(remote)?.url ?? (tracks.isEmpty ? files.first(where: { !SubtitleFiles.isKorean($0) }) : nil) else { continue }
                 let item = entry.playback
                 translationStatus = entry.anime.title + " · " + entry.title + " 자막 번역"
                 EpisodeSubtitleStore.shared.save(original, item: item, provider: "다운로드", translated: false)
-                downloadTranslator.translate(original, preferences: library.preferences, anime: entry.anime, background: true) { [weak self] output in
+                downloadTranslator.translate(original, preferences: preferences, anime: entry.anime, background: true) { [weak self] output in
                     guard let self, !output.lastPathComponent.hasPrefix("working-") else { return }
                     do {
                         let name = "translated-" + output.lastPathComponent
                         let target = folder.appendingPathComponent(name)
                         if !FileManager.default.fileExists(atPath: target.path) { try FileManager.default.copyItem(at: output, to: target) }
-                        self.update(entry.id) { if !($0.subtitleFiles ?? []).contains(name) { $0.subtitleFiles = ($0.subtitleFiles ?? []) + [name] } }
-                        EpisodeSubtitleStore.shared.save(output, item: item, provider: library.preferences.translationProvider, translated: true)
+                        self.update(entry.id) {
+                            if !($0.subtitleFiles ?? []).contains(name) { $0.subtitleFiles = ($0.subtitleFiles ?? []) + [name] }
+                            if let index = $0.subtitleTracks?.firstIndex(where: { folder.appendingPathComponent($0.file) == original }) { $0.subtitleTracks?[index].translatedFile = name }
+                            if $0.primarySubtitle == original.lastPathComponent { $0.primarySubtitle = name }
+                        }
+                        EpisodeSubtitleStore.shared.save(output, item: item, provider: preferences.translationProvider, translated: true, behind: entry.primarySubtitle != original.lastPathComponent, original: original)
                     } catch { self.error = error.localizedDescription }
                 }
                 while downloadTranslator.running && !Task.isCancelled {
@@ -453,6 +554,7 @@ struct DownloadsView: View {
             List {
                 if downloads.pendingResolution > 0 {
                     VStack(alignment: .leading, spacing: 8) {
+                        if let poster = entry.posterFile { AnimeArtwork(url: DownloadStore.directory.appendingPathComponent(entry.id).appendingPathComponent(poster).absoluteString, width: 75, height: 105).clipShape(RoundedRectangle(cornerRadius: 8)) }
                         ProgressView("영상 준비 · \(downloads.pendingResolution)개 남음")
                         Text(downloads.resolvingTitle).font(.caption).foregroundStyle(.secondary)
                         Button("준비 중단") { downloads.stopResolving() }

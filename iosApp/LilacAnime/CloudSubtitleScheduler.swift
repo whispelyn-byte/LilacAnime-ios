@@ -14,15 +14,18 @@ enum CloudSubtitleScheduler {
             var active: [UUID: [Int]] = [:]
             var lastPosition = position()
             var first = true
+            let batchLines = provider == "gemini" ? 600 : provider == "openai" ? 150 : provider == "deepl" ? 50 : 100
+            let batchCharacters = provider == "gemini" ? 30000 : provider == "openai" ? 9000 : provider == "deepl" ? 20000 : 6000
+            let parallel = provider == "gemini" || provider == "deepl" ? 2 : 4
             func pending(rush: Bool) -> [Int] {
                 let reserved = Set(active.values.flatMap { $0 }.map { lines[$0] })
                 var translated = cached()
                 if !rush { for line in reserved { translated[line] = "" } }
-                let limit = rush ? 16 : first ? 40 : provider == "gemini" ? 250 : provider == "deepl" ? 50 : 100
+                let limit = rush || first ? 40 : batchLines
                 let candidates = TranslationPriority.indices(starts: cues.map(\.startSeconds), ends: cues.map(\.endSeconds),
                     lines: lines, translated: translated, position: position(), limit: limit)
                 var count = 0
-                return Array(candidates.prefix { index in count += lines[index].count; return count <= (provider == "gemini" || provider == "deepl" ? 20000 : 6000) || count == lines[index].count })
+                return Array(candidates.prefix { index in count += lines[index].count; return count <= batchCharacters || count == lines[index].count })
             }
             func launch(_ indices: [Int]) {
                 guard !indices.isEmpty else { return }
@@ -40,14 +43,19 @@ enum CloudSubtitleScheduler {
             tick()
             while lines.contains(where: { cached()[$0] == nil }) {
                 try Task.checkCancellation()
-                while active.count < 2 {
+                while active.count < parallel {
                     let next = pending(rush: false); if next.isEmpty { break }; launch(next)
                 }
                 guard let event = try await group.next() else { break }
                 switch event {
                 case .tick:
                     let current = position()
-                    if abs(current - lastPosition) >= 20 && active.count < 3 { launch(pending(rush: true)); lastPosition = current }
+                    if abs(current - lastPosition) >= 20 && active.count <= parallel {
+                        let missing = pending(rush: true)
+                        if let next = missing.first, cues[next].startSeconds <= current + 60,
+                           !active.values.contains(where: { $0.contains(next) && $0.count <= 40 }) { launch(missing) }
+                        lastPosition = current
+                    }
                     tick()
                 case let .result(id, indices, output, failure):
                     active[id] = nil

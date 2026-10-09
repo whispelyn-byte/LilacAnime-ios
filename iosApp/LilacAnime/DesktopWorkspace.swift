@@ -20,9 +20,9 @@ struct DesktopFullCatalog: View {
     @State private var validationError: String?
     private var sorts: [String] {
         if applied.active { return remote.filters?.sorts ?? ["default"] }
-        switch library.preferences.source { case "linkkf": return ["default", "year"]; case "linkani": return ["default", "popular"]; case "ohli24": return ["default"]; default: return ["popular", "year", "score"] }
+        switch library.preferences.source { case "linkkf": return ["default", "year"]; case "linkani": return ["default", "updated"]; case "ohli24": return ["default", "updated"]; default: return ["popular", "year", "updated", "score"] }
     }
-    private var remoteSource: Bool { applied.active || ["miruro", "animenosub", "linkani"].contains(library.preferences.source) }
+    private var remoteSource: Bool { applied.active || sort == "updated" || ["miruro", "animenosub", "linkani"].contains(library.preferences.source) }
     private var values: [SavedAnime] {
         let wanted = DesktopTitleRules.shared.key(title: query)
         let items = UIShowcase.enabled ? UIShowcase.items.map { SavedAnime($0, source: library.preferences.source) } : remoteSource ? remote.items.map { SavedAnime($0, source: library.preferences.source) } : (catalog.catalogs[library.preferences.source] ?? [])
@@ -33,7 +33,9 @@ struct DesktopFullCatalog: View {
         if sort == "default" || remoteSource { return result }
         return result.sorted { a, b in
             switch sort {
-            case "year": if a.anime.year != b.anime.year { return a.anime.year > b.anime.year }
+            case "year":
+                let left = DesktopAnimeMetadata.shared.releaseDate(anime: a.anime), right = DesktopAnimeMetadata.shared.releaseDate(anime: b.anime)
+                if left != right { return left > right }
             case "score": if a.anime.score != b.anime.score { return a.anime.score > b.anime.score }
             case "popular": if a.anime.popularity != b.anime.popularity { return a.anime.popularity > b.anime.popularity }
             default: break
@@ -47,7 +49,7 @@ struct DesktopFullCatalog: View {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         Picker("소스", selection: $library.preferences.source) { ForEach(ContentSources.keys, id: \.self) { Text(ContentSources.name($0)).tag($0) } }
-                        Picker("정렬", selection: $sort) { ForEach(sorts, id: \.self) { Text($0 == "popular" ? "인기순" : $0 == "year" ? "최신순" : $0 == "score" ? "평점순" : "기본 순서").tag($0) } }
+                        Picker("정렬", selection: $sort) { ForEach(sorts, id: \.self) { Text($0 == "popular" ? "인기순" : $0 == "year" ? "최신순" : $0 == "score" ? "평점순" : $0 == "updated" ? "회차 업데이트순" : "기본 순서").tag($0) } }
                         NavigationLink { CatalogIndexView() } label: { Image(systemName: "arrow.triangle.2.circlepath") }
                     }
                     filterPanel

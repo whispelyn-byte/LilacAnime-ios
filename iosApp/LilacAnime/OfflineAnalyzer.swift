@@ -21,30 +21,31 @@ enum OfflineAnalyzer {
         let work = Task.detached(priority: .utility) {
             var count = 0
             for group in Dictionary(grouping: entries, by: { $0.anime.id }).values where group.count >= 2 {
-                var fingerprints: [(DownloadEntry, KotlinFloatArray)] = []
-                for item in group {
+                var fingerprints: [(DownloadEntry, KotlinFloatArray, KotlinFloatArray, Double)] = []
+                for item in group.sorted(by: { $0.number < $1.number }) {
                     try Task.checkCancellation()
                     guard let filename = item.localFile else { continue }
                     let url = DownloadStore.directory.appendingPathComponent(item.id).appendingPathComponent(filename)
                     let data = try await pcm(url)
-                    let kotlin = KotlinFloatArray(size: Int32(data.count))
-                    for index in data.indices { kotlin.set(index: Int32(index), value: data[index]) }
-                    fingerprints.append((item, AudioFingerprint.shared.compute(samples: kotlin, sampleRate: 8000)))
-                }
-                for (item, fingerprint) in fingerprints {
-                    try Task.checkCancellation()
-                    var candidates: [[AudioMatch]] = []
-                    for (other, otherFingerprint) in fingerprints where other.id != item.id {
-                        candidates.append(AudioFingerprint.shared.repeated(a: fingerprint, b: otherFingerprint))
+                    guard data.count >= 120 * 8000 else { continue }
+                    func fingerprint(_ samples: ArraySlice<Float>) -> KotlinFloatArray {
+                        let kotlin = KotlinFloatArray(size: Int32(samples.count))
+                        for (index, value) in samples.enumerated() { kotlin.set(index: Int32(index), value: value) }
+                        return AudioFingerprint.shared.compute(samples: kotlin, sampleRate: 8000)
                     }
-                    let duration = Double(fingerprint.size) / 32 * 0.1
+                    fingerprints.append((item, fingerprint(data.prefix(300 * 8000)), fingerprint(data.suffix(300 * 8000)), Double(data.count) / 8000))
+                }
+                for (item, front, back, duration) in fingerprints {
+                    try Task.checkCancellation()
+                    var opening: [AudioMatch] = [], ending: [AudioMatch] = []
+                    for (_, otherFront, otherBack, _) in fingerprints.filter({ $0.0.id != item.id }).prefix(5) {
+                        if let match = DesktopAudioFingerprint.shared.region(a: front, b: otherFront) { opening.append(match) }
+                        if let match = DesktopAudioFingerprint.shared.region(a: back, b: otherBack) { ending.append(match) }
+                    }
                     var selected: [OfflineChapter] = []
-                    for type in ["op","ed"] {
-                        let matches = candidates.flatMap { $0 }.filter { type == "op" ? $0.startSeconds < duration / 2 : $0.startSeconds >= duration / 2 }
-                        guard let best = matches.max(by: { $0.score < $1.score }) else { continue }
-                        let supporting = candidates.filter { list in list.contains { abs($0.startSeconds - best.startSeconds) <= 60 } }.count
-                        guard supporting >= max(1, Int(ceil(Double(candidates.count) * 0.6))) else { continue }
-                        selected.append(OfflineChapter(type: type, start: best.startSeconds, end: best.endSeconds, score: best.score))
+                    for (type, matches, offset) in [("op", opening, 0.0), ("ed", ending, max(0, duration - 300))] {
+                        guard let match = DesktopAudioFingerprint.shared.consensus(matches: matches, offset: offset) else { continue }
+                        selected.append(OfflineChapter(type: type, start: match.startSeconds, end: min(duration, match.endSeconds), score: match.score))
                     }
                     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
                     let file = directory.appendingPathComponent(SubtitleFiles.key(item.anime.id + "#" + item.episodeID) + ".json")

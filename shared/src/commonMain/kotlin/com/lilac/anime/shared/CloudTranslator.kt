@@ -29,16 +29,23 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
             "deepl" -> "https://" + (if (config.key.endsWith(":fx")) "api-free.deepl.com" else "api.deepl.com") + "/v2/usage"
             else -> error("지원하지 않는 번역 공급자입니다.")
         }
-        val root = JSONObject(client.get(endpoint) {
-            if (config.provider == "gemini") header("x-goog-api-key", config.key) else header("Authorization", auth)
-        }.bodyAsText())
-        if (config.provider == "deepl") return listOf("DeepL")
-        val rows = root.optJSONArray(if (config.provider == "gemini") "models" else "data") ?: error("모델 목록이 없습니다.")
-        val names = (0 until rows.length()).mapNotNull { index ->
-            val row = rows.optJSONObject(index) ?: return@mapNotNull null
-            if (config.provider == "gemini" && row.optJSONArray("supportedGenerationMethods")?.toString()?.contains("generateContent") != true) null
-            else row.optString(if (config.provider == "gemini") "name" else "id").removePrefix("models/").takeIf(String::isNotBlank)
-        }
+        val names = mutableListOf<String>(); val tokens = mutableSetOf<String>(); var token = ""
+        do {
+            val root = JSONObject(client.get(endpoint) {
+                if (config.provider == "gemini") {
+                    header("x-goog-api-key", config.key); parameter("pageSize", "1000")
+                    if (token.isNotEmpty()) parameter("pageToken", token)
+                } else header("Authorization", auth)
+            }.bodyAsText())
+            if (config.provider == "deepl") return listOf("DeepL")
+            val rows = root.optJSONArray(if (config.provider == "gemini") "models" else "data") ?: error("모델 목록이 없습니다.")
+            for (index in 0 until rows.length()) {
+                val row = rows.optJSONObject(index) ?: continue
+                if (config.provider == "gemini" && row.optJSONArray("supportedGenerationMethods")?.toString()?.contains("generateContent") != true) continue
+                row.optString(if (config.provider == "gemini") "name" else "id").removePrefix("models/").takeIf(String::isNotBlank)?.let(names::add)
+            }
+            token = if (config.provider == "gemini") root.optString("nextPageToken") else ""
+        } while (token.isNotEmpty() && tokens.add(token))
         return CloudModelRules.sorted(config.provider, names)
     }
     private suspend fun chain(config: TranslationConfig): List<String> {

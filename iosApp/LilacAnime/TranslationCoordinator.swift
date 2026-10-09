@@ -116,9 +116,13 @@ final class TranslationCoordinator: ObservableObject {
                            let next = ["gemini", "openai", "deepl", "qwen"].first(where: { !triedProviders.contains($0) && !SecureKeys.load($0).isEmpty }) {
                             status = provider + " 번역 실패 · " + next + "로 이어서 번역합니다."
                             provider = next; triedProviders.insert(next)
-                        } else if provider != "local", preferences.translationFallback != false, !preferences.selectedGGUF.isEmpty {
+                        } else if provider != "local", !triedProviders.contains("local"), preferences.translationFallback != false, !preferences.selectedGGUF.isEmpty {
                             status = provider + " 번역을 계속할 수 없어 로컬 AI로 이어서 번역합니다."
-                            provider = "local"
+                            provider = "local"; triedProviders.insert("local")
+                        } else if provider == "local", preferences.translationFallback != false,
+                                  let next = ["gemini", "openai", "deepl", "qwen"].first(where: { !triedProviders.contains($0) && !SecureKeys.load($0).isEmpty }) {
+                            status = "로컬 AI 번역 실패 · " + next + "로 이어서 번역합니다."
+                            provider = next; triedProviders.insert(next)
                         } else { throw error }
                     }
                 }

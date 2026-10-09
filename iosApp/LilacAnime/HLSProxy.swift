@@ -55,6 +55,83 @@ enum HLSData {
         for i in payload.indices { payload[i] ^= key[i % key.count] }
         return Data(payload)
     }
+    static func isMedia(_ data: Data) -> Bool {
+        if data.first == 71 && (data.count <= 188 || data[data.startIndex + 188] == 71) { return true }
+        guard data.count >= 8 else { return false }
+        return ["ftyp", "styp", "moof", "sidx", "emsg"].contains(String(data: data.dropFirst(4).prefix(4), encoding: .isoLatin1) ?? "")
+    }
+    static func validatedFragment(_ raw: Data) throws -> Data {
+        let decoded = fragment(raw)
+        if isMedia(decoded) { return decoded }
+        let bytes = Array(decoded), limit = min(bytes.count - 376, 4096)
+        if limit > 1 {
+            for index in 1..<limit where bytes[index] == 71 && bytes[index + 188] == 71 && bytes[index + 376] == 71 { return Data(bytes[index...]) }
+        }
+        throw SubtitleFiles.failure("영상 조각 복호화에 실패했습니다.")
+    }
+
+    private enum FetchEvent {
+        case timer
+        case answer(Result<(Data, HTTPURLResponse), Error>)
+    }
+    private static func hedged(_ url: URL, stream: ResolvedStream, start: Int, end: Int) async throws -> (Data, HTTPURLResponse) {
+        try await withThrowingTaskGroup(of: FetchEvent.self) { group in
+            var attempts = 0, active = 0
+            var failure: Error = SubtitleFiles.failure("영상 조각을 받지 못했습니다.")
+            func launch() {
+                guard attempts < 3 else { return }
+                attempts += 1; active += 1
+                group.addTask {
+                    do {
+                        let result = try await fetch(url, stream: stream, range: "bytes=\(start)-\(end)")
+                        if start > 0 && (result.1.statusCode != 206 || result.0.count != end - start + 1) { throw SubtitleFiles.failure("영상 조각 범위 응답 오류") }
+                        return .answer(.success(result))
+                    } catch { return .answer(.failure(error)) }
+                }
+                if attempts < 3 { group.addTask { try await Task.sleep(nanoseconds: 8_000_000_000); return .timer } }
+            }
+            launch()
+            while let event = try await group.next() {
+                try Task.checkCancellation()
+                switch event {
+                case .timer: launch()
+                case .answer(.success(let result)): group.cancelAll(); return result
+                case .answer(.failure(let error)):
+                    active -= 1; failure = error
+                    if active == 0 { if attempts == 3 { group.cancelAll(); throw failure }; launch() }
+                }
+            }
+            throw failure
+        }
+    }
+    static func mediaSegment(_ url: URL, stream: ResolvedStream) async throws -> (Data, HTTPURLResponse) {
+        var failure: Error = SubtitleFiles.failure("영상 조각을 받지 못했습니다.")
+        for _ in 0..<3 {
+            do {
+                let (head, response) = try await hedged(url, stream: stream, start: 0, end: 1048575)
+                let total = Int(response.value(forHTTPHeaderField: "Content-Range")?.components(separatedBy: "/").last ?? "") ?? 0
+                var raw = head
+                if response.statusCode == 206 && total > head.count {
+                    let ranges = stride(from: head.count, to: total, by: 1048576).map { ($0, min($0 + 1048576, total) - 1) }
+                    let pieces = try await withThrowingTaskGroup(of: (Int, Data).self) { group in
+                        var next = 0; var result: [Int: Data] = [:]
+                        func launch() {
+                            guard next < ranges.count else { return }
+                            let index = next; next += 1
+                            group.addTask { (index, try await hedged(url, stream: stream, start: ranges[index].0, end: ranges[index].1).0) }
+                        }
+                        for _ in 0..<min(6, ranges.count) { launch() }
+                        while let (index, data) = try await group.next() { result[index] = data; launch() }
+                        return result
+                    }
+                    for index in ranges.indices { raw.append(pieces[index]!) }
+                }
+                return (try validatedFragment(raw), response)
+            } catch is CancellationError { throw CancellationError() }
+            catch { failure = error }
+        }
+        throw failure
+    }
     static func references(_ text: String, base: URL) -> [URL] {
         var urls: [URL] = []
         let regex = try! NSRegularExpression(pattern: "URI=\"([^\"]+)\"", options: [.caseInsensitive])
@@ -65,7 +142,8 @@ enum HLSData {
                 if let range = Range(match.range(at: 1), in: line), let url = URL(string: String(line[range]), relativeTo: base)?.absoluteURL { urls.append(url) }
             }
         }
-        return Array(Set(urls)).sorted { $0.absoluteString < $1.absoluteString }
+        var seen = Set<URL>()
+        return urls.filter { seen.insert($0).inserted }
     }
     static func rewrite(_ text: String, base: URL, map: (URL) -> String) -> String {
         let regex = try! NSRegularExpression(pattern: "URI=\"([^\"]+)\"", options: [.caseInsensitive])
@@ -88,6 +166,7 @@ final class HLSProxy {
     private var stream: ResolvedStream?
     private var port: UInt16 = 0
     private var quality = "Auto"
+    private let media = HLSMediaCache()
     func start(_ stream: ResolvedStream, quality: String = "Auto") async throws -> ResolvedStream {
         self.quality = quality
         self.stream = stream
@@ -138,18 +217,20 @@ final class HLSProxy {
         let range = lines.first { $0.lowercased().hasPrefix("range:") }.map { String($0.dropFirst(6)).trimmingCharacters(in: .whitespaces) }
         Task {
             do {
-                let (data, response) = try await HLSData.fetch(url, stream: stream, range: stream.manifestKey == nil ? range : nil)
+                let segment = ["png", "webp"].contains(url.pathExtension.lowercased())
+                let (data, response) = segment ? try await media.load(url, stream: stream) : try await HLSData.fetch(url, stream: stream, range: stream.manifestKey == nil ? range : nil)
                 var body = data
                 var contentType = response.mimeType ?? "application/octet-stream"
                 if url.pathExtension.lowercased() == "m3u8" || contentType.contains("mpegurl") {
                     let text = HLSData.selectVariant(try HLSData.manifest(data, key: stream.manifestKey), quality: self.quality)
+                    await media.order(HLSData.references(text, base: url).filter { ["png", "webp"].contains($0.pathExtension.lowercased()) })
                     body = Data(self.queue.sync { HLSData.rewrite(text, base: url) { self.register($0).absoluteString } }.utf8)
                     contentType = "application/vnd.apple.mpegurl"
                 } else if stream.manifestKey != nil && (url.pathExtension == "ts" || contentType.hasPrefix("image/")) { body = HLSData.fragment(data); contentType = "video/mp2t" }
                 var headers = ["Content-Type": contentType, "Accept-Ranges": "bytes"]
-                if let value = response.value(forHTTPHeaderField: "Content-Range") { headers["Content-Range"] = value }
-                var status = response.statusCode
-                if stream.manifestKey != nil, let range, range.hasPrefix("bytes="), !contentType.contains("mpegurl") {
+                if !segment, let value = response.value(forHTTPHeaderField: "Content-Range") { headers["Content-Range"] = value }
+                var status = segment ? 200 : response.statusCode
+                if stream.manifestKey != nil || segment, let range, range.hasPrefix("bytes="), !contentType.contains("mpegurl") {
                     let bounds = range.dropFirst(6).split(separator: "-", omittingEmptySubsequences: false)
                     let size = body.count
                     guard bounds.count == 2, size > 0 else { send(connection, status: 416, body: Data()); return }
@@ -171,5 +252,26 @@ final class HLSProxy {
         var packet = Data((header + "\r\n").utf8); if !headOnly { packet.append(body) }
         connection.send(content: packet, completion: .contentProcessed { _ in connection.cancel() })
     }
-    func stop() { listener?.cancel(); listener = nil }
+    func stop() { listener?.cancel(); listener = nil; Task { await media.stop() } }
+}
+
+private actor HLSMediaCache {
+    private var tasks: [URL: Task<(Data, HTTPURLResponse), Error>] = [:]
+    private var used: [URL] = []
+    private var sequence: [URL] = []
+    func order(_ urls: [URL]) { sequence = urls }
+    private func task(_ url: URL, stream: ResolvedStream) -> Task<(Data, HTTPURLResponse), Error> {
+        used.removeAll { $0 == url }; used.append(url)
+        if let task = tasks[url] { return task }
+        let task = Task { try await HLSData.mediaSegment(url, stream: stream) }; tasks[url] = task
+        while used.count > 16 { let old = used.removeFirst(); tasks.removeValue(forKey: old)?.cancel() }
+        return task
+    }
+    func load(_ url: URL, stream: ResolvedStream) async throws -> (Data, HTTPURLResponse) {
+        let current = task(url, stream: stream)
+        if let index = sequence.firstIndex(of: url) { for next in sequence.dropFirst(index + 1).prefix(5) { _ = task(next, stream: stream) } }
+        do { return try await current.value }
+        catch { tasks[url] = nil; used.removeAll { $0 == url }; throw error }
+    }
+    func stop() { tasks.values.forEach { $0.cancel() }; tasks = [:]; used = []; sequence = [] }
 }

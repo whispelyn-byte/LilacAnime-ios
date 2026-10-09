@@ -18,6 +18,10 @@ data class Anime(
     // Linkkf detail metadata (single.php / singlefilter.php)
     val airedDate: String = "",
     val year: String = "",
+    val season: String = "",
+    val updatedAt: String = "",
+    val availableEpisodes: Int? = null,
+    val totalEpisodes: Int? = null,
     val format: String = "",
     val studios: List<String> = emptyList(),
     val source: String = "",

@@ -35,10 +35,13 @@ struct AppPreferences: Codable, Equatable {
     var titleLanguage: String? = "ko"
     var desktopWorkspace: Bool? = false
     var preferredServer: String? = nil
+    var preferredServers: [String: String]? = nil
     var preferredStream: String? = nil
     var modelSampling: Bool? = true
     var localGPU: Bool? = true
     var pretranslateNext: Bool? = true
+    var prepareNextCloud: Bool? = false
+    var vttStyle: Bool? = true
     var downloadSubtitles: Bool? = true
     var translateDownloads: Bool? = true
     var source = "reanime"
@@ -62,8 +65,8 @@ struct AppPreferences: Codable, Equatable {
     var subtitleProvider: String? = "auto"
     var translationFallback: Bool? = true
     var translationGlossary: String? = ""
-    var autoTranslation = false
-    var translationProvider = "local"
+    var autoTranslation = true
+    var translationProvider = "gemini"
     var translationModel = ""
     var translationModels: [String: String]? = nil
     var cloudFallback: Bool? = true
@@ -88,16 +91,18 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var favorites: [SavedAnime] = []
     @Published private(set) var history: [WatchEntry] = []
     @Published private(set) var subtitleChoices: [String: SubtitleChoice] = [:]
+    @Published private(set) var aiSubtitleSeries: [String: Bool] = [:]
     @Published var persistenceError: String?
     private let file: URL
     private var ready = false
-    private struct State: Codable { var preferences: AppPreferences; var favorites: [SavedAnime]; var history: [WatchEntry]; var subtitles: [String: SubtitleChoice]? }
+    private struct State: Codable { var preferences: AppPreferences; var favorites: [SavedAnime]; var history: [WatchEntry]; var subtitles: [String: SubtitleChoice]?; var aiSubtitleSeries: [String: Bool]? }
     init() {
         file = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("library.json")
         if FileManager.default.fileExists(atPath: file.path) {
             do {
                 let state = try JSONDecoder().decode(State.self, from: Data(contentsOf: file))
                 preferences = state.preferences; favorites = state.favorites; history = state.history; subtitleChoices = state.subtitles ?? [:]
+                aiSubtitleSeries = state.aiSubtitleSeries ?? [:]
                 // Existing custom prompts and sampling values remain active after upgrading.
                 if preferences.modelSampling == nil { preferences.modelSampling = false }
             } catch { persistenceError = "저장된 보관함을 읽지 못했습니다: " + error.localizedDescription }
@@ -105,6 +110,7 @@ final class LibraryStore: ObservableObject {
         ready = true
     }
     func subtitleChoice(animeID: String, episodeID: String) -> SubtitleChoice? { subtitleChoices[animeID + "#" + episodeID] }
+    func preferAI(_ value: Bool, animeID: String) { aiSubtitleSeries[animeID] = value ? true : nil; persist() }
     func saveSubtitle(animeID: String, episodeID: String, file: URL?, offset: Double) {
         let prefix = SubtitleFiles.root.path + "/"
         let relative = file.flatMap { $0.path.hasPrefix(prefix) ? String($0.path.dropFirst(prefix.count)) : nil }
@@ -138,7 +144,7 @@ final class LibraryStore: ObservableObject {
         guard ready else { return }
         do {
             try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try JSONEncoder().encode(State(preferences: preferences, favorites: favorites, history: history, subtitles: subtitleChoices)).write(to: file, options: .atomic)
+            try JSONEncoder().encode(State(preferences: preferences, favorites: favorites, history: history, subtitles: subtitleChoices, aiSubtitleSeries: aiSubtitleSeries)).write(to: file, options: .atomic)
         } catch { persistenceError = "보관함 저장 실패: " + error.localizedDescription }
     }
 }

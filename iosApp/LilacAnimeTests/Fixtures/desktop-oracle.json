@@ -1,0 +1,489 @@
+{
+  "subtitleTracks": [
+    {
+      "tracks": [],
+      "expected": null
+    },
+    {
+      "tracks": [
+        {
+          "label": "English signs",
+          "language": "en",
+          "url": "https://fixture.test/sub.ass"
+        },
+        {
+          "label": "English dialogue",
+          "language": "en",
+          "url": "https://fixture.test/sub.ass"
+        }
+      ],
+      "expected": "English dialogue"
+    },
+    {
+      "tracks": [
+        {
+          "label": "English full",
+          "language": "en",
+          "url": "https://fixture.test/sub.ass"
+        },
+        {
+          "label": "日本語",
+          "language": "ja",
+          "url": "https://fixture.test/sub.ass"
+        }
+      ],
+      "expected": "日本語"
+    },
+    {
+      "tracks": [
+        {
+          "label": "English (AI)",
+          "language": "en",
+          "url": "https://fixture.test/sub.ass"
+        },
+        {
+          "label": "English",
+          "language": "en",
+          "url": "https://fixture.test/sub.ass"
+        }
+      ],
+      "expected": "English"
+    },
+    {
+      "tracks": [
+        {
+          "label": "English forced",
+          "language": "en",
+          "url": "https://fixture.test/sub.ass"
+        },
+        {
+          "label": "English songs",
+          "language": "en",
+          "url": "https://fixture.test/sub.ass"
+        }
+      ],
+      "expected": "English forced"
+    },
+    {
+      "tracks": [
+        {
+          "label": "French",
+          "language": "fr",
+          "url": "https://fixture.test/sub.ass"
+        }
+      ],
+      "expected": null
+    },
+    {
+      "tracks": [
+        {
+          "label": "Custom",
+          "language": "en-US",
+          "url": "https://fixture.test/sub.ass"
+        },
+        {
+          "label": "Japanese",
+          "language": "ja-JP",
+          "url": "https://fixture.test/sub.ass"
+        }
+      ],
+      "expected": "Japanese"
+    },
+    {
+      "tracks": [
+        {
+          "label": "Default",
+          "language": "en",
+          "url": "https://fixture.test/sub.ass"
+        },
+        {
+          "label": "English dubtitle",
+          "language": "en",
+          "url": "https://fixture.test/sub.ass"
+        }
+      ],
+      "expected": "Default"
+    }
+  ],
+  "korean": [
+    {
+      "input": {
+        "label": "한국어",
+        "language": "",
+        "url": "https://fixture.test/sub.ass"
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "label": "Korean",
+        "language": "kor",
+        "url": "https://fixture.test/sub.ass"
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "label": "Custom",
+        "language": "ko",
+        "url": "https://fixture.test/sub.ass"
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "label": "Custom",
+        "language": "ko-KR",
+        "url": "https://fixture.test/sub.ass"
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "label": "Custom",
+        "language": "en",
+        "url": "https://fixture.test/x_kor_1.ass"
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "label": "English",
+        "language": "en",
+        "url": "https://fixture.test/sub.ass"
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "label": "한국어",
+        "language": "en",
+        "url": "https://fixture.test/sub.ass"
+      },
+      "expected": true
+    },
+    {
+      "input": {
+        "label": "Custom",
+        "language": "kok",
+        "url": "https://fixture.test/sub.ass"
+      },
+      "expected": false
+    },
+    {
+      "input": {
+        "label": "Custom",
+        "language": "en",
+        "url": "https://fixture.test/ko.ass"
+      },
+      "expected": false
+    }
+  ],
+  "saved": [
+    {
+      "preferred": "kairan",
+      "saved": [
+        {
+          "source": "gemini"
+        },
+        {
+          "source": "kairan"
+        }
+      ],
+      "expected": "kairan"
+    },
+    {
+      "preferred": "reanime",
+      "saved": [
+        {
+          "source": "gemini"
+        },
+        {
+          "source": "reanime"
+        }
+      ],
+      "expected": "gemini"
+    },
+    {
+      "preferred": "jimaku",
+      "saved": [
+        {
+          "source": "kairan"
+        },
+        {
+          "source": "gemini"
+        },
+        {
+          "source": "jimaku"
+        }
+      ],
+      "expected": "jimaku"
+    },
+    {
+      "preferred": "csora",
+      "saved": [
+        {
+          "source": "kairan"
+        }
+      ],
+      "expected": null
+    },
+    {
+      "preferred": "reanime",
+      "saved": [
+        {
+          "source": "jimaku"
+        },
+        {
+          "source": "gemini"
+        }
+      ],
+      "expected": null
+    }
+  ],
+  "metadata": [
+    {
+      "input": {
+        "year": 2026,
+        "season": "FALL",
+        "availableEpisodes": 0,
+        "totalEpisodes": 12
+      },
+      "release": 20261001,
+      "label": "업로드 0화 / 총 12화"
+    },
+    {
+      "input": {
+        "year": 2026,
+        "season": "SPRING",
+        "availableEpisodes": 4,
+        "totalEpisodes": 12
+      },
+      "release": 20260401,
+      "label": "업로드 4화 / 총 12화"
+    },
+    {
+      "input": {
+        "year": 2026,
+        "season": "SUMMER",
+        "totalEpisodes": 1
+      },
+      "release": 20260701,
+      "label": "총 1화"
+    },
+    {
+      "input": {
+        "year": 2026,
+        "season": "WINTER"
+      },
+      "release": 20260101,
+      "label": ""
+    },
+    {
+      "input": {
+        "aired": "2025-12-24",
+        "year": 2026,
+        "season": "FALL"
+      },
+      "release": 20251224,
+      "label": ""
+    },
+    {
+      "input": {
+        "startedOn": "2026-02",
+        "availableEpisodes": 13,
+        "totalEpisodes": 0
+      },
+      "release": 20260201,
+      "label": "업로드 13화"
+    },
+    {
+      "input": {
+        "availableEpisodes": 0,
+        "totalEpisodes": null
+      },
+      "release": 1,
+      "label": "업로드 0화"
+    },
+    {
+      "input": {
+        "aired": "bad",
+        "year": 2025
+      },
+      "release": 20250001,
+      "label": ""
+    }
+  ],
+  "regions": [
+    {
+      "frames": 1000,
+      "from": 220,
+      "to": 410,
+      "length": 500,
+      "expected": {
+        "startTime": 17,
+        "endTime": 72,
+        "score": 1
+      }
+    },
+    {
+      "frames": 1000,
+      "from": 0,
+      "to": 100,
+      "length": 300,
+      "expected": null
+    },
+    {
+      "frames": 600,
+      "from": 10,
+      "to": 50,
+      "length": 450,
+      "expected": {
+        "startTime": 1,
+        "endTime": 46,
+        "score": 1
+      }
+    },
+    {
+      "frames": 250,
+      "from": 0,
+      "to": 0,
+      "length": 100,
+      "expected": null
+    }
+  ],
+  "svelte": [
+    {
+      "input": [
+        {
+          "latestAired": 1
+        },
+        [
+          2
+        ],
+        {
+          "id": 3,
+          "episode": 4
+        },
+        "test",
+        {
+          "aired": 5
+        },
+        [
+          "Date",
+          "2026-10-08T03:00:00.000Z"
+        ]
+      ],
+      "expected": {
+        "latestAired": [
+          {
+            "id": "test",
+            "episode": {
+              "aired": "2026-10-08T03:00:00.000Z"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "input": [
+        {
+          "a": 1,
+          "b": 1
+        },
+        "same",
+        "ignored"
+      ],
+      "expected": {
+        "a": "same",
+        "b": "same"
+      }
+    },
+    {
+      "input": [
+        [
+          1,
+          2,
+          3
+        ],
+        "ok",
+        null,
+        -1
+      ],
+      "expected": [
+        "ok",
+        null,
+        -1
+      ]
+    }
+  ],
+  "pcm": {
+    "frames": 30,
+    "first": [
+      2.9622604846954346,
+      2.7001254558563232,
+      1.73993980884552,
+      1.2081831693649292,
+      0.9082785248756409,
+      0.7260658144950867,
+      0.5678306221961975,
+      0.46746572852134705,
+      0.3418129086494446,
+      0.22694580256938934,
+      0.14320053160190582,
+      0.05027223005890846,
+      -0.024197284132242203,
+      -0.09519776701927185,
+      -0.17404243350028992,
+      -0.23820213973522186,
+      -0.2997756898403168,
+      -0.36210277676582336,
+      -0.4217020273208618,
+      -0.48689451813697815,
+      -0.5413662791252136,
+      -0.5938509702682495,
+      -0.6468063592910767,
+      -0.6935607194900513,
+      -0.7471073865890503,
+      -0.8008966445922852,
+      -0.8533296585083008,
+      -0.9034181237220764,
+      -0.9557298421859741,
+      -1.0145928859710693,
+      -1.0709831714630127,
+      -1.118624210357666,
+      3.0208849906921387,
+      2.7539021968841553,
+      1.670791745185852,
+      0.9743451476097107,
+      0.8196637034416199,
+      0.692719578742981,
+      0.5679436326026917,
+      0.4862764775753021,
+      0.3743346929550171,
+      0.2684262990951538,
+      0.18968115746974945,
+      0.09993261098861694,
+      0.026776092126965523,
+      -0.04425826296210289,
+      -0.12436006218194962,
+      -0.19104544818401337,
+      -0.2562319338321686,
+      -0.32362422347068787,
+      -0.3894865810871124,
+      -0.4622783362865448,
+      -0.5257197022438049,
+      -0.5884937047958374,
+      -0.653511106967926,
+      -0.7140550017356873,
+      -0.7825736403465271,
+      -0.8507961630821228,
+      -0.9141488671302795,
+      -0.9684427380561829,
+      -1.0113956928253174,
+      -1.0394127368927002,
+      -1.0512454509735107,
+      -1.0545984506607056
+    ]
+  }
+}

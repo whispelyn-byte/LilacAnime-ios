@@ -32,11 +32,15 @@ class IosServices {
     fun desktopStreams(sourceKey: String, animeId: String, number: Int, url: String, completion: (List<DesktopPlaybackStream>?, String?) -> Unit) {
         scope.launch { call(completion) { source.desktopStreams(sourceKey, animeId, number, url) } }
     }
+    fun desktopServers(sourceKey: String, url: String, number: Int, anilist: Int, completion: (List<DesktopPlaybackServer>?, String?) -> Unit) {
+        scope.launch { call(completion) { source.desktopServers(sourceKey, url, number, anilist) } }
+    }
     fun sourceSections(sourceKey: String, completion: (List<SourceSection>?, String?) -> Unit) { scope.launch { call(completion) { source.sourceSections(sourceKey) } } }
     fun sourceSchedule(sourceKey: String, day: Int, completion: (List<Anime>?, String?) -> Unit) { scope.launch { call(completion) { source.sourceSchedule(sourceKey, day) } } }
     fun recordView(anime: Anime, completion: (SourceExtras?, String?) -> Unit) { scope.launch { call(completion) { source.recordView(anime) } } }
     fun sourceExtras(anime: Anime, completion: (SourceExtras?, String?) -> Unit) { scope.launch { call(completion) { source.extras(anime) } } }
     fun top(period: String, completion: (List<Anime>?, String?) -> Unit) { scope.launch { call(completion) { source.top(period) } } }
+    fun sourceUpdates(sourceKey: String, page: Int, completion: (List<Anime>?, String?) -> Unit) { scope.launch { call(completion) { source.updates(sourceKey, page) } } }
     fun schedule(week: Int, completion: (List<Anime>?, String?) -> Unit) { scope.launch { call(completion) { source.schedule(week) } } }
     fun episodeOffsets(anilistId: Int, title: String, completion: (List<Int>?, String?) -> Unit) { scope.launch { call(completion) { discovery.offsets(anilistId, title) } } }
     fun subtitleMakers(title: String, completion: (List<SubtitleMaker>?, String?) -> Unit) { scope.launch { call(completion) { discovery.makers(title) } } }

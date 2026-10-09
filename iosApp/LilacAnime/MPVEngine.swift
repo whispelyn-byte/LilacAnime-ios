@@ -76,6 +76,7 @@ final class MPVEngine: ObservableObject {
         set("sub-margin-x", "36")
         set("sub-font-size", "36")
         set("sub-ass", settings.assEffects ? "yes" : "no")
+        set("sub-ass-override", pendingSubtitle?.pathExtension.lowercased() == "ass" && settings.assEffects ? "no" : settings.vttStyle == false ? "strip" : "yes")
         set("sub-fonts-dir", SubtitleFiles.fontDirectory.path)
     }
     func load(_ stream: ResolvedStream, resume: Double = 0) {
@@ -126,7 +127,7 @@ final class MPVEngine: ObservableObject {
     func toggle() { paused ? play() : pause() }
     func seek(_ seconds: Double) { command(["seek", max(0, seconds).description, "absolute+exact"]) }
     func skip(_ delta: Double) { seek(position + delta) }
-    func subtitle(_ file: URL) { pendingSubtitle = file; if fileLoaded { command(["sub-add", file.path, "select"]) } }
+    func subtitle(_ file: URL) { pendingSubtitle = file; configure(preferences); if fileLoaded { command(["sub-add", file.path, "select"]) } }
     func reloadSubtitle() { command(["sub-reload"]) }
     func selectTrack(_ track: MediaTrack) { set(track.type == "audio" ? "aid" : "sid", track.id.description) }
     func toggleSubtitleVisibility() { subtitlesVisible.toggle(); set("sub-visibility", subtitlesVisible ? "yes" : "no") }

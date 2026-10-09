@@ -29,6 +29,7 @@ struct PlaybackItem {
     var next: [PlaybackItem] = []
     var preceding: [PlaybackItem] = []
     var localSubtitles: [URL] = []
+    var localSubtitleTracks: [RemoteSubtitle] = []
     init(anime: SavedAnime, episode: Episode) {
         self.anime = anime; episodeID = episode.id; title = episode.title; number = Int(episode.number)
         displayNumber = episode.displayNumber; watchURL = URL(string: episode.videoUrl ?? anime.anime.detailUrl) ?? URL(string: "https://linkkf.app/")!
@@ -49,12 +50,16 @@ struct PlaybackItem {
 final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, WKScriptMessageHandler {
     @Published private(set) var streams: [ResolvedStream] = []
     @Published private(set) var subtitles: [RemoteSubtitle] = []
+    @Published private(set) var servers: [DesktopPlaybackServer] = []
+    @Published private(set) var serverLabel = ""
     @Published private(set) var loading = false
     @Published var error: String?
     let webView: WKWebView
     private var timeout: Task<Void, Never>?
     private var generation = UUID()
     private var currentItem: PlaybackItem?
+    private var serverCandidates: [DesktopPlaybackServer] = []
+    private var preferRaw = false
     private let desktop = IosServices()
     private let agent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1"
 
@@ -96,11 +101,11 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
         webView.navigationDelegate = self
         webView.customUserAgent = agent
     }
-    func resolve(_ item: PlaybackItem) {
-        cancel(); currentItem = item; streams = []; subtitles = []; error = nil; loading = true
+    func resolve(_ item: PlaybackItem, preferRaw: Bool = false, preferred: String? = nil) {
+        cancel(); currentItem = item; streams = []; subtitles = []; servers = []; serverCandidates = []; error = nil; loading = true; self.preferRaw = preferRaw
         let token = generation
         if let direct = item.directURL, direct.isFileURL || ["m3u8", "mp4", "mkv", "webm"].contains(direct.pathExtension.lowercased()) {
-            streams = [ResolvedStream(label: "영상", url: direct, referer: "", headers: [:])]; loading = false; return
+            streams = [ResolvedStream(label: "영상", url: direct, referer: "", headers: [:], subtitles: item.localSubtitleTracks)]; loading = false; return
         }
         if ["miruro", "linkani"].contains(item.anime.source) {
             desktop.desktopStreams(sourceKey: item.anime.source, animeId: item.anime.anime.id, number: Int32(item.number), url: item.watchURL.absoluteString) { [weak self] results, failure in
@@ -121,14 +126,43 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
             }
             return
         }
-        var request = URLRequest(url: item.watchURL)
-        request.setValue(item.watchURL.scheme! + "://" + (item.watchURL.host ?? "") + "/", forHTTPHeaderField: "Referer")
+        if ["reanime", "animenosub"].contains(item.anime.source) {
+            desktop.desktopServers(sourceKey: item.anime.source, url: item.watchURL.absoluteString, number: Int32(item.number), anilist: item.anime.anime.anilistId?.int32Value ?? 0) { [weak self] servers, _ in
+                Task { @MainActor in
+                    guard let self, token == self.generation else { return }
+                    self.servers = servers ?? []
+                    func rank(_ server: DesktopPlaybackServer) -> Int { server.label == preferred ? 0 : server.kind == (preferRaw ? "raw" : "sub") ? 1 : server.kind == "sub" ? 2 : server.kind == "raw" ? 3 : 4 }
+                    self.serverCandidates = item.anime.source == "animenosub" ? self.servers.sorted { rank($0) < rank($1) } : self.servers
+                    self.loadNextServer(fallback: item.watchURL)
+                }
+            }
+            return
+        }
+        loadPage(item.watchURL, seconds: 45)
+    }
+    func selectServer(_ server: DesktopPlaybackServer) {
+        generation = UUID(); webView.stopLoading(); timeout?.cancel(); streams = []; subtitles = []; error = nil; loading = true
+        serverCandidates = servers.filter { $0.url != server.url }; serverLabel = server.label
+        if let url = URL(string: server.url) { loadPage(url, seconds: 15) }
+    }
+    private func loadNextServer(fallback: URL? = nil) {
+        timeout?.cancel()
+        if !serverCandidates.isEmpty {
+            let candidate = serverCandidates.removeFirst(); serverLabel = candidate.label
+            if let url = URL(string: candidate.url) { loadPage(url, seconds: 15); return }
+        }
+        if let fallback { serverLabel = ""; loadPage(fallback, seconds: 45); return }
+        loading = false; error = "모든 영상 서버 연결에 실패했습니다."
+    }
+    private func loadPage(_ url: URL, seconds: Double) {
+        let token = generation
+        var request = URLRequest(url: url)
+        request.setValue(currentItem?.watchURL.absoluteString ?? "", forHTTPHeaderField: "Referer")
         webView.load(request)
         timeout = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 45_000_000_000)
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             guard !Task.isCancelled, let self, self.generation == token else { return }
-            self.loading = false
-            if self.streams.isEmpty { self.error = "영상 URL을 찾지 못했습니다. 웹 플레이어에서 재생을 시작하거나 서버를 바꿔보세요." }
+            if self.streams.isEmpty { self.loadNextServer() }
         }
     }
     func cancel() { desktop.cancel(); generation = UUID(); timeout?.cancel(); timeout = nil; webView.stopLoading(); loading = false }
@@ -186,9 +220,9 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
                 if let key = manifestKey { self.streams[index].manifestKey = key }
                 return
             }
-            self.streams.append(ResolvedStream(label: url.pathExtension.uppercased().isEmpty ? "영상" : url.pathExtension.uppercased(),
+            self.streams.append(ResolvedStream(label: self.serverLabel.isEmpty ? (url.pathExtension.uppercased().isEmpty ? "영상" : url.pathExtension.uppercased()) : self.serverLabel,
                 url: url, referer: referer, headers: headers, manifestKey: manifestKey, subtitles: self.subtitles))
-            self.loading = false; self.error = nil
+            self.loading = false; self.error = nil; self.timeout?.cancel()
         }
     }
     private static let captureScript = """

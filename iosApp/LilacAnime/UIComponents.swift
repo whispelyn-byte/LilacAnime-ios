@@ -16,7 +16,11 @@ struct AnimeArtwork: View {
             ZStack {
                 LinearGradient(colors: [LilacStyle.accent.opacity(0.4), Color.indigo.opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing)
                 Image(systemName: "sparkles").font(.system(size: 36)).foregroundStyle(.white.opacity(0.5))
-                AsyncImage(url: URL(string: url)) { image in image.resizable().scaledToFill() } placeholder: { Color.clear }
+                if let file = URL(string: url), file.isFileURL, let data = try? Data(contentsOf: file), let image = UIImage(data: data) {
+                    Image(uiImage: image).resizable().scaledToFill()
+                } else {
+                    AsyncImage(url: URL(string: url)) { image in image.resizable().scaledToFill() } placeholder: { Color.clear }
+                }
             }.frame(width: geometry.size.width, height: geometry.size.height).clipped()
         }.frame(width: width, height: height).clipped().accessibilityHidden(true)
     }
@@ -39,6 +43,9 @@ struct AnimePosterCard: View {
                 .frame(maxWidth: .infinity, minHeight: 38, alignment: .topLeading)
             Text([anime.year, anime.genres.first ?? ""].filter { !$0.isEmpty }.joined(separator: " · "))
                 .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            if !DesktopAnimeMetadata.shared.episodeLabel(anime: anime).isEmpty {
+                Text(DesktopAnimeMetadata.shared.episodeLabel(anime: anime)).font(.caption2).foregroundStyle(LilacStyle.accent)
+            }
         }.frame(width: width).foregroundStyle(.primary)
     }
 }

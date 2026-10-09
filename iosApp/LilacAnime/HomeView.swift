@@ -6,12 +6,18 @@ struct HomeView: View {
     @EnvironmentObject private var navigation: DesktopNavigation
     @StateObject private var model = CatalogModel()
     @StateObject private var home = DesktopSourceModel()
+    @ObservedObject private var recent = DesktopRecentUpdates.shared
+    @State private var homeOrder = "season"
     @State private var featured = 0
     @State private var day = (Calendar.current.component(.weekday, from: Date()) + 5) % 7
     private var heroItems: [Anime] { home.sections.first { $0.name == "이번 시즌" }?.items.isEmpty == false ? home.sections.first { $0.name == "이번 시즌" }!.items : items }
     var workspace = false
     let browse: () -> Void
     private var items: [Anime] { UIShowcase.enabled ? UIShowcase.items : model.items }
+    private var continuing: [WatchEntry] {
+        var seen: Set<String> = []
+        return Array(library.history.filter { seen.insert($0.anime.id).inserted }.prefix(6))
+    }
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -55,7 +61,7 @@ struct HomeView: View {
                             HStack { Text("계속 시청하기").font(.title3.bold()); Spacer(); Button("전체 보기") { navigation.section = "history" } }.padding(.horizontal, 20)
                             ScrollView(.horizontal, showsIndicators: false) {
                                 LazyHStack(spacing: 14) {
-                                    ForEach(Array(library.history.prefix(10))) { entry in
+                                    ForEach(continuing) { entry in
                                         PlaybackButton(item: PlaybackItem(entry: entry)) {
                                             VStack(alignment: .leading, spacing: 8) {
                                                 AnimeArtwork(url: entry.anime.anime.backdrop.isEmpty ? entry.anime.poster : entry.anime.anime.backdrop, width: 240, height: 132)
@@ -71,8 +77,17 @@ struct HomeView: View {
                             }
                         }
                     }
+                    if DesktopRecentUpdates.supported.contains(library.preferences.source) {
+                        Picker("홈 목록", selection: $homeOrder) { Text("이번 시즌 신작").tag("season"); Text("최근 업데이트").tag("updated") }.pickerStyle(.segmented).padding(.horizontal, 20)
+                        if homeOrder == "updated" {
+                            Text(recent.homeNote).font(.caption).foregroundStyle(.secondary).padding(.horizontal, 20)
+                            AnimeRail(title: "최근 업데이트", items: recent.home, source: model.source) {
+                                UserDefaults.standard.set("updated", forKey: "allSort:" + library.preferences.source); navigation.section = "catalog"
+                            }
+                        }
+                    }
                     ForEach(Array(home.sections.enumerated()), id: \.offset) { _, section in
-                        if !section.items.isEmpty { AnimeRail(title: section.name, items: section.items, source: model.source) { navigation.browse(section.name == "인기 작품" ? "top" : section.name == "이번 시즌" ? "season" : section.name == "PV" ? "pv" : section.name == "극장판" ? "movie" : "adult") } }
+                        if !section.items.isEmpty && !(homeOrder == "updated" && section.name == "이번 시즌") { AnimeRail(title: section.name, items: section.items, source: model.source) { navigation.browse(section.name == "인기 작품" ? "top" : section.name == "이번 시즌" ? "season" : section.name == "PV" ? "pv" : section.name == "극장판" ? "movie" : "adult") } }
                     }
                     if model.source == "linkkf" && !items.isEmpty { AnimeRail(title: "최신 애니메이션", items: items, source: model.source) { navigation.section = "catalog" } }
                     if model.source != "linkkf" && !home.airing.isEmpty { AnimeRail(title: "방영 중", items: home.airing, source: model.source) { navigation.browse("schedule") } }
@@ -110,6 +125,7 @@ struct HomeView: View {
                 .refreshable { if !UIShowcase.enabled { model.load(); home.load(source: model.source, day: max(day, 0)) } }
                 .onChange(of: day) { value in if !UIShowcase.enabled { home.load(source: model.source, day: max(value, 0)) } }
                 .task(id: library.preferences.source) { if !UIShowcase.enabled { featured = 0; home.load(source: library.preferences.source, day: max(day, 0)) } }
+                .task(id: library.preferences.source + homeOrder) { if homeOrder == "updated" && !UIShowcase.enabled { await recent.loadHome(library.preferences.source) } }
                 .task { if !UIShowcase.enabled && model.items.isEmpty { model.source = library.preferences.source; model.load() } }
                 .onChange(of: library.preferences.source) { source in if !UIShowcase.enabled && model.source != source { model.source = source; model.load() } }
         }

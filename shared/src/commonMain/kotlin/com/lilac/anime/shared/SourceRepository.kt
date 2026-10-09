@@ -9,6 +9,8 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.*
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.days
 enum class AnimeSource(val key: String) { LINKKF("linkkf"), REANIME("reanime"), ANIMENOSUB("animenosub"), MIRURO("miruro"), OHLI24("ohli24"), LINKANI("linkani") }
 data class BrowseFilter(val genres: List<String> = emptyList(), val year: String = "", val season: String = "", val format: String = "", val status: String = "", val studio: String = "", val sort: String = "")
 data class SourceFilters(val genres: List<String> = emptyList(), val years: List<String> = emptyList(),
@@ -24,8 +26,13 @@ class SourceRepository(private val client: HttpClient = newSharedClient()) {
     private val linkkf = LinkkfRepository(client)
     private val desktop = DesktopSourceRepository(client)
     private val filterCache = mutableMapOf<String, SourceFilters>()
+    private val updateCache = mutableMapOf<String, Pair<Long, List<Anime>>>()
     suspend fun browse(source: String, query: String = "", page: Int = 1, filter: BrowseFilter = BrowseFilter()): List<Anime> {
         require(page > 0)
+        if (filter.sort == "updated" && source in DesktopCatalogUpdates.supported) {
+            val raw = updates(source, page)
+            return DesktopCatalogUpdates.filter(raw, filter).filter { query.isBlank() || listOf(it.title, it.romaji, it.english, it.native).any { title -> title.contains(query, true) } }
+        }
         return when (source) {
             "miruro", "ohli24", "linkani" -> desktop.browse(source, query, page, filter)
             "reanime" -> ReAnimeHarParser.parseSearch(getText("https://reanime.to/api/v1/search", buildMap {
@@ -43,7 +50,7 @@ class SourceRepository(private val client: HttpClient = newSharedClient()) {
                 if (filter.year.isNotBlank() && seasonValues.isEmpty()) return emptyList()
                 val document = Ksoup.parse(getText(path, buildMap {
                     if (filtered) put("page", "$page")
-                    if (filter.sort.isNotBlank()) put("order", when(filter.sort) { "year" -> "latest"; "score" -> "rating"; else -> "popular" })
+                    if (filter.sort.isNotBlank()) put("order", when(filter.sort) { "year" -> "latest"; "updated" -> "update"; "score" -> "rating"; else -> "popular" })
                     if (query.isNotBlank()) put("s", query)
                     if (filter.status == "RELEASING") put("status", "ongoing")
                     filter.genres.forEachIndexed { index, genre -> put("genre[$index]", genre) }
@@ -92,20 +99,65 @@ class SourceRepository(private val client: HttpClient = newSharedClient()) {
         }
     }
     suspend fun filters(source: String): SourceFilters = filterCache[source] ?: when (source) {
-        "reanime" -> facets().let { SourceFilters(it.genres, it.years, it.formats, it.statuses, listOf("WINTER", "SPRING", "SUMMER", "FALL"), it.studios, supportsYear = true, supportsSeason = true, sorts = listOf("popular", "year", "score")) }
+        "reanime" -> facets().let { SourceFilters(it.genres, it.years, it.formats, it.statuses, listOf("WINTER", "SPRING", "SUMMER", "FALL"), it.studios, supportsYear = true, supportsSeason = true, sorts = listOf("popular", "year", "updated", "score")) }
         "linkkf" -> linkkf.filters().let { it.copy(supportsYear = it.years.isNotEmpty(), note = "연도는 Linkkf 분류를 따릅니다. 별도의 분기 정보는 제공하지 않습니다.") }
         "animenosub" -> DesktopCatalogTaxonomy.animenosub(getText("https://animenosub.to/anime/"))
-        "miruro" -> SourceFilters(supportsYear = true, supportsSeason = true, seasons = listOf("WINTER", "SPRING", "SUMMER", "FALL"), sorts = listOf("popular", "year", "score"), note = "Miruro는 연도·분기로 모아 볼 수 있습니다.")
-        "linkani" -> SourceFilters(formats = listOf("TV", "Movie"), supportsYear = true, note = "링크애니는 작품 형태·연도로 모아 볼 수 있습니다. 장르·분기 정보는 제공하지 않습니다.")
-        "ohli24" -> SourceFilters(formats = listOf("TV", "Movie"), note = "애니24는 TV 애니·극장판으로 모아 볼 수 있습니다. 연도·분기 정보는 제공하지 않습니다.")
+        "miruro" -> SourceFilters(supportsYear = true, supportsSeason = true, seasons = listOf("WINTER", "SPRING", "SUMMER", "FALL"), sorts = listOf("popular", "year", "updated", "score"), note = "Miruro는 연도·분기로 모아 볼 수 있습니다.")
+        "linkani" -> SourceFilters(formats = listOf("TV", "Movie"), supportsYear = true, sorts = listOf("default", "updated"), note = "링크애니는 작품 형태·연도로 모아 볼 수 있습니다. 장르·분기 정보는 제공하지 않습니다.")
+        "ohli24" -> SourceFilters(formats = listOf("TV", "Movie"), sorts = listOf("default", "updated"), note = "애니24는 TV 애니·극장판으로 모아 볼 수 있습니다. 연도·분기 정보는 제공하지 않습니다.")
         else -> SourceFilters()
     }.also { filterCache[source] = it }
     suspend fun catalog(source: String, page: Int, filter: BrowseFilter, query: String = ""): SourceCatalogPage {
+        if (filter.sort == "updated" && source in listOf("reanime", "miruro")) {
+            val all = DesktopCatalogUpdates.filter(updateSnapshot(source), filter).filter { query.isBlank() || listOf(it.title, it.romaji, it.english, it.native).any { title -> title.contains(query, true) } }
+            val items = all.drop((page - 1) * 36).take(36)
+            return SourceCatalogPage(items, page * 36 < all.size, items.joinToString("|") { it.id })
+        }
         val raw = browse(source, query = query, page = page, filter = filter)
         val items = if (source in listOf("ohli24", "linkani") && filter.format.isNotBlank()) raw.filter { it.format.equals(filter.format, true) } else raw
-        return SourceCatalogPage(items, if (source == "miruro") desktop.hasNextCatalogPage(page, filter, query) else raw.isNotEmpty(), raw.joinToString("|") { it.id })
+        return SourceCatalogPage(items, if (filter.sort == "updated" && source == "ohli24") false else if (source == "miruro") desktop.hasNextCatalogPage(page, filter, query) else raw.isNotEmpty(), raw.joinToString("|") { it.id })
+    }
+    suspend fun updates(source: String, page: Int = 1): List<Anime> {
+        require(source in DesktopCatalogUpdates.supported && page > 0)
+        if (source in listOf("reanime", "miruro")) return updateSnapshot(source).drop((page - 1) * 36).take(36)
+        val key = "$source:$page"; val now = Clock.System.now().toEpochMilliseconds()
+        updateCache[key]?.takeIf { now - it.first < 300000 }?.let { return it.second }
+        val items = when (source) {
+            "animenosub" -> AnimenosubParser.parseAnimeList(Ksoup.parse(getText("https://animenosub.to/anime/", mapOf("order" to "update", "page" to page.toString())), "https://animenosub.to/"))
+            "ohli24" -> if (page == 1) DesktopSourceParser.koreanList(getText("https://www.ohli24.net/ing"), source) else emptyList()
+            else -> DesktopSourceParser.koreanList(getText("https://linkani.tv/list/2/" + if (page > 1) "page/$page/" else ""), source)
+        }
+        updateCache[key] = now to items
+        return items
+    }
+    private suspend fun updateSnapshot(source: String): List<Anime> {
+        val now = Clock.System.now(); val key = "$source:snapshot"
+        updateCache[key]?.takeIf { now.toEpochMilliseconds() - it.first < 300000 }?.let { return it.second }
+        val items = if (source == "reanime") {
+            val rows = DesktopCatalogUpdates.reanimeRows(Json.parseToJsonElement(getText("https://reanime.to/__data.json")).jsonObject)
+            ReAnimeHarParser.parseSearch(JsonObject(mapOf("results" to rows)).toString())
+        } else {
+            val rows = mutableListOf<JsonElement>(); val cursors = mutableSetOf<String>(); var cursor = ""
+            do {
+                val root = desktop.miruro("schedule", buildMap {
+                    put("from", (now - 14.days).toString().take(10)); put("to", now.toString().take(10)); put("track", "raw,sub"); put("limit", "10000")
+                    if (cursor.isNotEmpty()) put("cursor", cursor)
+                })
+                rows.addAll(root.list("data"))
+                cursor = if (root.text("has_more") == "true") root.text("next_cursor") else ""
+            } while (rows.size < 30000 && cursor.isNotEmpty() && cursors.add(cursor))
+            val latest = DesktopCatalogUpdates.latestMiruro(JsonArray(rows), now.toString())
+            latest.keys.chunked(200).flatMap { ids ->
+                desktop.miruro("anime", mapOf("id_in" to ids.joinToString(","), "limit" to "200")).list("data").filterIsInstance<JsonObject>()
+                    .filter { it.obj("episode_counts").values.any { value -> ((value as? JsonPrimitive)?.intOrNull ?: 0) > 0 } }
+                    .map { DesktopSourceParser.miruroAnime(it).copy(updatedAt = latest[it.text("id")].orEmpty()) }
+            }
+        }.sortedByDescending { runCatching { kotlin.time.Instant.parse(it.updatedAt).toEpochMilliseconds() }.getOrDefault(0) }
+        updateCache[key] = now.toEpochMilliseconds() to items
+        return items
     }
     suspend fun desktopStreams(source: String, animeId: String, number: Int, url: String) = desktop.streams(source, animeId, number, url)
+    suspend fun desktopServers(source: String, url: String, number: Int, anilist: Int) = desktop.serverPages(source, url, number, anilist)
     suspend fun top(period: String) = ReAnimeHarParser.parseTop(getText("https://reanime.to/api/v1/top/anime", mapOf("period" to period, "limit" to "20")))
     suspend fun schedule(week: Int) = ReAnimeHarParser.parseSchedule(getText("https://reanime.to/api/v1/schedule", mapOf("tz" to "Asia/Seoul", "week" to week.toString())))
     suspend fun facets() = ReAnimeHarParser.parseFacets(getText("https://reanime.to/api/v1/search", mapOf("facets" to "true", "limit" to "0")))

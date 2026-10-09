@@ -109,6 +109,8 @@ struct SettingsView: View {
                 Section("AI 번역") {
                     Toggle("자막 자동 번역", isOn: $store.preferences.autoTranslation)
                     Toggle("다음 화 자막 미리 번역", isOn: Binding(get: { store.preferences.pretranslateNext ?? true }, set: { store.preferences.pretranslateNext = $0 }))
+                    Toggle("번역 API로도 다음 화 미리 번역", isOn: Binding(get: { store.preferences.prepareNextCloud ?? false }, set: { store.preferences.prepareNextCloud = $0 }))
+                    Text("로컬 AI는 다음 화를 미리 번역합니다. API의 다음 화 번역은 별도로 켜야 사용량을 소비합니다.").font(.caption).foregroundStyle(.secondary)
                     Toggle("실패 시 등록한 다른 번역 API 사용", isOn: Binding(get: { store.preferences.cloudFallback ?? true }, set: { store.preferences.cloudFallback = $0 }))
                     Toggle("클라우드 실패 시 로컬 AI로 이어서 번역", isOn: Binding(get: { store.preferences.translationFallback ?? true }, set: { store.preferences.translationFallback = $0 }))
                     Text("현재 재생 위치에 가까운 자막부터 번역하며, 중단한 번역은 다음 시도에 이어서 처리합니다.").font(.caption).foregroundStyle(.secondary)

@@ -57,11 +57,18 @@ enum DesktopDownloads {
                     return OfflineChapter(type: raw["type"] as? String ?? "OP", start: start, end: end, score: raw["score"] as? Double ?? 1)
                 }
                 let stream = ResolvedStream(label: "PC 다운로드", url: target.appendingPathComponent(localFile), referer: "", headers: [:])
-                let entry = DownloadEntry(id: id, anime: anime, episodeID: episodeID, title: episode["name"] as? String ?? "\(number)화", number: number,
+                var entry = DownloadEntry(id: id, anime: anime, episodeID: episodeID, title: episode["name"] as? String ?? "\(number)화", number: number,
                     watchURL: episode["url"] as? String ?? "", stream: stream, localFile: localFile,
                     subtitleFiles: assets.filter { $0 != originalVideo && !fonts.contains($0) }.compactMap { names[$0] }.reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } },
                     fontFiles: fonts.compactMap { names[$0] }, chapters: chapters, bytes: (try video.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init),
                     status: "완료", date: Date(timeIntervalSince1970: (job["updated"] as? Double ?? Date().timeIntervalSince1970 * 1000) / 1000))
+                entry.primarySubtitle = (job["subtitleAssPath"] as? String).flatMap { names[$0] } ?? (job["subtitlePath"] as? String).flatMap { names[$0] }
+                entry.subtitleTracks = (job["subtitleTracks"] as? [[String: Any]] ?? []).compactMap { track in
+                    guard let file = (track["assPath"] as? String).flatMap({ names[$0] }) ?? (track["path"] as? String).flatMap({ names[$0] }) else { return nil }
+                    return DownloadSubtitleTrack(file: file, label: track["label"] as? String ?? "자막", language: track["language"] as? String ?? "", provider: "reanime", translatedFile: (track["translatedPath"] as? String).flatMap { names[$0] })
+                }
+                entry.siteKorean = job["siteKorean"] as? Bool ?? ["ohli24", "linkani", "linkkf"].contains(source)
+                entry.subtitlesPrepared = true
                 try JSONEncoder().encode(entry).write(to: staging.appendingPathComponent("download-entry.json"))
                 if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: staging) }
                 else { try FileManager.default.moveItem(at: staging, to: target) }

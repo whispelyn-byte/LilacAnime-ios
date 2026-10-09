@@ -10,6 +10,6 @@ object DesktopCatalogTaxonomy {
         require(genres.isNotEmpty() || seasons.isNotEmpty()) { "Animenosub 분류를 불러오지 못했습니다." }
         val years = seasons.mapNotNull { Regex("-(\\d{4})$").find(it)?.groupValues?.get(1) }.distinct().sortedDescending()
         return SourceFilters(genres = genres, years = years, formats = values("type"), seasons = if (seasons.isEmpty()) emptyList() else listOf("WINTER", "SPRING", "SUMMER", "FALL"),
-            supportsYear = years.isNotEmpty(), supportsSeason = seasons.isNotEmpty(), sorts = listOf("popular", "year", "score"), seasonValues = seasons)
+            supportsYear = years.isNotEmpty(), supportsSeason = seasons.isNotEmpty(), sorts = listOf("popular", "year", "updated", "score"), seasonValues = seasons)
     }
 }

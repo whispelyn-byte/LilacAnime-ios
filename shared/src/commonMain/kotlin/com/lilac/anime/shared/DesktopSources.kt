@@ -8,6 +8,7 @@ import io.ktor.http.*
 import kotlinx.serialization.json.*
 import kotlinx.coroutines.*
 import kotlin.experimental.xor
+import kotlin.io.encoding.Base64
 
 internal expect fun inflateCatalogGzip(data: ByteArray): ByteArray
 
@@ -18,6 +19,29 @@ internal fun JsonObject.list(key: String) = get(key) as? JsonArray ?: JsonArray(
 
 /** Catalog/episode rules ported from LilacAnime-desktop electron/main.cjs (4cf1104). */
 object DesktopSourceParser {
+    fun animenosubServers(html: String, pageUrl: String): List<DesktopPlaybackServer> {
+        val doc = Ksoup.parse(html, pageUrl)
+        val servers = doc.select("option[value]").mapNotNull { option ->
+            val decoded = runCatching { Base64.decode(option.attr("value")).decodeToString() }.getOrNull() ?: return@mapNotNull null
+            val frame = Ksoup.parse(decoded, pageUrl).selectFirst("iframe[src]") ?: return@mapNotNull null
+            val label = option.text().trim(); val url = frame.absUrl("src")
+            if (label.isEmpty() || !url.startsWith("https://")) return@mapNotNull null
+            DesktopPlaybackServer(label, if (Regex("^raw\\b", RegexOption.IGNORE_CASE).containsMatchIn(label)) "raw" else if (Regex("^dub\\b", RegexOption.IGNORE_CASE).containsMatchIn(label)) "dub" else "sub", url)
+        }.distinctBy { it.label }
+        if (servers.isNotEmpty()) return servers
+        val frame = doc.selectFirst("iframe[src], iframe[data-src]") ?: return emptyList()
+        val url = frame.absUrl(if (frame.hasAttr("src")) "src" else "data-src")
+        return if (url.startsWith("https://")) listOf(DesktopPlaybackServer("기본", "sub", url)) else emptyList()
+    }
+
+    fun reanimeServers(root: JsonObject): List<DesktopPlaybackServer> {
+        val links = root.list("episode_links").ifEmpty { root.list("servers") }
+        return links.filterIsInstance<JsonObject>().mapNotNull {
+            val url = it.text("dataLink").ifBlank { it.text("link") }
+            if (!Regex("^https://flixcloud\\.cc/e/", RegexOption.IGNORE_CASE).containsMatchIn(url)) null
+            else DesktopPlaybackServer(it.text("serverName"), "soft", url)
+        }.sortedBy { if (Regex("HD-?2", RegexOption.IGNORE_CASE).containsMatchIn(it.label)) 0 else if (Regex("HD-?1", RegexOption.IGNORE_CASE).containsMatchIn(it.label)) 1 else 2 }.distinctBy { it.url }
+    }
     fun miruroAnime(root: JsonObject): Anime {
         val titles = root.obj("title")
         val ids = root.obj("external_ids")
@@ -25,6 +49,7 @@ object DesktopSourceParser {
             title = titles.text("english").ifBlank { titles.text("romaji").ifBlank { titles.text("native") } },
             english = titles.text("english"), romaji = titles.text("romaji"), native = titles.text("native"),
             poster = root.text("cover_url"), year = root.text("season_year"), format = root.text("format"),
+            season = root.text("season"), totalEpisodes = root.number("episode_count"), availableEpisodes = root.obj("episode_counts").values.mapNotNull { (it as? JsonPrimitive)?.intOrNull }.maxOrNull(),
             description = Ksoup.parse(root.text("description")).text(),
             genres = root.list("genres").mapNotNull { (it as? JsonPrimitive)?.contentOrNull },
             studios = root.list("studios").mapNotNull { (it as? JsonObject)?.text("name") }.filter(String::isNotBlank),
@@ -140,8 +165,18 @@ object DesktopSourceParser {
 }
 
 data class DesktopPlaybackStream(val label: String, val url: String, val referer: String, val headers: Map<String, String>, val subtitles: List<PlaybackTrack> = emptyList())
+data class DesktopPlaybackServer(val label: String, val kind: String, val url: String)
 
 internal class DesktopSourceRepository(private val client: HttpClient) {
+    suspend fun serverPages(source: String, url: String, number: Int, anilist: Int): List<DesktopPlaybackServer> {
+        if (source == "animenosub") return DesktopSourceParser.animenosubServers(text(url), url)
+        if (source != "reanime") return emptyList()
+        val slug = Url(url).encodedPath.trimEnd('/').substringAfterLast('/')
+        val links = try { DesktopSourceParser.reanimeServers(Json.parseToJsonElement(text("https://reanime.to/api/watch/$slug/$number")).jsonObject) }
+            catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
+        if (links.isNotEmpty() || anilist <= 0) return links
+        return DesktopSourceParser.reanimeServers(Json.parseToJsonElement(text("https://reanime.to/api/flix/$anilist/$number")).jsonObject)
+    }
     private val cursors = mutableMapOf<String, MutableMap<Int, String>>()
     private suspend fun text(url: String, params: Map<String, String> = emptyMap()) = client.get(url) {
         header("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1")
@@ -149,7 +184,7 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
         header("Accept-Language", "ko-KR,ko;q=0.9")
         params.forEach { (key, value) -> parameter(key, value) }
     }.body<String>()
-    private suspend fun miruro(path: String, params: Map<String, String> = emptyMap()): JsonObject {
+    internal suspend fun miruro(path: String, params: Map<String, String> = emptyMap()): JsonObject {
         val body = client.get("https://www.miruro.to/api/v1/" + path) {
             header("Referer", "https://www.miruro.to/"); header("Accept", "*/*")
             params.forEach { (key, value) -> parameter(key, value) }

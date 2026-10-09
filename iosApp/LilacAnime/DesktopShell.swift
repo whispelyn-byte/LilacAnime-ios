@@ -94,6 +94,8 @@ struct DesktopSavedView: View {
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var downloads: DownloadStore
     @State private var tab = 0
+    @State private var order = "saved"
+    @ObservedObject private var recent = DesktopRecentUpdates.shared
     var body: some View {
         VStack(spacing: 0) {
             Picker("내 목록", selection: $tab) {
@@ -104,17 +106,20 @@ struct DesktopSavedView: View {
             else {
                 NavigationStack {
                     ScrollView {
+                        Picker("정렬", selection: $order) { Text("저장순").tag("saved"); Text("회차 업데이트순").tag("updated") }.pickerStyle(.segmented).padding(.horizontal, 20)
+                        if order == "updated" { Text(recent.libraryNote).font(.caption).foregroundStyle(.secondary).padding(.horizontal, 20) }
                         if library.favorites.isEmpty {
                             LilacEmptyState(icon: "heart", title: "아직 담은 작품이 없어요", message: "작품의 하트 버튼을 눌러 내 목록에 추가해 보세요.").padding(30)
                         } else {
                             LazyVGrid(columns: [GridItem(.adaptive(minimum: 140))], spacing: 20) {
-                                ForEach(library.favorites) { saved in
+                                ForEach(order == "updated" ? recent.ordered(library.favorites) : library.favorites) { saved in
                                     NavigationLink { DetailView(summary: saved.anime, source: saved.source) } label: { AnimePosterCard(anime: saved.anime) }
                                         .buttonStyle(.plain).contextMenu { Button("내 목록에서 삭제", role: .destructive) { library.toggle(saved.anime, source: saved.source) } }
                                 }
                             }.padding(20)
                         }
                     }.background(LilacStyle.background).navigationTitle("내 목록")
+                        .task(id: order + library.favorites.map(\.id).joined(separator: "|")) { if order == "updated" && !UIShowcase.enabled { await recent.loadLibrary(library.favorites) } }
                 }
             }
         }

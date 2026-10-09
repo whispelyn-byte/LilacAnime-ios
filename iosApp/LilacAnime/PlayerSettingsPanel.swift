@@ -27,7 +27,7 @@ struct PlayerSettingsPanel<Content: View>: View {
                             Text("재생 · 화질 · 자막").font(.system(size: 11)).foregroundStyle(.white.opacity(0.5))
                         }
                         Spacer()
-                        Button(action: close) { Image(systemName: "xmark").frame(width: 44, height: 44) }
+                        Button(action: close) { Image(systemName: "xmark").frame(width: 44, height: 44).contentShape(Rectangle()) }
                             .buttonStyle(.plain).accessibilityLabel("닫기").keyboardShortcut(.escape, modifiers: [])
                     }.padding(.leading, 16).padding(.trailing, 8).padding(.vertical, 8)
                     Divider().overlay(.white.opacity(0.08))
@@ -37,6 +37,7 @@ struct PlayerSettingsPanel<Content: View>: View {
                                 Text(tabs[index]).font(.system(size: 13, weight: .semibold))
                                     .frame(maxWidth: .infinity).padding(.vertical, 10)
                                     .background(tab == index ? LilacStyle.accent.opacity(0.2) : .clear, in: RoundedRectangle(cornerRadius: 10))
+                                    .contentShape(Rectangle())
                             }.buttonStyle(.plain).foregroundStyle(tab == index ? LilacStyle.accent : .white.opacity(0.65))
                                 .accessibilityIdentifier("player-settings-tab-\(index)")
                                 .accessibilityAddTraits(tab == index ? .isSelected : [])

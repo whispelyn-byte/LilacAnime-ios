@@ -66,13 +66,15 @@ SideStore의 인증 갱신과 새 버전 설치는 별개입니다. 기존 앱�
 
 빌드 34: [37860678497](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37860678497), 앱 소스 620cf5a. JVM **43개**, KMP iOS, Swift/C++ 네이티브 **25개**, iPhone UI **3개**, iPad UI **1개**가 통과했습니다. 화면 비율·배속 복원·이전 설정 보존과 iPhone/iPad 메뉴의 전체 카탈로그 접근, 길게 누른 뒤 재생 유지, 가로 전체 화면/뒤로 복귀를 확인했습니다. iPad 캡처에서 기본 사이드바와 검색창 왼쪽 메뉴를 확인했습니다. simulator arm64/x86_64 및 unsigned device arm64 앱·IPA를 생성했고 README 캡처는 이 실행의 원본입니다.
 
+[빌드 34 패키징 37863570881](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37863570881)과 공개 [v0.4.0-ios.4](https://github.com/whispelyn-byte/LilacAnime-ios/releases/tag/v0.4.0-ios.4)를 확인했습니다. 릴리즈 자산은 IPA와 source.json 두 개입니다. 버전·빌드·크기·최소 iOS가 일치하고, Info.plist를 제외한 앱 파일 **445개**가 검증한 device 아티팩트와 동일합니다. IPA **28,849,749 bytes**, SHA-256 **451b5a853aff9efe777c42de9b7a9ffd55803f5cfbaf0471c5829d7c2ac9e5cd**. 최신 IPA/source.json의 비로그인 다운로드는 HTTP 200입니다. ReAnime의 실제 상세 필터·분류 API 응답도 확인했습니다.
+
 이전 빌드 33: [37778376087](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37778376087), 앱 소스 ee08a08. JVM **39개**, KMP iOS, Swift/C++ 네이티브 **21개**, UI **1개**가 통과했고 iPhone/iPad 캡처와 simulator/device arm64 앱·IPA를 생성했습니다. UI 테스트는 상세에서 가로 전체 화면 진입, 확대/해제 버튼 부재, 자막 모양 설정, 뒤로 복귀를 확인합니다.
 
 Intel 교차 빌드: [37782455600](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37782455600), 4b0ea11. iOS x86_64 KMP와 mpv/llama.cpp/libarchive 의존성을 포함한 앱이 빌드되었고 실행 파일과 디버그 dylib의 x86_64 아키텍처, iphonesimulator 플랫폼, 0.4.0/build 33, 테스트 GGUF 미포함 및 ZIP CRC를 확인했습니다. ZIP **36,478,872 bytes**, SHA-256 **aafe29cf0c2e8d1ee758f98ea7c17a13e2e9a11c0267a960738cd6f9d99fa524**. Intel/macOS VM에서의 실제 실행·속도는 CI 검증 범위에 포함하지 않습니다.
 
 빌드 33의 두 검증 소스를 main에 합쳤으며, 위 빌드 34에서 ARM 실행 테스트와 Intel 교차 빌드를 함께 통과했습니다.
 
-[빌드 33 릴리즈 패키징 37785699943](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37785699943)과 공개 [v0.4.0-ios.3](https://github.com/whispelyn-byte/LilacAnime-ios/releases/tag/v0.4.0-ios.3) 다운로드를 확인했습니다. IPA와 source.json의 버전·빌드·크기·최소 iOS가 일치하고, Info.plist를 제외한 앱 파일 **445개**가 검증한 device 아티팩트와 동일합니다. IPA **28,708,573 bytes**, SHA-256 **759e3016882cf430bad6dbfd4dee7ee2859e136eb59c8a47428f71d9cd3ebf85**. 최신 IPA/source.json의 공개 다운로드는 HTTP 200입니다.
+[빌드 33 릴리즈 패키징 37785699943](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37785699943)과 공개 [v0.4.0-ios.3](https://github.com/whispelyn-byte/LilacAnime-ios/releases/tag/v0.4.0-ios.3) 다운로드를 확인했습니다. IPA와 source.json의 버전·빌드·크기·최소 iOS가 일치하고, Info.plist를 제외한 앱 파일 **445개**가 검증한 device 아티팩트와 동일합니다. IPA **28,708,573 bytes**, SHA-256 **759e3016882cf430bad6dbfd4dee7ee2859e136eb59c8a47428f71d9cd3ebf85**. 당시 최신 IPA/source.json의 공개 다운로드는 HTTP 200이었습니다.
 
 이전 안정 빌드: [37733189254](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37733189254), 34db062, 앱 0.4.0/build 31; JVM 24개·KMP iOS·네이티브 8개·device arm64·IPA.
 전체 데스크탑 기능 이식 빌드: [37751485817](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37751485817), eae4aad, 앱 **0.4.0/build 32**. JVM **33개**, KMP iOS 테스트, Swift/C++ 네이티브 **19개**가 통과했고 simulator/device arm64 앱 및 unsigned IPA를 생성했습니다.

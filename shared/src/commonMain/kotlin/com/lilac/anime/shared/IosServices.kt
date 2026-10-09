@@ -14,7 +14,7 @@ class IosServices {
         scope.launch { call(completion) { metadata.resolve(anime, credential, includeCast) } }
     }
     fun koreanTitle(titles: List<String>, credential: String, completion: (String?, String?) -> Unit) {
-        scope.launch { call(completion) { tmdb.resolve(titles, credential) } }
+        scope.launch { call(completion) { tmdb.desktopTitles(titles, credential, light = true).firstOrNull() } }
     }
     fun testTmdb(credential: String, completion: (String?, String?) -> Unit) {
         scope.launch { call(completion) { tmdb.test(credential) } }

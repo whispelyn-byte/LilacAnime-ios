@@ -14,7 +14,7 @@ final class TitleLookup: NSObject {
         let credential = SecureKeys.load("tmdb")
         if !credential.isEmpty {
             let titles = [query] + aliases.filter { !$0.isEmpty }
-            let cache = "tmdb.title.v1." + SubtitleFiles.key(titles.joined(separator: "|") + SubtitleFiles.key(credential))
+            let cache = "tmdb.title.v2." + SubtitleFiles.key(titles.joined(separator: "|") + SubtitleFiles.key(credential))
             if let saved = UserDefaults.standard.string(forKey: cache) { return saved }
             let title: String? = await withCheckedContinuation { pending in
                 service.koreanTitle(titles: titles, credential: credential) { title, _ in pending.resume(returning: title) }

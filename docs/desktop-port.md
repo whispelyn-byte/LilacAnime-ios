@@ -1,6 +1,6 @@
 # Desktop → iOS 이식 목록
 
-기준: [LilacAnime-desktop 0.5.8](https://github.com/whispelyn-byte/LilacAnime-desktop/tree/192fd8bd1965882fcb1f911178e6bfef0ff33e56) 및 로컬 작업 중인 한국어 제목 검색 실패·30분 재시도 수정. 로컬 데스크탑 변경 파일은 수정하지 않습니다.
+기준: [LilacAnime-desktop 0.5.9](https://github.com/whispelyn-byte/LilacAnime-desktop/tree/4550d61725a8b57e6e890e97bd0f25244a8cf164). 한국어 제목 검색 실패·30분 재시도, 자막 중앙 정렬과 길게 누르기 변경을 포함해 비교했습니다.
 데스크탑 preload의 콘텐츠·자막·번역·다운로드·업데이트 작업을 아래 네이티브 기능으로 대응했습니다. Electron 창을 iOS 안에서 실행하는 구조는 아닙니다.
 
 ## 전체 비교 반영 (iOS 리비전 6)
@@ -15,6 +15,8 @@
 - 애니24: 광고 MP4를 먼저 발견해 본편으로 고정하던 경로를 분리했습니다. 선택된 플레이어 세션에서 master.txt 및 확장자 없는 /m3 미디어 목록을 읽고, 검증한 목록을 네이티브로 전달합니다. HTML 확장자·text/html 응답의 실제 TS 조각은 검증 후 재생·다운로드·Cast에 연결합니다. 30초 이하 광고 재생목록·다른 iframe 영상은 선택하지 않으며 MP4 대체 영상도 실제 길이를 검사합니다. Windows 브라우저 세션에서 실제 본편 1,419.960394초/270조각과 첫 TS 조각의 HTTP 206을 확인했으며, iOS 실기기 전편 재생 확인과는 구분합니다.
 
 데스크탑 함수에서 직접 생성한 비교 입력/기대값은 [desktop-oracle.cjs](../iosApp/scripts/desktop-oracle.cjs)에, 네이티브·공통 검증은 테스트 디렉터리에 있습니다. 실제 사이트의 만료 URL·로그인/캡차·기기별 재생은 별도 실기기 확인 대상입니다.
+
+데스크탑 0.5.9의 제목 실패 재시도도 반영했습니다. 마우스로 길게 눌러 2배속은 iOS의 기존 화면 길게 누르기·외부 키보드 Space 동작에 대응합니다. Chromium VTT 중앙 정렬 수정은 해당 브라우저 CSS 문제이며, iOS는 mpv의 중앙 정렬과 좌우 여백을 사용합니다.
 
 ## 기존 기능·데이터 보존
 

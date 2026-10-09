@@ -2,7 +2,7 @@
 
 Android 원본 앱과 기능은 보존하고, 공통 모델·네트워크·소스·자막 로직을 shared Kotlin Multiplatform 모듈로 분리했습니다.
 iOS는 SwiftUI, MPVKit/libmpv, background URLSession, Keychain, llama.cpp 및 libarchive를 사용합니다.
-데스크탑 0.5.6 및 로컬 후속 커밋 5914a9b 기준 기능 대응과 운영체제 차이는 [desktop-port.md](docs/desktop-port.md)에 있습니다.
+데스크탑 0.5.9 커밋 4550d61 기준 기능 대응과 운영체제 차이는 [desktop-port.md](docs/desktop-port.md)에 있습니다.
 
 ## 빌드
 
@@ -52,7 +52,7 @@ verify.sh는 KMP iOS 테스트, hash-pinned tiny GGUF test fixture, llama.cpp XC
 
 ## 버전과 배포
 
-Android app/module.toml의 versionName **0.4.0**을 유지합니다. iOS build = Android versionCode **30** + iosApp/revision.txt **5**, 즉 **35**이며 태그는 **v0.4.0-ios.5**입니다.
+Android app/module.toml의 versionName **0.4.0**을 유지합니다. iOS build = Android versionCode **30** + iosApp/revision.txt **6**, 즉 **36**이며 태그는 **v0.4.0-ios.6**입니다.
 모든 검사에 통과한 Actions의 실기기 앱 아티팩트를 Package SideStore IPA 워크플로로 다시 패키징하여 Release에 올립니다. APK 생성은 이번 iOS 검증 절차에 포함하지 않습니다.
 
 - [공개 저장소](https://github.com/whispelyn-byte/LilacAnime-ios)

@@ -22,7 +22,7 @@
 
 ## 주요 기능
 
-[데스크탑 0.5.8](https://github.com/whispelyn-byte/LilacAnime-desktop/tree/192fd8bd1965882fcb1f911178e6bfef0ff33e56)의 콘텐츠·자막·번역·다운로드 기능과 로컬 한국어 제목 검색 재시도 수정을 KMP와 SwiftUI로 이식했습니다. 홈·전체·검색·시청기록·내 목록·설정을 데스크탑 기준으로 구성했습니다. 자막 우선순위·묶음 첨부/WinPNG·번역 요청/대체·다운로드 자산·최근 회차/정렬과 OP/ED 분석을 다시 대조했고, 애니24에서 광고가 본편으로 선택되는 문제를 수정했습니다. [전체 파일·API 대응 목록](docs/desktop-audit.json)과 [이식·검증 범위](docs/desktop-port.md)를 제공합니다. 기존 즐겨찾기·시청 기록·자막 싱크·설정·수동 GGUF 가져오기는 유지하며, 이전 버전은 [기존 릴리즈](https://github.com/whispelyn-byte/LilacAnime-ios/releases)에서 받을 수 있습니다.
+[데스크탑 0.5.9](https://github.com/whispelyn-byte/LilacAnime-desktop/tree/4550d61725a8b57e6e890e97bd0f25244a8cf164)의 콘텐츠·자막·번역·다운로드 기능과 한국어 제목 검색 재시도 수정을 KMP와 SwiftUI로 이식했습니다. 홈·전체·검색·시청기록·내 목록·설정을 데스크탑 기준으로 구성했습니다. 자막 우선순위·묶음 첨부/WinPNG·번역 요청/대체·다운로드 자산·최근 회차/정렬과 OP/ED 분석을 다시 대조했고, 애니24에서 광고가 본편으로 선택되는 문제를 수정했습니다. [전체 파일·API 대응 목록](docs/desktop-audit.json)과 [이식·검증 범위](docs/desktop-port.md)를 제공합니다. 기존 즐겨찾기·시청 기록·자막 싱크·설정·수동 GGUF 가져오기는 유지하며, 이전 버전은 [기존 릴리즈](https://github.com/whispelyn-byte/LilacAnime-ios/releases)에서 받을 수 있습니다.
 
 - **탐색:** Linkkf · Ohli24 · Linkani · Animenosub · ReAnime · Miruro, 소스별 검색·필터·방영표·추천, PV·극장판, 전체 카탈로그 수집·재개·한국어 검색.
 - **작품 정보:** 한국어·영어·원제 표시, TMDB → AniList → Wikidata 제목·별칭, 한국어 줄거리와 등장인물 표기, 관련 작품·서버·필러/총집편 표시.
@@ -149,7 +149,7 @@ sh iosApp/scripts/verify.sh
 
 GitHub Actions는 공통 테스트, KMP iOS 테스트, 네이티브 iOS 테스트, 시뮬레이터 캡처, unsigned arm64 IPA 패키징을 실행합니다. 릴리즈에는 실기기용 IPA와 SideStore source.json을 게시합니다. 시뮬레이터 앱은 개발·검증용 Actions 아티팩트로만 제공합니다. **App Store 배포용 서명 빌드가 아닙니다.**
 
-앱 버전은 app/module.toml의 Android versionName을 사용합니다. iOS 빌드 번호는 Android versionCode에 iosApp/revision.txt의 값을 더합니다. 배포 태그는 `python3 iosApp/scripts/android-version.py --tag`로 확인합니다(현재 **v0.4.0-ios.5**). 해당 태그를 푸시하면 모든 테스트·빌드가 성공한 뒤 IPA와 실제 메타데이터로 생성한 SideStore source.json을 릴리스에 게시합니다. 최신 소스 주소는 그대로 유지됩니다.
+앱 버전은 app/module.toml의 Android versionName을 사용합니다. iOS 빌드 번호는 Android versionCode에 iosApp/revision.txt의 값을 더합니다. 배포 태그는 `python3 iosApp/scripts/android-version.py --tag`로 확인합니다(현재 **v0.4.0-ios.6**). 해당 태그를 푸시하면 모든 테스트·빌드가 성공한 뒤 IPA와 실제 메타데이터로 생성한 SideStore source.json을 릴리스에 게시합니다. 최신 소스 주소는 그대로 유지됩니다.
 
 | 경로 | 내용 |
 |---|---|

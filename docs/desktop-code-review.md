@@ -19,7 +19,13 @@
 | 11 저장 20개 한도 | 새 항목을 반드시 포함하고 기존 앞 19개 보관, 동일 엔진 번역 교체 규칙 유지 | 21번째 백그라운드 자막 저장/재시작 검사 |
 | TMDB 후속 변경 | 모든 호출이 150ms 간격·429 대기를 공유, Retry-After 숫자/날짜, 일시 오류 최대 3회; 인증 30분/기타 최소 1분·서버 대기 재시도 | 공통 JVM 동시 요청·일시 오류·인증·긴 대기·민감정보 제거 4개 테스트 |
 
-기존 67개 + 새 로컬 32개로 **99개 데스크탑 직접 생성 비교 사례**를 유지합니다. 공통 JVM 테스트 **66개**, Node Ohli 캡처 회귀 테스트 통과. Swift 구문 검사 통과는 컴파일/기기 실행 검증과 별개이며, macOS Actions에서 네이티브 회귀 테스트와 앱 빌드를 진행합니다.
+기존 67개 + 새 로컬 32개로 **99개 데스크탑 직접 생성 비교 사례**를 유지합니다. 공통 테스트 **66개가 JVM과 iOS Simulator Arm64 양쪽에서 통과**했고, Node Ohli 캡처 회귀 테스트도 통과했습니다.
+
+[최종 Actions #78](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37941643897)는 런타임 커밋 `5c799b67c5146e15fc017152a701d0de0247cdab`으로 성공했습니다. XCTest 네이티브 **58개**, iPhone UI **5개**, iPad UI **3개**가 실패 없이 통과했고, 기기용 앱·SideStore IPA와 Arm64/Intel 시뮬레이터 빌드가 모두 성공했습니다. iPhone/iPad 캡처 13개를 생성해 iPad 메뉴·플레이어 설정 화면도 확인했습니다.
+
+생성된 IPA는 **0.4.0/build 36, iphoneos/arm64, 최소 iOS 16.0**이며, 압축 무결성과 검증된 기기용 앱 파일 480개의 SHA-256 일치를 확인했습니다. 배포용 `source.json` 생성·버전/크기/개인정보 안내 필드 일치도 로컬에서 검사했습니다. 이 검증은 Actions 산출물 기준이며 새 GitHub 릴리즈를 발행한 기록은 아닙니다.
+
+Xcode 26.3에서 iOS 18.5 시뮬레이터의 `libswiftWebKit.dylib`를 찾지 못한 실행 실패도 조사했습니다. [WebKit에 기록된 문제](https://bugs.webkit.org/show_bug.cgi?id=293831)와 같은 경로여서 WinPNG의 비동기 JavaScript 호출을 Objective-C로 연결했습니다. 기기 최소 지원 버전 iOS 16.0을 유지했고, 실제 변환 검사 `testWinPngUsesPostsConverterAndReadsConvertedBlob`도 최종 Actions에서 통과했습니다.
 
 기존 사용자 프롬프트·샘플링 설정은 그대로 보존합니다(`modelSampling == false`). 새 기본 모델 모드에 데스크탑 규칙을 적용합니다. iOS 로컬 추론은 하나의 llama context를 직렬로 사용합니다. 데스크탑 llama-server의 4개 병렬 슬롯과 실행 자원/속도까지 같다는 의미는 아닙니다. 실제 기기·외부 사이트의 모든 회차·대형 GGUF 품질 비교는 완료하지 않았습니다.
 
@@ -98,13 +104,13 @@ iOS [TranslationCoordinator.swift:101](D:/proj/lilacanimeios/iosApp/LilacAnime/T
 
 예를 들어 서로 다른 제공자/파일의 기존 백그라운드 원본 20개 뒤에 새 원본을 저장하면, iOS에서는 새 항목이 바로 제외될 수 있습니다. 보관 한도는 같아도 어느 항목을 버리는지가 다릅니다.
 
-## 아직 커밋되지 않은 데스크탑 후속 변경
+## 최초 대조 당시의 데스크탑 미커밋 후속 변경
 
 대조 시점에 데스크탑 `electron/main.cjs`, `src/app.js`, `tests/catalog-title-retry.test.cjs`가 수정되어 있었고 `electron/tmdb-client.cjs`, `tests/tmdb-client.test.cjs`는 미추적 파일이었습니다. 데스크탑 파일은 변경하지 않았습니다.
 
-새 [tmdb-client.cjs:15](D:/proj/lilacanimedesktop/electron/tmdb-client.cjs:15)은 요청 간격 150ms, 모든 호출의 공통 429 대기, `Retry-After`, 일시 오류 최대 3회 요청을 구현합니다. 제목 수집도 인증 오류는 30분, 그 외는 최소 1분/서버 지정 시간에 재시도하고 구체적인 상태를 표시합니다. iOS [TmdbTitleResolver.kt:19](D:/proj/lilacanimeios/shared/src/commonMain/kotlin/com/lilac/anime/shared/TmdbTitleResolver.kt:19)은 이 공통 요청 제어가 없고, [DesktopCatalog.swift:148](D:/proj/lilacanimeios/iosApp/LilacAnime/DesktopCatalog.swift:148)은 실패 시 고정 30분 재시도입니다. **최초 대조 당시 미반영이었으며, 위 표의 이번 수정에 포함했습니다**입니다.
+새 [tmdb-client.cjs:15](D:/proj/lilacanimedesktop/electron/tmdb-client.cjs:15)은 요청 간격 150ms, 모든 호출의 공통 429 대기, `Retry-After`, 일시 오류 최대 3회 요청을 구현합니다. 제목 수집도 인증 오류는 30분, 그 외는 최소 1분/서버 지정 시간에 재시도하고 구체적인 상태를 표시합니다. 당시 iOS `TmdbTitleResolver.kt`에는 이 공통 요청 제어가 없었고, `DesktopCatalog.swift`는 실패 시 고정 30분 재시도였습니다. **최초 대조 당시 미반영이었으며, 위 표의 이번 수정에 포함했습니다.**
 
-## 일치를 확인한 범위와 실행 증거
+## 최초 대조 당시 일치를 확인한 범위와 실행 증거
 
 - 데스크탑 소스로 비교 입력/기대값을 다시 생성하되 파일 쓰기를 가로챘습니다. 기존 67개 사례의 JSON/Kotlin fixture, WinPNG 스크립트, 클라우드 기본 프롬프트가 현재 파일과 일치했습니다. 결과는 로컬 `.tools/audit-oracle-check.json`에 있습니다. 이 67개가 실제 네이티브에서 이번에 모두 실행됐다는 뜻은 아닙니다.
 - `DesktopParityTest` JVM 테스트 **13개 통과, 실패/오류/건너뜀 0**. 제목 정규화·시즌/OVA 표기·TMDB 검색어/시리즈 별칭·커뮤니티 링크/묶음/폰트·Svelte 표·공개 회차·FFT/반복 구간·부분 번역 JSON ID 등을 검사했습니다. 로컬 로그는 `.tools/review-parity-jvm.log`, JUnit은 `shared/build/test-results/jvmTest/TEST-com.lilac.anime.shared.DesktopParityTest.xml`입니다.
@@ -114,4 +120,4 @@ iOS [TranslationCoordinator.swift:101](D:/proj/lilacanimeios/iosApp/LilacAnime/T
 
 ## 후속 확인
 
-네이티브 빌드/테스트 결과와 남는 플랫폼 차이를 계속 기록합니다. 이 문서의 수정 완료 항목은 실제 기기/모든 외부 서버 조합의 전수 검증 판정을 뜻하지 않습니다.
+최종 네이티브 빌드·테스트 결과는 문서 위에 기록했습니다. 실제 기기·모든 외부 서버 조합·대형 GGUF 품질 비교는 별도 확인 대상이며, 이 문서의 수정 완료 항목은 이 조건의 전수 검증 판정을 뜻하지 않습니다.

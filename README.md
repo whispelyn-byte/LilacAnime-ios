@@ -20,6 +20,8 @@
 
 현재 Android 원본과 같은 **0.4.0**을 기준으로 iOS 빌드 **36**을 사용합니다. 새 설치의 기본 영상 소스는 **ReAnime**이며, 기존에 선택한 소스는 유지합니다.
 
+데스크탑 0.5.9와 세부 로직을 대조해 확인한 11개 차이와 TMDB 후속 변경을 반영했습니다. 비교 기준·수정 내용·검증 범위와 플랫폼 차이는 [코드 대조 결과](docs/desktop-code-review.md)에서 확인할 수 있습니다.
+
 ## 주요 기능
 
 [데스크탑 0.5.9](https://github.com/whispelyn-byte/LilacAnime-desktop/tree/4550d61725a8b57e6e890e97bd0f25244a8cf164)의 콘텐츠·자막·번역·다운로드 기능과 한국어 제목 검색 재시도 수정을 KMP와 SwiftUI로 이식했습니다. 홈·전체·검색·시청기록·내 목록·설정을 데스크탑 기준으로 구성했습니다. 자막 우선순위·묶음 첨부/WinPNG·번역 요청/대체·다운로드 자산·최근 회차/정렬과 OP/ED 분석을 다시 대조했고, 애니24에서 광고가 본편으로 선택되는 문제를 수정했습니다. [전체 파일·API 대응 목록](docs/desktop-audit.json)과 [이식·검증 범위](docs/desktop-port.md)를 제공합니다. 기존 즐겨찾기·시청 기록·자막 싱크·설정·수동 GGUF 가져오기는 유지하며, 이전 버전은 [기존 릴리즈](https://github.com/whispelyn-byte/LilacAnime-ios/releases)에서 받을 수 있습니다.

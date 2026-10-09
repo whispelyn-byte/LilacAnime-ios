@@ -13,7 +13,8 @@ function page() {
     return {url: entry?.url || String(url), clone() { return this; }, text: async () => entry?.text || ''};
   };
   const window = {fetch, webkit: {messageHandlers: {lilacMedia: {postMessage: x => messages.push(x)}}}};
-  vm.runInNewContext(script, {window, document: doc, location: {href: 'https://cdndania.com/video/episode'}, XMLHttpRequest: XHR, URL, TextDecoder, setInterval: fn => timers.push(fn)});
+  class Observer { constructor(fn) { events.resources = fn; } observe() {} }
+  vm.runInNewContext(script, {window, document: doc, location: {href: 'https://cdndania.com/video/episode'}, XMLHttpRequest: XHR, URL, TextDecoder, PerformanceObserver: Observer, performance: {getEntriesByType: () => []}, setInterval: fn => timers.push(fn)});
   return {window, messages, calls, responses, events, doc, timers, XHR};
 }
 const flush = () => new Promise(resolve => setImmediate(resolve));
@@ -46,5 +47,10 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   t.window.jwplayer = () => ({getPlaylistItem: () => ({file:'https://cdn.test/master.txt'})});
   t.timers[0](); await flush(); t.responses.set('https://cdn.test/master.txt', {text:'#EXTM3U\n#EXTINF:40,\nmain.ts\n#EXT-X-ENDLIST'});
   t.timers[0](); await flush(); assert.equal(t.messages[0].url, 'https://cdn.test/master.txt');
+  const before = t.calls.length; t.timers[0](); await flush(); assert.equal(t.calls.length, before, 'A loaded master is not fetched every second');
+  const u = page();
+  u.responses.set('https://cdn.test/native/master.txt', {text:'#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000\nindex.m3u8'});
+  u.events.resources({getEntries: () => [{name:'https://cdn.test/native/master.txt'}]}); await flush();
+  assert.equal(u.messages[0].url, 'https://cdn.test/native/index.m3u8', 'Native Safari HLS resource discovery must read master.txt');
   console.log('Ohli capture: advertising isolation, HLS/XHR redirects, ranking, headers, MP4 fallback and retry passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -1,6 +1,6 @@
 (() => {
   const send = body => window.webkit.messageHandlers.lilacMedia.postMessage(body);
-  const seen = new Set(), pending = new Set();
+  const seen = new Set(), pending = new Set(), loaded = new Set();
   const absolute = value => { try { return new URL(value, location.href).href; } catch { return ''; } };
   const report = (value, kind) => {
     const url = absolute(value);
@@ -8,7 +8,8 @@
     seen.add(url); send({url, kind, referer: ''});
   };
   const playlist = (text, base) => {
-    if (!String(text).trimStart().startsWith('#EXTM3U')) return;
+    if (!String(text).trimStart().startsWith('#EXTM3U')) return false;
+    loaded.add(base);
     const lines = String(text).split(/\r?\n/).map(x => x.trim()), variants = [];
     for (let i = 0; i < lines.length; i++) {
       if (!lines[i].startsWith('#EXT-X-STREAM-INF:')) continue;
@@ -17,13 +18,14 @@
     }
     if (variants.length) variants.sort((a,b) => b.bandwidth-a.bandwidth).forEach(x => report(x.url, 'ohliVariant'));
     else if (lines.reduce((sum,line) => sum + (line.startsWith('#EXTINF:') ? Number(line.slice(8).split(',')[0]) || 0 : 0), 0) > 30) report(base, 'ohliVariant');
+    return true;
   };
   const isPlaylist = url => /\/(?:master\.txt)(?:[?#]|$)|\.m3u8(?:[?#]|$)/i.test(String(url));
   const originalFetch = window.fetch;
   window.fetch = function(input, init) {
     const url = absolute(typeof input === 'string' || input instanceof URL ? String(input) : input.url);
     const response = originalFetch.apply(this, arguments);
-    if (isPlaylist(url)) response.then(r => r.clone().text().then(text => playlist(text, r.url || url))).catch(() => {});
+    if (isPlaylist(url)) response.then(r => r.clone().text().then(text => { if (playlist(text, r.url || url)) loaded.add(url); })).catch(() => {});
     return response;
   };
   const originalOpen = XMLHttpRequest.prototype.open;
@@ -31,17 +33,23 @@
     const url = absolute(value);
     if (isPlaylist(url)) this.addEventListener('load', () => { try {
       const text = this.responseType === 'arraybuffer' ? new TextDecoder().decode(this.response) : this.responseText;
-      playlist(text, this.responseURL || url);
+      if (playlist(text, this.responseURL || url)) loaded.add(url);
     } catch {} });
     return originalOpen.apply(this, arguments);
   };
   const requestPlaylist = value => {
     const url = absolute(value);
-    if (!isPlaylist(url) || seen.has(url) || pending.has(url)) return;
+    if (!isPlaylist(url) || seen.has(url) || pending.has(url) || loaded.has(url)) return;
     pending.add(url);
     // master.txt needs the player's cookie and its no-referrer policy. Read it in this WK session.
     window.fetch(url, {credentials: 'include', referrerPolicy: 'no-referrer'}).catch(() => {}).finally(() => pending.delete(url));
   };
+  // Safari can request HLS through its native media stack instead of fetch/XHR.
+  // Read the observed master in the same cookie-bearing page session as well.
+  try {
+    new PerformanceObserver(list => list.getEntries().forEach(entry => requestPlaylist(entry.name))).observe({entryTypes:['resource']});
+    performance.getEntriesByType('resource').forEach(entry => requestPlaylist(entry.name));
+  } catch {}
   const scan = () => {
     const player = document.querySelector('iframe#video') || document.querySelector('iframe[src*="cdndania"]');
     if (player) report(player.src, 'ohliPlayer');

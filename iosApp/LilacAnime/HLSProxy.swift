@@ -25,6 +25,10 @@ enum HLSData {
     }
 
     static func fetch(_ url: URL, stream: ResolvedStream, range: String? = nil) async throws -> (Data, HTTPURLResponse) {
+        try Task.checkCancellation()
+        if url == stream.url, let manifest = stream.hlsManifest {
+            return (Data(manifest.utf8), HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/vnd.apple.mpegurl"])!)
+        }
         var request = URLRequest(url: url)
         for (key, value) in stream.headers where key.lowercased() != "cookie" || url.host == stream.url.host { request.setValue(value, forHTTPHeaderField: key) }
         request.setValue(stream.referer, forHTTPHeaderField: "Referer")
@@ -184,13 +188,15 @@ final class HLSProxy {
             listener.start(queue: queue)
         }
         let url = queue.sync { register(stream.url) }
-        var proxied = stream; proxied.url = url; proxied.headers = [:]; proxied.manifestKey = nil
+        var proxied = stream; proxied.url = url; proxied.headers = [:]; proxied.manifestKey = nil; proxied.hlsManifest = nil
         return proxied
     }
     private func register(_ url: URL) -> URL {
         let key = SubtitleFiles.key(url.absoluteString)
         routes[key] = url
-        return URL(string: "http://127.0.0.1:\(port)/\(token)/\(key).\(url.pathExtension.isEmpty ? "bin" : url.pathExtension)")!
+        let original = url.pathExtension.lowercased()
+        let ext = url == stream?.url && stream?.hlsManifest != nil ? "m3u8" : original == "html" ? "ts" : original.isEmpty ? "bin" : original
+        return URL(string: "http://127.0.0.1:\(port)/\(token)/\(key).\(ext)")!
     }
     private func receive(_ connection: NWConnection) {
         connection.start(queue: queue)
@@ -217,16 +223,17 @@ final class HLSProxy {
         let range = lines.first { $0.lowercased().hasPrefix("range:") }.map { String($0.dropFirst(6)).trimmingCharacters(in: .whitespaces) }
         Task {
             do {
-                let segment = ["png", "webp"].contains(url.pathExtension.lowercased())
+                let segment = ["png", "webp", "html"].contains(url.pathExtension.lowercased())
                 let (data, response) = segment ? try await media.load(url, stream: stream) : try await HLSData.fetch(url, stream: stream, range: stream.manifestKey == nil ? range : nil)
                 var body = data
                 var contentType = response.mimeType ?? "application/octet-stream"
-                if url.pathExtension.lowercased() == "m3u8" || contentType.contains("mpegurl") {
+                if url.pathExtension.lowercased() == "m3u8" || contentType.contains("mpegurl") || (url == stream.url && stream.hlsManifest != nil) {
                     let text = HLSData.selectVariant(try HLSData.manifest(data, key: stream.manifestKey), quality: self.quality)
-                    await media.order(HLSData.references(text, base: url).filter { ["png", "webp"].contains($0.pathExtension.lowercased()) })
+                    await media.order(HLSData.references(text, base: url).filter { ["png", "webp", "html"].contains($0.pathExtension.lowercased()) })
                     body = Data(self.queue.sync { HLSData.rewrite(text, base: url) { self.register($0).absoluteString } }.utf8)
                     contentType = "application/vnd.apple.mpegurl"
-                } else if stream.manifestKey != nil && (url.pathExtension == "ts" || contentType.hasPrefix("image/")) { body = HLSData.fragment(data); contentType = "video/mp2t" }
+                } else if segment { contentType = body.first == 71 ? "video/mp2t" : "video/mp4" }
+                else if stream.manifestKey != nil && (url.pathExtension == "ts" || contentType.hasPrefix("image/")) { body = HLSData.fragment(data); contentType = "video/mp2t" }
                 var headers = ["Content-Type": contentType, "Accept-Ranges": "bytes"]
                 if !segment, let value = response.value(forHTTPHeaderField: "Content-Range") { headers["Content-Range"] = value }
                 var status = segment ? 200 : response.statusCode

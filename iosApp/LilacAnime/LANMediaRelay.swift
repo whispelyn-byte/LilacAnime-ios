@@ -110,7 +110,8 @@ final class LANMediaRelay {
         } else {
             guard ["https", "http"].contains(url.scheme ?? ""), url.user == nil, url.password == nil else { throw SubtitleFiles.failure("Invalid media reference") }
         }
-        let ext = url.pathExtension.lowercased()
+        let original = url.pathExtension.lowercased()
+        let ext = url == stream?.url && stream?.hlsManifest != nil ? "m3u8" : stream?.hlsManifest != nil && original == "html" ? "ts" : original
         let suffix = ext.allSatisfy { $0.isLetter || $0.isNumber } && ext.count <= 10 && !ext.isEmpty ? ext : "bin"
         let path = SubtitleFiles.key(url.absoluteString) + "." + suffix
         guard resources[path] != nil || resources.count < 10000 else { throw SubtitleFiles.failure("Too many HLS resources") }
@@ -170,9 +171,12 @@ final class LANMediaRelay {
                         } else {
                             try await self.sendFile(connection, url: url, range: range, head: method == "HEAD")
                         }
-                    } else if url.pathExtension.lowercased() == "m3u8" || (url == stream.url && stream.manifestKey != nil) {
+                    } else if url.pathExtension.lowercased() == "m3u8" || (url == stream.url && (stream.manifestKey != nil || stream.hlsManifest != nil)) {
                         let (data, _) = try await HLSData.fetch(url, stream: stream)
                         try await self.sendManifest(connection, data: data, base: url, stream: stream, head: method == "HEAD")
+                    } else if stream.hlsManifest != nil && url.pathExtension.lowercased() == "html" {
+                        let (data, _) = try await HLSData.mediaSegment(url, stream: stream)
+                        try await self.sendBytes(connection, data: data, type: data.first == 71 ? "video/mp2t" : "video/mp4", range: range, head: method == "HEAD")
                     } else if stream.manifestKey != nil {
                         let (data, response) = try await HLSData.fetch(url, stream: stream)
                         if response.mimeType?.lowercased().contains("mpegurl") == true {

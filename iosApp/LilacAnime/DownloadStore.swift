@@ -149,7 +149,7 @@ final class DownloadStore: ObservableObject {
                 number: item.number, watchURL: item.watchURL.absoluteString, stream: stream, quality: quality), at: 0)
         } else {
             update(id) { entry in
-                if entry.stream.url != stream.url || entry.stream.manifestKey != stream.manifestKey {
+                if entry.stream.url != stream.url || entry.stream.manifestKey != stream.manifestKey || entry.stream.hlsManifest != stream.hlsManifest {
                     entry.parts = nil; entry.rootFile = nil
                 }
                 entry.stream = stream; entry.quality = quality
@@ -253,7 +253,10 @@ final class DownloadStore: ObservableObject {
               let target = BackgroundDownloadDelegate.destination(description) else { try? FileManager.default.removeItem(at: staged); return }
         guard entries[index].status != "중단됨" else { try? FileManager.default.removeItem(at: staged); return }
         do {
-            if entries[index].stream.manifestKey != nil && (fields[1].hasSuffix(".ts") || mime.hasPrefix("image/")) {
+            if entries[index].stream.hlsManifest != nil && entries[index].parts?[partIndex].url.pathExtension.lowercased() == "html" {
+                let decoded = try HLSData.validatedFragment(Data(contentsOf: staged))
+                try decoded.write(to: target, options: .atomic); try FileManager.default.removeItem(at: staged)
+            } else if entries[index].stream.manifestKey != nil && (fields[1].hasSuffix(".ts") || mime.hasPrefix("image/")) {
                 let decoded = HLSData.fragment(try Data(contentsOf: staged))
                 try decoded.write(to: target, options: .atomic); try FileManager.default.removeItem(at: staged)
             } else {

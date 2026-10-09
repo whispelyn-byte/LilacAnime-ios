@@ -146,7 +146,7 @@ final class EpisodePlayerModel: ObservableObject {
             do {
                 proxy?.stop(); proxy = nil
                 var playable = stream
-                if stream.manifestKey != nil || (library.preferences.quality != "Auto" && stream.url.pathExtension.lowercased() == "m3u8" && !stream.url.isFileURL) {
+                if stream.manifestKey != nil || stream.hlsManifest != nil || (library.preferences.quality != "Auto" && stream.url.pathExtension.lowercased() == "m3u8" && !stream.url.isFileURL) {
                     let proxy = HLSProxy(); self.proxy = proxy; playable = try await proxy.start(stream, quality: library.preferences.quality)
                 }
                 guard token == generation, playing == playRequest else { return }

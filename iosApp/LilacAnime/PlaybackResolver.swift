@@ -11,6 +11,7 @@ struct ResolvedStream: Codable, Identifiable, Hashable {
     var headers: [String: String]
     var manifestKey: String?
     var subtitles: [RemoteSubtitle] = []
+    var hlsManifest: String? = nil
 }
 struct RemoteSubtitle: Codable, Identifiable, Hashable {
     var id: String { url.absoluteString }
@@ -63,7 +64,7 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
     private var preferRaw = false
     private var ohliPlayer: URL?
     private var candidateTasks: [URL: Task<Void, Never>] = [:]
-    private var pendingOhli: [(url: URL, frame: URL?, kind: String)] = []
+    private var pendingOhli: [(url: URL, frame: URL?, kind: String, manifest: String?)] = []
     private var lastOhliCandidate: Task<Void, Never>?
     private let desktop = IosServices()
     private let agent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1"
@@ -215,17 +216,17 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
                message.frameInfo.request.url?.host == currentItem?.watchURL.host {
                 ohliPlayer = url
                 for candidate in pendingOhli where OhliPlayback.accepts(kind: candidate.kind, frame: candidate.frame, selected: url) {
-                    verifyOhli(candidate.url, hls: candidate.kind == "ohliVariant")
+                    verifyOhli(candidate.url, hls: candidate.kind == "ohliVariant", manifest: candidate.manifest)
                 }
                 pendingOhli.removeAll()
                 return
             }
             let kind = body["kind"] ?? ""
             if ohliPlayer == nil, ["ohliVariant", "ohliMedia"].contains(kind), pendingOhli.count < 32 {
-                pendingOhli.append((url, message.frameInfo.request.url, kind)); return
+                pendingOhli.append((url, message.frameInfo.request.url, kind, body["manifest"])); return
             }
             guard OhliPlayback.accepts(kind: kind, frame: message.frameInfo.request.url, selected: ohliPlayer) else { return }
-            verifyOhli(url, hls: body["kind"] == "ohliVariant")
+            verifyOhli(url, hls: body["kind"] == "ohliVariant", manifest: body["manifest"])
             return
         }
         if body["kind"] == "subtitle" {
@@ -235,8 +236,14 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
             capture(value, referer: body["referer"] ?? message.frameInfo.request.url?.absoluteString ?? "", key: body["pk"])
         }
     }
-    private func verifyOhli(_ url: URL, hls: Bool) {
+    private func verifyOhli(_ url: URL, hls: Bool, manifest: String?) {
         guard candidateTasks[url] == nil, !streams.contains(where: { $0.url == url }) else { return }
+        if hls {
+            guard let manifest, manifest.utf8.count <= 4_000_000, OhliPlayback.isEpisodePlaylist(manifest) else { return }
+            streams.append(ResolvedStream(label: "HLS", url: url, referer: "", headers: ["User-Agent": agent], hlsManifest: manifest))
+            loading = false; error = nil; timeout?.cancel()
+            return
+        }
         let token = generation
         let previous = lastOhliCandidate
         candidateTasks[url] = Task { [weak self] in
@@ -249,16 +256,12 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
             if !referer.isEmpty { headers["Referer"] = referer }
             let stream = ResolvedStream(label: hls ? "HLS" : "MP4", url: url, referer: referer, headers: headers)
             do {
-                if hls {
-                    let (data, _) = try await HLSData.fetch(url, stream: stream)
-                    let text = try HLSData.manifest(data, key: nil)
-                    guard OhliPlayback.isEpisodePlaylist(text) else { return }
-                } else {
+                do {
                     let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": stream.headers])
                     let duration = try await asset.load(.duration).seconds
                     guard duration.isFinite, duration > 30 else { return }
                 }
-                guard generation == token, !Task.isCancelled else { return }
+                guard generation == token, !Task.isCancelled, streams.isEmpty else { return }
                 streams.append(stream); loading = false; error = nil; timeout?.cancel()
             } catch { /* An advertising or unavailable candidate must not end episode discovery. */ }
         }

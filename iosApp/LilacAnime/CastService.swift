@@ -47,7 +47,7 @@ final class CastService: NSObject, GCKRequestDelegate, GCKSessionManagerListener
             metadata.setString(title, forKey: kGCKMetadataKeyTitle)
             let builder = GCKMediaInformationBuilder(contentURL: contentURL)
             builder.streamType = .buffered
-            builder.contentType = stream.manifestKey != nil || stream.url.pathExtension.lowercased() == "m3u8" ? "application/x-mpegURL" : "video/mp4"
+            builder.contentType = stream.manifestKey != nil || stream.hlsManifest != nil || stream.url.pathExtension.lowercased() == "m3u8" ? "application/x-mpegURL" : "video/mp4"
             builder.metadata = metadata
             var tracks: [GCKMediaTrack] = []
             if let subtitle, let relay {

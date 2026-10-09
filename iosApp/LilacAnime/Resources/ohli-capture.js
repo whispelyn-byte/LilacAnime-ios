@@ -2,10 +2,10 @@
   const send = body => window.webkit.messageHandlers.lilacMedia.postMessage(body);
   const seen = new Set(), pending = new Set(), loaded = new Set();
   const absolute = value => { try { return new URL(value, location.href).href; } catch { return ''; } };
-  const report = (value, kind) => {
+  const report = (value, kind, manifest = '') => {
     const url = absolute(value);
     if (!/^https?:\/\//.test(url) || seen.has(url)) return;
-    seen.add(url); send({url, kind, referer: ''});
+    seen.add(url); send({url, kind, referer: '', manifest});
   };
   const playlist = (text, base) => {
     if (!String(text).trimStart().startsWith('#EXTM3U')) return false;
@@ -16,11 +16,13 @@
       const next = lines.slice(i + 1).find(x => x && !x.startsWith('#'));
       if (next) variants.push({url: new URL(next, base).href, bandwidth: Number((lines[i].match(/(?:^|[:,])BANDWIDTH=(\d+)/) || [])[1]) || 0});
     }
-    if (variants.length) variants.sort((a,b) => b.bandwidth-a.bandwidth).forEach(x => report(x.url, 'ohliVariant'));
-    else if (lines.reduce((sum,line) => sum + (line.startsWith('#EXTINF:') ? Number(line.slice(8).split(',')[0]) || 0 : 0), 0) > 30) report(base, 'ohliVariant');
+    if (variants.length) variants.sort((a,b) => b.bandwidth-a.bandwidth).forEach(x => requestPlaylist(x.url, true));
+    // The /m3/ token endpoint also needs the player's session. Keep the validated
+    // media playlist so native playback/downloads do not have to request it again.
+    else if (String(text).length <= 4_000_000 && lines.reduce((sum,line) => sum + (line.startsWith('#EXTINF:') ? Number(line.slice(8).split(',')[0]) || 0 : 0), 0) > 30) report(base, 'ohliVariant', String(text));
     return true;
   };
-  const isPlaylist = url => /\/(?:master\.txt)(?:[?#]|$)|\.m3u8(?:[?#]|$)/i.test(String(url));
+  const isPlaylist = url => /\/master\.txt(?:[?#]|$)|\.m3u8(?:[?#]|$)|\/m3\/[^/?#]+/i.test(String(url));
   const originalFetch = window.fetch;
   window.fetch = function(input, init) {
     const url = absolute(typeof input === 'string' || input instanceof URL ? String(input) : input.url);
@@ -37,12 +39,14 @@
     } catch {} });
     return originalOpen.apply(this, arguments);
   };
-  const requestPlaylist = value => {
+  const requestPlaylist = (value, force = false) => {
     const url = absolute(value);
-    if (!isPlaylist(url) || seen.has(url) || pending.has(url) || loaded.has(url)) return;
+    if ((!force && !isPlaylist(url)) || seen.has(url) || pending.has(url) || loaded.has(url)) return;
     pending.add(url);
     // master.txt needs the player's cookie and its no-referrer policy. Read it in this WK session.
-    window.fetch(url, {credentials: 'include', referrerPolicy: 'no-referrer'}).catch(() => {}).finally(() => pending.delete(url));
+    originalFetch.call(window, url, {credentials: 'include', referrerPolicy: 'no-referrer'})
+      .then(r => r.text().then(text => { if (playlist(text, r.url || url)) loaded.add(url); }))
+      .catch(() => {}).finally(() => pending.delete(url));
   };
   // Safari can request HLS through its native media stack instead of fetch/XHR.
   // Read the observed master in the same cookie-bearing page session as well.

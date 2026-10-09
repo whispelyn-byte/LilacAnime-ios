@@ -62,7 +62,8 @@ actor HLSPlanBuilder {
         return (root, parts.values.sorted { $0.name < $1.name })
     }
     private func filename(_ url: URL, manifest: Bool = false) -> String {
-        let ext = manifest ? "m3u8" : url.pathExtension.lowercased()
+        let original = url.pathExtension.lowercased()
+        let ext = manifest ? "m3u8" : stream.hlsManifest != nil && original == "html" ? "ts" : original
         let suffix = ext.range(of: "^[a-z0-9]{1,10}$", options: .regularExpression) == nil ? "bin" : ext
         return SubtitleFiles.key(url.absoluteString) + "." + suffix
     }

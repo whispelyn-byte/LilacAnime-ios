@@ -14,7 +14,7 @@ final class PlaybackTests: XCTestCase {
         XCTAssertTrue(models.isHittable); models.tap()
         let list = app.descendants(matching: .any)["local-models-list"].firstMatch
         XCTAssertTrue(list.waitForExistence(timeout: 5))
-        let back = app.navigationBars.buttons.matching(NSPredicate(format: "label IN %@", ["설정", "Back", "뒤로"])).firstMatch
+        let back = app.navigationBars.buttons.matching(NSPredicate(format: "label == %@ OR label == %@ OR label == %@", "설정", "Back", "뒤로")).firstMatch
         XCTAssertTrue(back.waitForExistence(timeout: 5)); XCTAssertTrue(back.isHittable); back.tap()
         XCTAssertTrue(models.waitForExistence(timeout: 5)); XCTAssertFalse(list.exists)
         models.tap(); XCTAssertTrue(list.waitForExistence(timeout: 5))

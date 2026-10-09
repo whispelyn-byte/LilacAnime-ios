@@ -64,6 +64,8 @@ SideStore의 인증 갱신과 새 버전 설치는 별개입니다. 기존 앱�
 
 ## 검증 기록
 
+빌드 35: [37881121352](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37881121352), 앱 소스 31b314b. JVM **43개**, KMP iOS, Swift/C++ 네이티브 **28개**, iPhone UI **5개**, iPad UI **3개**가 통과했습니다. 로컬 모델 화면의 뒤로가기, 홈 이동과 설정 재진입 시 하위 화면 닫힘을 iPhone/iPad에서 확인했습니다. 플레이어 패널의 탭·닫기·화면 내 배치, 비율 선택 후 맞춤/채움/늘림 전환과 예시 영상 크기도 검사했습니다. simulator arm64/x86_64와 unsigned device arm64 앱·IPA를 생성했으며 README 캡처는 이 실행의 원본입니다. 화면 모드 캡처는 예시 영상으로 여백·크롭·늘림을 확인한 것이며 실제 외부 영상 재생 검증과 구분합니다.
+
 빌드 34: [37860678497](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37860678497), 앱 소스 620cf5a. JVM **43개**, KMP iOS, Swift/C++ 네이티브 **25개**, iPhone UI **3개**, iPad UI **1개**가 통과했습니다. 화면 비율·배속 복원·이전 설정 보존과 iPhone/iPad 메뉴의 전체 카탈로그 접근, 길게 누른 뒤 재생 유지, 가로 전체 화면/뒤로 복귀를 확인했습니다. iPad 캡처에서 기본 사이드바와 검색창 왼쪽 메뉴를 확인했습니다. simulator arm64/x86_64 및 unsigned device arm64 앱·IPA를 생성했고 README 캡처는 이 실행의 원본입니다.
 
 [빌드 34 패키징 37863570881](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37863570881)과 공개 [v0.4.0-ios.4](https://github.com/whispelyn-byte/LilacAnime-ios/releases/tag/v0.4.0-ios.4)를 확인했습니다. 릴리즈 자산은 IPA와 source.json 두 개입니다. 버전·빌드·크기·최소 iOS가 일치하고, Info.plist를 제외한 앱 파일 **445개**가 검증한 device 아티팩트와 동일합니다. IPA **28,849,749 bytes**, SHA-256 **451b5a853aff9efe777c42de9b7a9ffd55803f5cfbaf0471c5829d7c2ac9e5cd**. 최신 IPA/source.json의 비로그인 다운로드는 HTTP 200입니다. ReAnime의 실제 상세 필터·분류 API 응답도 확인했습니다.

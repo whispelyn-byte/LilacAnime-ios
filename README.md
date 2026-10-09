@@ -50,8 +50,13 @@ PC 창 버튼·설치 프로그램·CUDA·외장 폴더 직접 지정은 iOS의 
 <p align="center">
   <img src="docs/screenshots/workspace-ipad-dark.png" width="700" alt="iPad 홈">
 </p>
+<p align="center">
+  <img src="docs/screenshots/player-settings-ipad-dark.png" width="700" alt="iPad 플레이어 설정 패널">
+</p>
 
-캡처는 [빌드 34 검증](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37860678497)에서 시뮬레이터와 예시 데이터로 생성했습니다. 실제 작품 이미지나 영상 재생 캡처가 아닙니다. 플레이어는 가로 전체 화면으로 표시되며, 원본 디스플레이 캡처의 방향을 유지했습니다.
+iPad 화면 모드 예시: [맞춤](docs/screenshots/player-fit-contain-ipad-dark.png) · [채움](docs/screenshots/player-fit-cover-ipad-dark.png) · [늘림](docs/screenshots/player-fit-stretch-ipad-dark.png).
+
+캡처는 [빌드 35 검증](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37881121352)에서 시뮬레이터와 예시 데이터로 생성했습니다. 실제 작품 이미지나 영상 재생 캡처가 아닙니다. 플레이어는 가로 전체 화면으로 표시되며, 원본 디스플레이 캡처의 방향을 유지했습니다.
 
 ## 설치
 
@@ -89,12 +94,14 @@ https://github.com/whispelyn-byte/LilacAnime-ios/releases/latest/download/source
 ## 자막·모델·다운로드
 
 - 재생 화면의 자막 메뉴에서 제작자/파일을 선택하고, 회차에 저장한 원본·번역 자막을 다시 불러오거나 공유합니다. **다시 번역**은 부분 번역 캐시를 새로 만들고 선택한 제공자로 다시 처리합니다.
-- **설정 → 자막 자동 번역 → 로컬 GGUF 모델**에서 프리셋을 받거나 파일을 가져옵니다. 접근 제한이 있는 Hugging Face 저장소는 해당 모델의 이용 조건 동의와 사용자 토큰이 필요합니다. 대형 모델은 기기 메모리에 따라 로드하지 못할 수 있습니다.
+- **설정 → 자막 자동 번역 → 로컬 GGUF 모델**에서 프리셋을 받거나 파일을 가져옵니다. 위쪽 뒤로가기 버튼으로 번역 설정에 돌아가며, 홈·다른 메뉴를 누르면 모델 화면도 닫힙니다. 접근 제한이 있는 Hugging Face 저장소는 해당 모델의 이용 조건 동의와 사용자 토큰이 필요합니다. 대형 모델은 기기 메모리에 따라 로드하지 못할 수 있습니다.
 - **다운로드 → 다운로드 폴더 내보내기·가져오기**에서 완료한 회차를 파일 앱의 폴더로 옮깁니다. 폴더에는 영상, 자막, 폰트, OP/ED 정보와 index.json이 포함됩니다. 기존 앱 내부 파일은 내보낼 때 유지합니다.
 - **설정 → 자막 → 저장 자막·캐시 관리**에서 저장한 자막을 보존하고 임시/번역 캐시를 정리하거나 전체 자막을 명시적으로 삭제합니다.
 - **설정 → 업데이트 · 정보**에서 새 IPA를 받고 공유할 수 있습니다. 설치와 서명은 SideStore에서 진행합니다.
 
 ## 플레이어 사용
+
+새 설치는 건너뛰기 버튼 표시가 켜져 있고 OP/ED 자동 건너뛰기는 꺼져 있습니다. 이미 저장한 설정은 유지하며, 플레이어 설정의 재생 탭에서 각각 바꿀 수 있습니다.
 
 | 조작 | 동작 |
 |---|---|

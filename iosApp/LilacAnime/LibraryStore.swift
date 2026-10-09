@@ -55,7 +55,7 @@ struct AppPreferences: Codable, Equatable {
     var subtitleOffset = 0.0
     var assEffects = true
     var autoPlay = true
-    var autoSkip = true
+    var autoSkip = false
     var showSkipButton: Bool? = true
     var offlineAnalysis = true
     var backgroundAudio = true

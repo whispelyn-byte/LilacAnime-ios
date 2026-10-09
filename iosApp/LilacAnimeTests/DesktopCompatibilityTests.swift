@@ -10,6 +10,7 @@ final class DesktopCompatibilityTests: XCTestCase {
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
         for key in ["playerFit", "playerAspect", "showSkipButton", "titleLanguage", "desktopWorkspace", "preferredServer", "modelSampling", "pretranslateNext", "downloadSubtitles", "translationModels", "cloudFallback", "localGPU", "translateDownloads"] { object.removeValue(forKey: key) }
         object["selectedGGUF"] = "existing.gguf"; object["source"] = "miruro"; object["subtitleOffset"] = 1.7
+        object["autoSkip"] = true
         let restored = try JSONDecoder().decode(AppPreferences.self, from: JSONSerialization.data(withJSONObject: object))
         XCTAssertEqual(restored.selectedGGUF, "existing.gguf")
         XCTAssertEqual(restored.source, "miruro"); XCTAssertEqual(restored.subtitleOffset, 1.7)
@@ -17,6 +18,7 @@ final class DesktopCompatibilityTests: XCTestCase {
         XCTAssertNil(restored.playerFit)
         XCTAssertNil(restored.playerAspect)
         XCTAssertTrue(restored.showSkipButton ?? true)
+        XCTAssertTrue(restored.autoSkip, "An existing user's choice must survive the new default.")
     }
     func testActualGemma4TemplateKeepsSystemAndUserAndDisablesThinking() throws {
         let file = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "gemma4-template", withExtension: "txt"))

@@ -23,6 +23,8 @@ struct DesktopWorkspace: View {
                         .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 240)
                 } detail: { page.id(navigation.section) }
                 .navigationSplitViewStyle(.balanced)
+                // Reset the column path too when replacing the workspace page.
+                .id(navigation.section)
             } else { page.id(navigation.section) }
             }
         }.environmentObject(navigation)

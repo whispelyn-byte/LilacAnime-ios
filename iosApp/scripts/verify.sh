@@ -49,6 +49,7 @@ xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" com.lilac.anime.
 sleep 12
 xcrun simctl io "$SIMULATOR_ID" screenshot build/screenshots/home-light.png
 xcrun simctl terminate "$SIMULATOR_ID" com.lilac.anime.ios
+xcrun simctl shutdown "$SIMULATOR_ID"
 IPAD_ID="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); pads=[v for group in d["devices"].values() for v in group if v.get("isAvailable") and "iPad" in v["name"]]; print(pads[0]["udid"] if pads else "")')"
 if [ -n "$IPAD_ID" ]; then
   xcrun simctl boot "$IPAD_ID" || true
@@ -65,6 +66,7 @@ if [ -n "$IPAD_ID" ]; then
     xcrun simctl io "$IPAD_ID" screenshot "build/screenshots/$SCREEN-ipad-dark.png"
   done
   xcrun simctl terminate "$IPAD_ID" com.lilac.anime.ios
+  xcrun simctl shutdown "$IPAD_ID"
 fi
 xcodebuild -project LilacAnime.xcodeproj -scheme LilacAnime -configuration Debug -derivedDataPath build/DerivedData -destination "generic/platform=iOS" CODE_SIGNING_ALLOWED=NO MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$APP_BUILD" build
 

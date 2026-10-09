@@ -5,7 +5,6 @@ import LilacShared
 struct SettingsView: View {
     private enum Destination: Hashable { case localModels }
     @EnvironmentObject private var store: LibraryStore
-    @EnvironmentObject private var navigation: DesktopNavigation
     @ObservedObject private var updater = DesktopUpdater.shared
     @State private var apiKey = ""
     @State private var apiModels: [String] = []
@@ -19,7 +18,7 @@ struct SettingsView: View {
     @State private var tmdbTesting = false
     @State private var tmdbService = IosServices()
     @State private var category = "general"
-    @State private var path: [Destination] = []
+    @State private var path = NavigationPath()
     private let categories = ["general", "playback", "subtitle", "titles", "translate", "oped", "about"]
     private let categoryNames = ["일반", "재생", "자막", "한국어 제목 검색", "자막 자동 번역", "OP/ED 분석 데이터", "업데이트 · 정보"]
     var body: some View {
@@ -184,7 +183,6 @@ struct SettingsView: View {
             }.navigationTitle("설정")
             .toolbar(.visible, for: .navigationBar)
             .navigationDestination(for: Destination.self) { _ in LocalModelsView() }
-            .onChange(of: navigation.section) { _ in path.removeAll() }
             .onAppear { previousProvider = store.preferences.translationProvider; apiKey = SecureKeys.load(store.preferences.translationProvider); tmdbKey = SecureKeys.load("tmdb") }
              .onChange(of: store.preferences.translationProvider) { provider in
                 var models = store.preferences.translationModels ?? [:]

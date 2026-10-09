@@ -41,7 +41,6 @@ jobs:
           mkdir -p build/crash-report
           cp build/report/summary.json build/crash-report/
           find build/report/diagnostics -type f \( -name '*.ips' -o -name '*.crash' \) -exec cp {} build/crash-report/ \;
-          find build/report/diagnostics -type f | head -80
       - uses: actions/upload-artifact@v4
         if: always()
         with:

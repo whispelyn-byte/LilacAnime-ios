@@ -8,7 +8,7 @@ function page() {
   class XHR { open() {} addEventListener(name, fn) { this[name] = fn; } }
   const fetch = async function(url, options) {
     calls.push({url, options});
-    const entry = responses.get(String(url));
+    const entry = await responses.get(String(url));
     if (entry instanceof Error) throw entry;
     return {url: entry?.url || String(url), clone() { return this; }, text: async () => entry?.text || ''};
   };
@@ -28,7 +28,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   const options = {credentials:'include', referrerPolicy:'no-referrer'};
   await p.window.fetch(master, options); await flush();
   assert.equal(p.calls[1].options, options, 'Preserve cookie/referrer options');
-  assert.deepEqual(p.messages.map(x => x.url), ['https://cdn.test/episode/1080/index.m3u8','https://cdn.test/episode/480/index.m3u8']);
+  assert.deepEqual(p.messages.map(x => x.url), ['https://cdn.test/episode/1080/index.m3u8']);
   assert.ok(p.messages.every(x => x.kind === 'ohliVariant' && x.referer === ''));
   const q = page();
   q.responses.set('https://ad.test/ad.m3u8', {text:'#EXTM3U\n#EXTINF:6,\nad.ts\n#EXT-X-ENDLIST'});
@@ -66,5 +66,19 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(v.messages[0].manifest, media, 'Carry the captured media playlist across the WK/native session boundary');
   assert.equal(v.calls.at(-1).options.credentials, 'include');
   assert.equal(v.calls.at(-1).options.referrerPolicy, 'no-referrer');
+  const ranked = page(), root = 'https://cdn.test/ranked/master.txt', high = 'https://cdn.test/ranked/1080.m3u8', low = 'https://cdn.test/ranked/480.m3u8';
+  ranked.responses.set(root, {text:'#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000\n480.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=5000\n1080.m3u8'});
+  let releaseHigh;
+  ranked.responses.set(high, new Promise(resolve => { releaseHigh = resolve; }));
+  ranked.responses.set(low, {text:media});
+  await ranked.window.fetch(root); await flush();
+  await ranked.window.fetch(low); await flush();
+  assert.equal(ranked.messages.length, 0, 'A faster low rendition cannot outrun the desktop quality preference');
+  releaseHigh({text:media}); await flush();
+  assert.equal(ranked.messages[0].url, high);
+  const fallback = page();
+  fallback.responses.set(root, ranked.responses.get(root)); fallback.responses.set(high, new Error('Unavailable')); fallback.responses.set(low, {text:media});
+  await fallback.window.fetch(root); await flush();
+  assert.equal(fallback.messages[0].url, low, 'An unavailable preferred rendition falls back');
   console.log('Ohli capture: advertising isolation, HLS/XHR redirects, ranking, headers, MP4 fallback and retry passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

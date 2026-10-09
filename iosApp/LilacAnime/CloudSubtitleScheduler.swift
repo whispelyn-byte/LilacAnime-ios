@@ -14,6 +14,7 @@ enum CloudSubtitleScheduler {
             var active: [UUID: [Int]] = [:]
             var lastPosition = position()
             var first = true
+            var missingAttempts: [String: Int] = [:]
             let batchLines = provider == "gemini" ? 600 : provider == "openai" ? 150 : provider == "deepl" ? 50 : 100
             let batchCharacters = provider == "gemini" ? 30000 : provider == "openai" ? 9000 : provider == "deepl" ? 20000 : 6000
             let parallel = provider == "gemini" || provider == "deepl" ? 2 : 4
@@ -59,14 +60,20 @@ enum CloudSubtitleScheduler {
                     tick()
                 case let .result(id, indices, output, failure):
                     active[id] = nil
-                    guard let output, output.count == indices.count, output.allSatisfy({ !$0.isEmpty }) else {
+                    guard let output, output.count == indices.count else {
                         group.cancelAll(); service.cancel()
                         throw SubtitleFiles.failure(failure ?? "번역 줄 수가 일치하지 않습니다.")
                     }
                     let existing = cached()
                     var additions: [String: String] = [:]
-                    for (index, value) in output.enumerated() where existing[lines[indices[index]]] == nil { additions[lines[indices[index]]] = value }
+                    var repeatedMissing = false
+                    for (index, value) in output.enumerated() where existing[lines[indices[index]]] == nil {
+                        let line = lines[indices[index]]
+                        if value.isEmpty { missingAttempts[line, default: 0] += 1; repeatedMissing = repeatedMissing || missingAttempts[line, default: 0] >= 2 }
+                        else { additions[line] = value }
+                    }
                     try save(additions)
+                    if repeatedMissing { group.cancelAll(); service.cancel(); throw SubtitleFiles.failure("API 응답에서 일부 자막 번역이 누락되었습니다.") }
                 }
             }
             group.cancelAll(); service.cancel()

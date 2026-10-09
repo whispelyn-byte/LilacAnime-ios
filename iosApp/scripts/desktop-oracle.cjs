@@ -9,6 +9,22 @@ const savedBody = app.match(/const savedPreferred=([^;]+);if\(savedPreferred\)/)
 const meta = require(path.join(desktop, 'src/anime-metadata.js'));
 const audio = require(path.join(desktop, 'electron/oped-fingerprint.cjs'));
 const decode = require(path.join(desktop, 'electron/catalog-updates.cjs')).decodeData;
+const translator = fs.readFileSync(path.join(desktop,'electron/subtitle-translator.cjs'),'utf8');
+const main = fs.readFileSync(path.join(desktop,'electron/main.cjs'),'utf8');
+const pure = ['simpleTitle','titleKey','communitySeason','titleSeason','cleanKoreanTitle','withSeason','searchSeason','titleScore','hangulEditSimilarity','communityScore','communityEpisodes','communityPostEpisodes','communityPostTitle','communityTitle','communityLinks'].map(name=>{
+  const start=main.indexOf('function '+name+'('),next=main.indexOf('\n}',start);
+  const firstLine=main.slice(start,main.indexOf('\n',start));
+  return firstLine.endsWith('}')?firstLine:main.slice(start,next+2);
+}).join('\n');
+const helper = `const hasHangul=value=>/[가-힣]/.test(String(value||''));const NOT_ANIME=/\\([^()]*(?:게임|드라마|실사|소설|만화|웹툰|영화 시리즈|음반|노래)[^()]*\\)/;const hasSeasonMark=ko=>communitySeason(ko)!=null||/[ⅡⅢⅣⅤⅥ]|(?:^|[\\s~:])(?:II|III|IV|V|VI)(?=$|[\\s~:!])|\\d\\s*$/.test(String(ko).normalize('NFC'));const COMMUNITY_TRAILING_EPISODE=/(?<!season|시즌|part|파트|vol\\.?|제)\\s+(\\d{1,3})\\s*(?:\\((?:끝|완)\\))?\\s*(?:자막)?\\s*$/i;`;
+const context={cheerio:require(path.join(desktop,'node_modules/cheerio')),absoluteUrl:(u,b)=>new URL(u,b).href};
+vm.runInNewContext(helper+pure+';globalThis.rules={titleKey,titleSeason,cleanKoreanTitle,withSeason,communityLinks,communityScore}',context);
+const winPngBody = main.slice(main.indexOf('async function winPngEntries(')).match(/executeJavaScript\(`([\s\S]*?)`,true\)/)[1];
+fs.writeFileSync(path.join(root,'iosApp/LilacAnime/Resources/winpng-reader.js'),vm.runInNewContext('`'+winPngBody+'`')+'\n');
+const systemBody = translator.match(/const system = \(context = \{\}, wrapped = false\) => \{[\s\S]*?\n  \};/)[0];
+const prompts = [false,true].map(wrapped=>vm.runInNewContext(systemBody+';system({},wrapped)',{wrapped,characterTerms:()=>[]}));
+fs.writeFileSync(path.join(root,'shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopCloudPrompt.kt'),
+  'package com.lilac.anime.shared\n\n// Copied by desktop-oracle.cjs from electron/subtitle-translator.cjs/system.\nobject DesktopCloudPrompt {\n    private val array = """'+prompts[0]+'"""\n    private val wrapped = """'+prompts[1]+'"""\n    fun build(context: String, objectInput: Boolean): String {\n        val source = if (objectInput) wrapped else array\n        if (context.isBlank()) return source\n        return source.replace("\\n\\nFORMAT", "\\n" + context.trim() + "\\n\\nFORMAT")\n    }\n}\n');
 const track = (label, language = '', url = 'https://fixture.test/sub.ass') => ({label, language, url});
 const trackSets = [[], [track('English signs', 'en'), track('English dialogue', 'en')],
   [track('English full', 'en'), track('日本語', 'ja')], [track('English (AI)', 'en'), track('English', 'en')],
@@ -37,6 +53,14 @@ const regions = [{frames:1000,from:220,to:410,length:500},{frames:1000,from:0,to
 });
 const tables = [[{latestAired:1},[2],{id:3,episode:4},'test',{aired:5},['Date','2026-10-08T03:00:00.000Z']], [{a:1,b:1,__proto__:2},'same','ignored'],[[1,2,3],'ok',null,-1]];
 const result = {
+  titles:['Overlord IV','The Angel Next Door Spoils Me Rotten2','Kaiju No. 8','Mob Psycho 100','Part 2','무직전생3','무직전생 Ⅱ','카구야 님은 고백받고 싶어 (애니메이션 1기)','봇치 더 록! (애니메이션)','진격의 거인(비디오 게임 시리즈)','나 혼자만 레벨업 1화','Anime Ｓｅａｓｏｎ ２'].map(input=>({input,key:context.rules.titleKey(input),season:context.rules.titleSeason(input)??1,clean:context.rules.cleanKoreanTitle(input)})),
+  community:[
+    {title:'작품 3화',html:'<a href="/3.ass">자막</a><a href="https://drive.google.com/file/d/fonts/view">폰트</a>',episode:3},
+    {title:'작품',html:'<a href="/13.ass">13화</a><a href="/14.ass">14화</a><a href="/fonts.zip">폰트</a>',episode:2},
+    {title:'작품',html:'<a href="/bundle.zip">1 ~ 12화</a>',episode:4},
+    {title:'작품 4화',html:'<a href="/4.ass">자막</a>',episode:3},
+    {title:'극장판',html:'<a href="/movie.zip">자막</a>',episode:1}
+  ].map(input=>{const post={title:input.title,html:input.html,url:'https://fixture.test/post'};return {input,expected:context.rules.communityLinks(post,input.episode)}}),
   subtitleTracks:trackSets.map(tracks=>({tracks,expected:vm.runInNewContext(trackBody+';translationSourceTrack()', {currentPlaybackContext:{subtitleTracks:tracks}})?.label ?? null})),
   korean:korean.map(input=>({input,expected:vm.runInNewContext(koreanBody+';isKoreanTrack(track)',{track:input})})),
   saved:savedCases.map(c=>({...c,expected:vm.runInNewContext(savedBody,c)?.source ?? null})),
@@ -49,4 +73,4 @@ const target=path.join(root,'iosApp/LilacAnimeTests/Fixtures/desktop-oracle.json
 fs.writeFileSync(target,JSON.stringify(result,null,2)+'\n');
 const kotlin = `package com.lilac.anime.shared\n\n// Generated by iosApp/scripts/desktop-oracle.cjs from desktop source.\ninternal val desktopOracle = kotlinx.serialization.json.Json.parseToJsonElement("""\n${JSON.stringify(result)}\n""").jsonObject\n`;
 fs.writeFileSync(path.join(root,'shared/src/commonTest/kotlin/com/lilac/anime/shared/DesktopOracleFixture.kt'),kotlin.replace('internal val','import kotlinx.serialization.json.jsonObject\n\ninternal val'));
-console.log(`Wrote desktop oracle (${result.subtitleTracks.length+result.korean.length+result.saved.length+result.metadata.length+result.regions.length+result.svelte.length+1} cases)`);
+console.log(`Wrote desktop oracle (${result.titles.length+result.community.length+result.subtitleTracks.length+result.korean.length+result.saved.length+result.metadata.length+result.regions.length+result.svelte.length+1} cases)`);

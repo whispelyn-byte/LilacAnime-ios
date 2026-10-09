@@ -8,6 +8,22 @@ import kotlin.math.min
 
 
 internal object CloudTranslationText {
+    fun jsonInput(lines: List<String>, wrapped: Boolean): String {
+        val items = JSONArray().apply { lines.forEachIndexed { index, text -> put(JSONObject().put("i", index).put("t", text)) } }
+        return if (wrapped) JSONObject().put("lines", items).toString() else items.toString()
+    }
+    fun parseDesktop(text: String, original: List<String>): List<String> {
+        val clean = text.replace(Regex("^```(?:json)?\\s*|\\s*```$"), "").trim()
+        if (!clean.startsWith("{") && !clean.startsWith("[")) return parseMarked(text, original)
+        val values = if (clean.startsWith("{")) JSONObject(clean).optJSONArray("lines") ?: error("번역 결과에 lines가 없습니다.") else JSONArray(clean)
+        val result = MutableList(original.size) { "" }
+        for (index in 0 until values.length()) {
+            val item = values.optJSONObject(index) ?: continue
+            val id = item.optInt("i", -1)
+            if (id in result.indices && result[id].isEmpty()) result[id] = item.optString("t").trim()
+        }
+        return result
+    }
     fun markedInput(lines: List<String>): String = lines.mapIndexed { index, line -> "<LILAC_${index + 1}> $line" }.joinToString("\n")
 
     fun parseMarked(text: String, original: List<String>): List<String> {

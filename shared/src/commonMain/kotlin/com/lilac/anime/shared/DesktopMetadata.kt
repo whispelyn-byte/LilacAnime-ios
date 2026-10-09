@@ -10,16 +10,37 @@ import kotlinx.serialization.json.*
 
 data class AnimeCharacter(val name: String, val native: String, val first: String, val last: String, val gender: String)
 data class DesktopMetadata(val korean: String, val english: String, val overview: String, val aliases: List<String>, val characters: List<AnimeCharacter>, val anilistId: Int, val malId: Int)
+internal expect fun normalizeDesktopTitle(value: String): String
 object DesktopTitleRules {
-    fun season(title: String): Int = Regex("(\\d+)\\s*기|(?:season|시즌)\\s*(\\d+)|(\\d+)(?:st|nd|rd|th)\\s*season", RegexOption.IGNORE_CASE)
-        .find(title)?.groupValues?.drop(1)?.firstOrNull(String::isNotBlank)?.toIntOrNull() ?: 1
-    fun clean(title: String): String = title.replace(Regex("\\((?:애니메이션|TV|애니|\\d{4}년)[^)]*\\)"), "")
-        .replace(Regex("\\s+"), " ").trim()
+    fun explicitSeason(title: String): Int? = Regex("(?:season|시즌)\\s*(\\d+)|(\\d+)\\s*기(?![가-힣])|(\\d+)(?:st|nd|rd|th)(?:\\s*season)?\\b|[가-힣](\\d)(?=\\s|$)", RegexOption.IGNORE_CASE)
+        .find(normalizeDesktopTitle(title))?.groupValues?.drop(1)?.firstOrNull(String::isNotBlank)?.toIntOrNull()
+    fun season(title: String): Int {
+        val value = normalizeDesktopTitle(title).trim()
+        explicitSeason(value)?.let { return it }
+        val digit = Regex("([a-z]+)[!?'’)]*\\s*([2-9])$", RegexOption.IGNORE_CASE).find(value)
+        if (digit != null && digit.groupValues[1].lowercase() !in listOf("no", "vol", "part", "cour", "lv", "level", "ep", "episode", "chapter", "chapters", "act", "phase", "movie", "film", "special", "specials", "ova", "oad", "recap", "arc")) return digit.groupValues[2].toInt()
+        if ('◎' in value) return 2
+        return Regex("\\s(II|III|IV)$").find(value)?.groupValues?.get(1)?.let { mapOf("II" to 2, "III" to 3, "IV" to 4)[it] } ?: 1
+    }
+    fun clean(title: String): String {
+        if (Regex("\\([^()]*(?:게임|드라마|실사|소설|만화|웹툰|영화 시리즈|음반|노래)[^()]*\\)").containsMatchIn(title)) return ""
+        return title.replace(Regex("\\s*\\([^()]*(?:애니메이션|애니|TV|\\d{4}년)[^()]*\\)"), "")
+            .replace(Regex("\\s*애니메이션(?:\\s*1\\s*기)?\\s*$|\\s+1\\s*기\\s*$|\\s+\\d+\\s*화\\s*$"), "").replace(Regex("\\s+"), " ").trim()
+    }
     fun seasonal(title: String, original: String): String {
         val number = season(original)
-        return if (number > 1 && season(title) == 1) clean(title) + " " + number + "기" else clean(title)
+        val cleaned = clean(title)
+        if (cleaned.isEmpty()) return ""
+        if (TitleCandidates.isKorean(original)) return title
+        val marked = explicitSeason(cleaned) != null || Regex("[ⅡⅢⅣⅤⅥ]|(?:^|[\\s~:])(?:II|III|IV|V|VI)(?=$|[\\s~:!])|\\d\\s*$").containsMatchIn(cleaned)
+        return if (number > 1 && !marked) "$cleaned ${number}기" else cleaned
     }
-    fun key(title: String) = title.lowercase().filter { it.isLetterOrDigit() }
+    fun simple(title: String) = normalizeDesktopTitle(title).lowercase().replace(Regex("\\[[^\\]]*]|\\([^)]*\\)"), " ")
+        .replace(Regex("\\b(?:subtitle|sub)\\b|(?:한글|한국어)?\\s*자막", RegexOption.IGNORE_CASE), " ").replace(Regex("[^a-z0-9가-힣]+"), " ").trim()
+    fun key(title: String): String {
+        val cleaned = simple(title); val hangul = cleaned.filter { it in '가'..'힣' }
+        return if (hangul.length >= 2) hangul else cleaned.replace(Regex("\\s+"), "")
+    }
 }
 class DesktopMetadataRepository(private val client: HttpClient = newSharedClient()) {
     suspend fun wikidataIndex(): String {

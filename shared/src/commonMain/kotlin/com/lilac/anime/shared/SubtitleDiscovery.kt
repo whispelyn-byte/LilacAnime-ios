@@ -3,9 +3,17 @@ import com.fleeksoft.ksoup.Ksoup
 import com.lilac.anime.shared.ported.*
 import com.lilac.anime.shared.compat.*
 import io.ktor.http.*
-data class SubtitleAsset(val name: String, val url: String, val source: String, val score: Double = 0.0)
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlin.time.Clock
+import kotlinx.coroutines.CancellationException
+data class SubtitleAsset(val name: String, val url: String, val source: String, val score: Double = 0.0, val episode: Int? = null, val strict: Boolean = false)
+@Serializable
+internal data class CommunityCache(val time: Long, val posts: List<CommunityPost>)
+internal expect fun readCommunityCache(name: String): String?
+internal expect fun writeCommunityCache(name: String, value: String)
 class SubtitleDiscovery(private val repository: SourceRepository = SourceRepository()) {
-    private val blogs = mutableMapOf<String, List<KairanPost>>()
+    private val blogs = mutableMapOf<String, CommunityCache>()
     private val metadata = DesktopMetadataRepository()
     suspend fun offsets(anilist: Int, title: String): List<Int> = try { metadata.previousEpisodeOffsets(anilist, title) }
         catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { emptyList() }
@@ -20,12 +28,13 @@ class SubtitleDiscovery(private val repository: SourceRepository = SourceReposit
     suspend fun makers(title: String) = AnissiaDiscovery(repository).makers(title)
     suspend fun makerSubtitles(title: String, episode: Int, episodeKey: String, website: String, anilistId: Int) =
         AnissiaDiscovery(repository).search(title, episode, episodeKey, website, offsets(anilistId, title))
-    private suspend fun blog(provider: String, title: String, episode: Int, episodeKey: String, offsets: List<Int>): List<SubtitleAsset> {
-        require(provider in listOf("kairan", "csora"))
+    private suspend fun communityPosts(provider: String, force: Boolean = false): List<CommunityPost> {
         val base = if (provider == "kairan") "https://kairan03.blogspot.com" else "https://csora556.blogspot.com"
-        val posts = blogs[provider] ?: run {
-            val all = linkedMapOf<String, KairanPost>()
-            var start = 1
+        val cached = blogs[provider] ?: runCatching { readCommunityCache(provider)?.let { Json.decodeFromString<CommunityCache>(it) } }.getOrNull()
+        val now = Clock.System.now().toEpochMilliseconds()
+        if (cached != null && cached.posts.isNotEmpty() && now - cached.time < (if (force) 600000 else 86400000)) { blogs[provider] = cached; return cached.posts }
+        try {
+            val all = linkedMapOf<String, CommunityPost>(); var start = 1
             while (true) {
                 val feed = JSONObject(repository.getText("$base/feeds/posts/default", mapOf("alt" to "json", "max-results" to "150", "start-index" to start.toString()))).optJSONObject("feed") ?: error("Blogger 목록 형식이 다릅니다.")
                 val entries = feed.optJSONArray("entry") ?: break
@@ -33,30 +42,37 @@ class SubtitleDiscovery(private val repository: SourceRepository = SourceReposit
                 var added = 0
                 for (i in 0 until entries.length()) {
                     val entry = entries.optJSONObject(i) ?: continue
-                    val name = entry.optJSONObject("title")?.optString("\$t").orEmpty()
+                    val name = entry.optJSONObject("title")?.optString("$"+"t").orEmpty()
+                    val html = entry.optJSONObject("content")?.optString("$"+"t").orEmpty().ifBlank { entry.optJSONObject("summary")?.optString("$"+"t").orEmpty() }
                     val links = entry.optJSONArray("link") ?: continue
                     for (j in 0 until links.length()) {
                         val link = links.optJSONObject(j) ?: continue
                         if (link.optString("rel") == "alternate") {
                             val url = link.optString("href")
-                            if (url !in all) { all[url] = KairanPost(name, url); added++ }
+                            if (url !in all) { all[url] = CommunityPost(name, url, html); added++ }
                         }
                     }
                 }
                 if (added == 0 || entries.length() < 150) break
-                start += entries.length()
-                check(start < 100_000) { "자막 목록을 완료할 수 없습니다." }
+                start += entries.length(); check(start < 100000) { "자막 목록을 완료할 수 없습니다." }
             }
-            all.values.toList().also { blogs[provider] = it }
-        }
-        val match = DesktopEpisodeRules.findPost(title, episode, posts, episodeKey, offsets) ?: return emptyList()
-        val html = repository.getText(match.post.url)
-        val assets = Regex("""https?://(?:drive|docs)\.google\.com/[^\s"'<>\\]+""").findAll(html).mapNotNull { found ->
-            val link = found.value.replace("&amp;", "&")
+            check(all.isNotEmpty()) { "Blogger 목록이 비어 있습니다." }
+            val fresh = CommunityCache(now, all.values.toList()); blogs[provider] = fresh
+            runCatching { writeCommunityCache(provider, Json.encodeToString(fresh)) }
+            return fresh.posts
+        } catch (error: CancellationException) { throw error }
+        catch (error: Exception) { if (cached?.posts?.isNotEmpty() == true) return cached.posts; throw error }
+    }
+    private suspend fun blog(provider: String, title: String, episode: Int, episodeKey: String, offsets: List<Int>): List<SubtitleAsset> {
+        require(provider in listOf("kairan", "csora"))
+        var match = DesktopCommunity.rank(communityPosts(provider), title, episode, offsets).firstOrNull()
+        if (match == null) match = DesktopCommunity.rank(communityPosts(provider, force = true), title, episode, offsets).firstOrNull()
+        if (match == null) return emptyList()
+        return match.links.map { link ->
             val id = Regex("/file/d/([^/?]+)").find(link)?.groupValues?.get(1) ?: runCatching { Url(link).parameters["id"] }.getOrNull()
-            id?.let { SubtitleAsset(match.post.title, "https://drive.google.com/uc?export=download&id=$it", provider, match.similarity) }
-        }.toList()
-        return assets.distinctBy { it.url } + SubtitleAsset("원본 자막 게시물", match.post.url, "post", match.similarity)
+            val url = if (id != null && (link.contains("drive.google.com") || link.contains("docs.google.com"))) "https://drive.usercontent.google.com/download?id=" + id.encodeURLParameter() + "&export=download&confirm=t" else link
+            SubtitleAsset(match.post.title, url, provider, match.score, match.episode, match.strict)
+        } + SubtitleAsset("원본 자막 게시물", match.post.url, "post", match.score)
     }
     private var jimakuEntries: Map<Int, String> = emptyMap()
     private var jimakuLoaded = kotlin.time.TimeSource.Monotonic.markNow() - kotlin.time.Duration.parse("7h")

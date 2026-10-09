@@ -10,6 +10,33 @@ import io.ktor.http.*
 import kotlin.io.encoding.Base64
 
 class DesktopParityTest {
+    @Test fun titleKeysSeasonNumbersAndCleanedNamesMatchDesktop() {
+        for (test in desktopOracle.list("titles").filterIsInstance<JsonObject>()) {
+            val title = test.text("input")
+            assertEquals(test.text("key"), DesktopTitleRules.key(title), title)
+            assertEquals(test.number("season"), DesktopTitleRules.season(title), title)
+            assertEquals(test.text("clean"), DesktopTitleRules.clean(title), title)
+        }
+    }
+    @Test fun communityLinksMatchDesktopEpisodeBundlesFontsAndShiftedNumbering() {
+        for (test in desktopOracle.list("community").filterIsInstance<JsonObject>()) {
+            val input = test.obj("input"); val expected = test.obj("expected")
+            val result = DesktopCommunity.links(CommunityPost(input.text("title"), "https://fixture.test/post", input.text("html")), input.number("episode")!!)
+            assertEquals(expected.list("links").map { it.jsonPrimitive.content }, result.links, input.toString())
+            assertEquals(expected.number("episode"), result.episode)
+            assertEquals(expected["strict"]?.jsonPrimitive?.booleanOrNull ?: false, result.strict)
+        }
+    }
+    @Test fun desktopCloudResponsePreservesPartialAndRejectsStrayIds() {
+        assertEquals(listOf("가", "", "다"), com.lilac.anime.shared.ported.CloudTranslationText.parseDesktop("""{"lines":[{"i":2,"t":"다"},{"i":0,"t":"가"},{"i":99,"t":"unrelated"}]}""", listOf("a", "b", "c")))
+        assertTrue(DesktopCloudPrompt.build("Anime: 작품", true).contains("Anime: 작품"))
+        assertTrue(DesktopCloudPrompt.build("", false).contains("experienced Korean subtitle translator"))
+    }
+    @Test fun bilingualChineseLinesAreBlankedOnlyAfterManyJapanesePairs() {
+        fun document(count: Int) = "WEBVTT\n\n" + (0 until count).joinToString("\n\n") { i -> "$i\n00:00:01.000 --> 00:00:03.000\n日本語です\n\n${i}c\n00:00:01.000 --> 00:00:03.000\n中文字符" }
+        assertEquals(20, SubtitleTools.translationBlanks(document(20), "vtt").size)
+        assertTrue(SubtitleTools.translationBlanks(document(19), "vtt").isEmpty())
+    }
     @Test fun releaseDatesAndEpisodeLabelsMatchActualDesktopOutput() {
         for (test in desktopOracle.list("metadata").filterIsInstance<JsonObject>()) {
             val input = test.obj("input")

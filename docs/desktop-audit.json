@@ -1,0 +1,1234 @@
+{
+  "desktopCommit": "192fd8bd1965882fcb1f911178e6bfef0ff33e56",
+  "desktopVersion": "0.5.8",
+  "files": [
+    {
+      "desktop": ".github/workflows/build.yml",
+      "sha256": "5fbd6509d7bf59c95d6cd72fe232eeb2bc1df497ea89a37ce0695e594c7981dc",
+      "uncommitted": false,
+      "category": "platform-build",
+      "ios": [
+        "iosApp/project.yml",
+        "shared/build.gradle.kts",
+        ".github/workflows/kmp.yml",
+        ".github/workflows/ipa.yml"
+      ]
+    },
+    {
+      "desktop": "electron/anime-glossary.cjs",
+      "sha256": "4bc24912a5d3175ef05d4617be196c2046cac0ab8e7a14ead7fc8ea237df3ef1",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/AnimeGlossary.kt"
+      ]
+    },
+    {
+      "desktop": "electron/catalog-browser.cjs",
+      "sha256": "192fc19b3efaec6670875e60413e989099401b8be376805089faa081bd7ac21f",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopCatalogTaxonomy.kt"
+      ]
+    },
+    {
+      "desktop": "electron/catalog-updates.cjs",
+      "sha256": "5f70f023ceca0ff63cc063f16320b98151ec82f3aef72fbdbac4a775c1d97e86",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopCatalogUpdates.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt"
+      ]
+    },
+    {
+      "desktop": "electron/download-manager.cjs",
+      "sha256": "0d153a2db187c81be8c6f65119e7a4717c79660fd387446107da6eadc3e8d1cb",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "iosApp/LilacAnime/DownloadStore.swift",
+        "iosApp/LilacAnime/DownloadTransfer.swift",
+        "iosApp/LilacAnime/DesktopDownloads.swift"
+      ]
+    },
+    {
+      "desktop": "electron/flix-proxy.cjs",
+      "sha256": "20098ad01302dfed3dd3b646ec1eabd63c27a0753c74963f4da4b079e3c7f4df",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "iosApp/LilacAnime/HLSProxy.swift"
+      ]
+    },
+    {
+      "desktop": "electron/local-ai.cjs",
+      "sha256": "a21699a816eeccf2fc8e3edbd9d1d3561559bdda182cf8a5379ae6a124d9ce54",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "iosApp/LilacAnime/LocalModelsView.swift",
+        "iosApp/LilacAnime/DesktopModelInstaller.swift",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopTranslationPrompt.kt"
+      ]
+    },
+    {
+      "desktop": "electron/main.cjs",
+      "sha256": "1654ca7d8557e5ffd629f38b0a068852782e99b291db9eda3550ba4f674ebe69",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopSources.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopMetadata.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SubtitleDiscovery.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopCommunity.kt",
+        "iosApp/LilacAnime/PlaybackResolver.swift",
+        "iosApp/LilacAnime/WinPNGReader.swift"
+      ]
+    },
+    {
+      "desktop": "electron/oped-fingerprint.cjs",
+      "sha256": "7949d59664d524c03ffb76379bb7123076b0d46078dc1dbcd9ea08b883134168",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/AudioFingerprint.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopAudioFingerprint.kt",
+        "iosApp/LilacAnime/OfflineAnalyzer.swift",
+        "iosApp/LilacAnime/NativeAudio.m"
+      ]
+    },
+    {
+      "desktop": "electron/preload.cjs",
+      "sha256": "775e18e8dabb5744bbcd110c35fd016a734579212ebaa0a6569ed5ca15fdb53b",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
+        "iosApp/LilacAnime/LibraryStore.swift"
+      ]
+    },
+    {
+      "desktop": "electron/subtitle-store.cjs",
+      "sha256": "7fb4bd0b22a8d1671584a20c84a124e2808e1e7cf0cf5f42cffefe70429e810d",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "iosApp/LilacAnime/EpisodeSubtitleStore.swift"
+      ]
+    },
+    {
+      "desktop": "electron/subtitle-translator.cjs",
+      "sha256": "4fde938ab921ee375505267b74fdf04284c91a3ac6f1c6e9fc6436ceff546b2f",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/CloudTranslator.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopCloudPrompt.kt",
+        "iosApp/LilacAnime/TranslationCoordinator.swift",
+        "iosApp/LilacAnime/CloudSubtitleScheduler.swift"
+      ]
+    },
+    {
+      "desktop": "electron/updater.cjs",
+      "sha256": "f5b00942b962c7af1f51c4efad99c8911fe76180e137d39cf3989dfc30b5ba43",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "iosApp/LilacAnime/DesktopUpdater.swift",
+        ".github/workflows/ipa.yml"
+      ]
+    },
+    {
+      "desktop": "package-lock.json",
+      "sha256": "3c45f76d0f5fc81bf73786937e4a50b58cec05794b97149f107a5dac5e683213",
+      "uncommitted": false,
+      "category": "platform-build",
+      "ios": [
+        "iosApp/project.yml",
+        "shared/build.gradle.kts",
+        ".github/workflows/kmp.yml",
+        ".github/workflows/ipa.yml"
+      ]
+    },
+    {
+      "desktop": "package.json",
+      "sha256": "b69fa7d05a67e7c4ce62e1eef37c796248f56317c494a3af692b51f27d4dcff2",
+      "uncommitted": false,
+      "category": "platform-build",
+      "ios": [
+        "iosApp/project.yml",
+        "shared/build.gradle.kts",
+        ".github/workflows/kmp.yml",
+        ".github/workflows/ipa.yml"
+      ]
+    },
+    {
+      "desktop": "scripts/build-jassub.cjs",
+      "sha256": "ce1af179710697d60060edb35cfa06585b7fe15f05a97dd0f4c53427c0200ca6",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "iosApp/project.yml",
+        "iosApp/LilacAnime/MPVEngine.swift"
+      ]
+    },
+    {
+      "desktop": "scripts/build-windows-icon.cjs",
+      "sha256": "1211bad71a10e0b603d771dfe489c2f5c47a10d6519329b51064451cacdb6242",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "iosApp/project.yml"
+      ]
+    },
+    {
+      "desktop": "src/anime-metadata.js",
+      "sha256": "23669dafa44f80358d731c0e74f7a8b7bb404b5df2f44e0dfa9bc7b90cbe849d",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopAnimeMetadata.kt",
+        "iosApp/LilacAnime/UIComponents.swift"
+      ]
+    },
+    {
+      "desktop": "src/app.js",
+      "sha256": "0b9801c17316f3de9fe2ebf264e4c6b17ff38257dab4850639528318b7677add",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "iosApp/LilacAnime/DesktopShell.swift",
+        "iosApp/LilacAnime/HomeView.swift",
+        "iosApp/LilacAnime/DesktopCatalog.swift",
+        "iosApp/LilacAnime/EpisodePlayerView.swift",
+        "iosApp/LilacAnime/DesktopSubtitlePreparer.swift",
+        "iosApp/LilacAnime/DesktopSubtitlePolicy.swift",
+        "iosApp/LilacAnime/DesktopStreamPolicy.swift"
+      ]
+    },
+    {
+      "desktop": "src/ass-renderer.js",
+      "sha256": "666fc2d3f77867da09b09c524842af048d24dadb964f5fb02547a0f7c820e379",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "iosApp/LilacAnime/MPVEngine.swift",
+        "iosApp/LilacAnime/SubtitleFiles.swift"
+      ]
+    },
+    {
+      "desktop": "src/catalog-browser.js",
+      "sha256": "8d2b70144550fd7bb9bad813b382ed0babffced3491585fce400b464e5120d3e",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "iosApp/LilacAnime/DesktopWorkspace.swift",
+        "iosApp/LilacAnime/CatalogView.swift"
+      ]
+    },
+    {
+      "desktop": "src/catalog-updates.js",
+      "sha256": "10dbac0dce04e6e79ac0c9b247f210c1192837517c5d1051b5a29fcd6e13db25",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "iosApp/LilacAnime/DesktopRecentUpdates.swift",
+        "iosApp/LilacAnime/HomeView.swift",
+        "iosApp/LilacAnime/DesktopShell.swift"
+      ]
+    },
+    {
+      "desktop": "src/download-port.css",
+      "sha256": "7600f55647b5b31d66aace6c9c1613809ca32711bfc0c7060969faad0ef2e012",
+      "uncommitted": false,
+      "category": "native-layout",
+      "ios": [
+        "iosApp/LilacAnime/DesktopShell.swift",
+        "iosApp/LilacAnime/UIComponents.swift",
+        "iosApp/LilacAnime/PlayerSettingsPanel.swift",
+        "iosApp/LilacAnime/EpisodePlayerView.swift"
+      ]
+    },
+    {
+      "desktop": "src/icons.css",
+      "sha256": "727aec95795c42c5a7a46ea4503a1f9a971fd4036231034b06413cb5f7cae53b",
+      "uncommitted": false,
+      "category": "native-layout",
+      "ios": [
+        "iosApp/LilacAnime/DesktopShell.swift",
+        "iosApp/LilacAnime/UIComponents.swift",
+        "iosApp/LilacAnime/PlayerSettingsPanel.swift",
+        "iosApp/LilacAnime/EpisodePlayerView.swift"
+      ]
+    },
+    {
+      "desktop": "src/impeccable-fixes.css",
+      "sha256": "71553ef67701d5d5d1d85b27c7f8ff1d18a62a84fe0b4b674a712df57d37b35b",
+      "uncommitted": false,
+      "category": "native-layout",
+      "ios": [
+        "iosApp/LilacAnime/DesktopShell.swift",
+        "iosApp/LilacAnime/UIComponents.swift",
+        "iosApp/LilacAnime/PlayerSettingsPanel.swift",
+        "iosApp/LilacAnime/EpisodePlayerView.swift"
+      ]
+    },
+    {
+      "desktop": "src/index.html",
+      "sha256": "3ff9cb995e1acee40d3486b4c1c1d3615176268fc2794bcb9ca4f0e0098577bf",
+      "uncommitted": true,
+      "category": "runtime",
+      "ios": [
+        "iosApp/LilacAnime/DesktopShell.swift",
+        "iosApp/LilacAnime/DesktopWorkspace.swift",
+        "iosApp/LilacAnime/SettingsView.swift",
+        "iosApp/LilacAnime/EpisodePlayerView.swift"
+      ]
+    },
+    {
+      "desktop": "src/logo.png",
+      "sha256": "b78beb9b3397049f1197413a34ec8a7c093d9263db14547ebd6051fc642913a7",
+      "uncommitted": false,
+      "category": "native-assets",
+      "ios": [
+        "iosApp/project.yml",
+        "iosApp/LilacAnime/UIComponents.swift"
+      ]
+    },
+    {
+      "desktop": "src/mac.css",
+      "sha256": "fef9e92b15bc6a4877507d160cbd6a0800ccdffc39d60e0b353b9f1f26372af3",
+      "uncommitted": false,
+      "category": "native-layout",
+      "ios": [
+        "iosApp/LilacAnime/DesktopShell.swift",
+        "iosApp/LilacAnime/UIComponents.swift",
+        "iosApp/LilacAnime/PlayerSettingsPanel.swift",
+        "iosApp/LilacAnime/EpisodePlayerView.swift"
+      ]
+    },
+    {
+      "desktop": "src/mobile-parity.css",
+      "sha256": "e616f7eeedb67c55723aa9cf8b1457201a5ffc20fb62b52a9456f8b43158e86b",
+      "uncommitted": false,
+      "category": "native-layout",
+      "ios": [
+        "iosApp/LilacAnime/DesktopShell.swift",
+        "iosApp/LilacAnime/UIComponents.swift",
+        "iosApp/LilacAnime/PlayerSettingsPanel.swift",
+        "iosApp/LilacAnime/EpisodePlayerView.swift"
+      ]
+    },
+    {
+      "desktop": "src/motion.css",
+      "sha256": "8f704b5e5e7f7421ab646284b87f6732ae4bd4b557dce23195ea079fac9e95f1",
+      "uncommitted": false,
+      "category": "native-layout",
+      "ios": [
+        "iosApp/LilacAnime/DesktopShell.swift",
+        "iosApp/LilacAnime/UIComponents.swift",
+        "iosApp/LilacAnime/PlayerSettingsPanel.swift",
+        "iosApp/LilacAnime/EpisodePlayerView.swift"
+      ]
+    },
+    {
+      "desktop": "src/ott.css",
+      "sha256": "a4a98eb6daec94175e073a79d1a60bf14ad7b57d72ad8c825e342cc09fc1df36",
+      "uncommitted": false,
+      "category": "native-layout",
+      "ios": [
+        "iosApp/LilacAnime/DesktopShell.swift",
+        "iosApp/LilacAnime/UIComponents.swift",
+        "iosApp/LilacAnime/PlayerSettingsPanel.swift",
+        "iosApp/LilacAnime/EpisodePlayerView.swift"
+      ]
+    },
+    {
+      "desktop": "src/ott.js",
+      "sha256": "6abeecd3478a63bc1cb004e8828245ffb455a4296852d7cb1101862f1921ca9b",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "iosApp/LilacAnime/HomeView.swift",
+        "iosApp/LilacAnime/UIComponents.swift"
+      ]
+    },
+    {
+      "desktop": "src/parity-port.css",
+      "sha256": "068985fc314fbecaf51d59c76bb297d5cf3e5574bfd1877ade0a65f6bc589dc7",
+      "uncommitted": false,
+      "category": "native-layout",
+      "ios": [
+        "iosApp/LilacAnime/DesktopShell.swift",
+        "iosApp/LilacAnime/UIComponents.swift",
+        "iosApp/LilacAnime/PlayerSettingsPanel.swift",
+        "iosApp/LilacAnime/EpisodePlayerView.swift"
+      ]
+    },
+    {
+      "desktop": "src/player-android.css",
+      "sha256": "2b75168a47061714b5906d7ea216f5f0053deae949339c4d74a1dd2a1d43b1c8",
+      "uncommitted": false,
+      "category": "native-layout",
+      "ios": [
+        "iosApp/LilacAnime/DesktopShell.swift",
+        "iosApp/LilacAnime/UIComponents.swift",
+        "iosApp/LilacAnime/PlayerSettingsPanel.swift",
+        "iosApp/LilacAnime/EpisodePlayerView.swift"
+      ]
+    },
+    {
+      "desktop": "src/player-port.css",
+      "sha256": "66f3f7643930f5d17c07b5ae2fc340b4273d13ca2fe9ccb73f1c457985691a3d",
+      "uncommitted": false,
+      "category": "native-layout",
+      "ios": [
+        "iosApp/LilacAnime/DesktopShell.swift",
+        "iosApp/LilacAnime/UIComponents.swift",
+        "iosApp/LilacAnime/PlayerSettingsPanel.swift",
+        "iosApp/LilacAnime/EpisodePlayerView.swift"
+      ]
+    },
+    {
+      "desktop": "src/player.js",
+      "sha256": "f232a6a3192acaeacea20518cd4b219b62a82ef821a710a2b9eb70d1a2238828",
+      "uncommitted": true,
+      "category": "runtime",
+      "ios": [
+        "iosApp/LilacAnime/EpisodePlayerView.swift",
+        "iosApp/LilacAnime/MPVEngine.swift",
+        "iosApp/LilacAnime/PlayerInteraction.swift"
+      ]
+    },
+    {
+      "desktop": "src/settings-port.css",
+      "sha256": "c0e5ac2f8a39929c69ee531e8b92f5fa0ab9adc6a1b055cd39aaf88b73728171",
+      "uncommitted": false,
+      "category": "native-layout",
+      "ios": [
+        "iosApp/LilacAnime/DesktopShell.swift",
+        "iosApp/LilacAnime/UIComponents.swift",
+        "iosApp/LilacAnime/PlayerSettingsPanel.swift",
+        "iosApp/LilacAnime/EpisodePlayerView.swift"
+      ]
+    },
+    {
+      "desktop": "src/settings.css",
+      "sha256": "7214a43bde17b3cd8b3977c9718b88a0c92aff42f02db7cdaa863bc86099b0ba",
+      "uncommitted": false,
+      "category": "native-layout",
+      "ios": [
+        "iosApp/LilacAnime/DesktopShell.swift",
+        "iosApp/LilacAnime/UIComponents.swift",
+        "iosApp/LilacAnime/PlayerSettingsPanel.swift",
+        "iosApp/LilacAnime/EpisodePlayerView.swift"
+      ]
+    },
+    {
+      "desktop": "src/skip-port.css",
+      "sha256": "68c9e10523efbab84bc96872d8f32013f58fc567da3f5acd643611b5de2d1b3f",
+      "uncommitted": false,
+      "category": "native-layout",
+      "ios": [
+        "iosApp/LilacAnime/DesktopShell.swift",
+        "iosApp/LilacAnime/UIComponents.swift",
+        "iosApp/LilacAnime/PlayerSettingsPanel.swift",
+        "iosApp/LilacAnime/EpisodePlayerView.swift"
+      ]
+    },
+    {
+      "desktop": "src/styles.css",
+      "sha256": "51e65bb734413813bdade4e83c7f2b76c07b80dd3ddd7dab3e71b28de44583e7",
+      "uncommitted": false,
+      "category": "native-layout",
+      "ios": [
+        "iosApp/LilacAnime/DesktopShell.swift",
+        "iosApp/LilacAnime/UIComponents.swift",
+        "iosApp/LilacAnime/PlayerSettingsPanel.swift",
+        "iosApp/LilacAnime/EpisodePlayerView.swift"
+      ]
+    },
+    {
+      "desktop": "src/volume-port.css",
+      "sha256": "58e9879a41900140173b468c31caf322aa86088f9693e4575714e374fb2d3f59",
+      "uncommitted": false,
+      "category": "native-layout",
+      "ios": [
+        "iosApp/LilacAnime/DesktopShell.swift",
+        "iosApp/LilacAnime/UIComponents.swift",
+        "iosApp/LilacAnime/PlayerSettingsPanel.swift",
+        "iosApp/LilacAnime/EpisodePlayerView.swift"
+      ]
+    },
+    {
+      "desktop": "src/window.css",
+      "sha256": "725664ebea52bbeefe04971ee13afd80ec0b3a1c5adc8fd71719869af9c82ea4",
+      "uncommitted": false,
+      "category": "native-layout",
+      "ios": [
+        "iosApp/LilacAnime/DesktopShell.swift",
+        "iosApp/LilacAnime/UIComponents.swift",
+        "iosApp/LilacAnime/PlayerSettingsPanel.swift",
+        "iosApp/LilacAnime/EpisodePlayerView.swift"
+      ]
+    },
+    {
+      "desktop": "tests/catalog-browser-ui.test.cjs",
+      "sha256": "f17638ebefc3d463d9ca4720518b841a92824270c74280a45174ef820f21d5db",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/catalog-browser.test.cjs",
+      "sha256": "1c8247c5826ae189544c3cd4e785643498d0e1523461560e006d0c895d19f193",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/catalog-metadata.test.cjs",
+      "sha256": "e712762a0e1ff959ef7ac36904625b7ea28a2b09fd03ac85502876f9ccbada84",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/catalog-updates-ui.test.cjs",
+      "sha256": "d2dbcf7ba9250cf13c1f9f38dcfb8a788df19a7c5e1e98e58a282227dd7fc684",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/flix-live-electron.cjs",
+      "sha256": "970871db963751d8aba39ba22cc1dfdadd6d1c66a108d1d53e2e9be3627f68bd",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/flix-proxy.test.cjs",
+      "sha256": "0f83d1d7fb14e7f23dfff911a785f5eeba676625df16d2bca07a24b1bdf16cd0",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/player-interactions.test.cjs",
+      "sha256": "2c4aa2253044751326764a36f638609fcb6fee7b15958b7ff762fd604d28a6a4",
+      "uncommitted": true,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    }
+  ],
+  "preloadAPIs": [
+    {
+      "name": "season",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt"
+      ]
+    },
+    {
+      "name": "top",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt"
+      ]
+    },
+    {
+      "name": "search",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt"
+      ]
+    },
+    {
+      "name": "detail",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt"
+      ]
+    },
+    {
+      "name": "linkkfHome",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt"
+      ]
+    },
+    {
+      "name": "linkkfDetail",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt"
+      ]
+    },
+    {
+      "name": "linkkfEpisodes",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt"
+      ]
+    },
+    {
+      "name": "linkkfPlay",
+      "ios": [
+        "iosApp/LilacAnime/PlaybackResolver.swift",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopSources.kt"
+      ]
+    },
+    {
+      "name": "linkkfResolve",
+      "ios": [
+        "iosApp/LilacAnime/PlaybackResolver.swift",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopSources.kt"
+      ]
+    },
+    {
+      "name": "linkkfSchedule",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt"
+      ]
+    },
+    {
+      "name": "linkkfSections",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt"
+      ]
+    },
+    {
+      "name": "linkkfFilterTags",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt"
+      ]
+    },
+    {
+      "name": "linkkfFilter",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt"
+      ]
+    },
+    {
+      "name": "linkkfSearch",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt"
+      ]
+    },
+    {
+      "name": "linkkfExtras",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt"
+      ]
+    },
+    {
+      "name": "linkkfRecordView",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt"
+      ]
+    },
+    {
+      "name": "providerCatalog",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt"
+      ]
+    },
+    {
+      "name": "catalogFacets",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt"
+      ]
+    },
+    {
+      "name": "catalogBrowse",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt"
+      ]
+    },
+    {
+      "name": "catalogUpdates",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt"
+      ]
+    },
+    {
+      "name": "providerSeason",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt"
+      ]
+    },
+    {
+      "name": "providerAiring",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt"
+      ]
+    },
+    {
+      "name": "providerDetail",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt"
+      ]
+    },
+    {
+      "name": "providerPlay",
+      "ios": [
+        "iosApp/LilacAnime/PlaybackResolver.swift",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopSources.kt"
+      ]
+    },
+    {
+      "name": "providerResolve",
+      "ios": [
+        "iosApp/LilacAnime/PlaybackResolver.swift",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopSources.kt"
+      ]
+    },
+    {
+      "name": "providerSubtitleTracks",
+      "ios": [
+        "iosApp/LilacAnime/PlaybackResolver.swift",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopSources.kt"
+      ]
+    },
+    {
+      "name": "coverData",
+      "ios": [
+        "iosApp/LilacAnime/UIComponents.swift",
+        "iosApp/LilacAnime/DownloadStore.swift"
+      ]
+    },
+    {
+      "name": "opEdSkip",
+      "ios": [
+        "iosApp/LilacAnime/OfflineAnalyzer.swift",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/AniSkip.kt"
+      ]
+    },
+    {
+      "name": "clearOpEd",
+      "ios": [
+        "iosApp/LilacAnime/OfflineAnalyzer.swift",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/AniSkip.kt"
+      ]
+    },
+    {
+      "name": "onOpEdStatus",
+      "ios": [
+        "iosApp/LilacAnime/OfflineAnalyzer.swift",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/AniSkip.kt"
+      ]
+    },
+    {
+      "name": "downloadMedia",
+      "ios": [
+        "iosApp/LilacAnime/DownloadStore.swift",
+        "iosApp/LilacAnime/DownloadTransfer.swift"
+      ]
+    },
+    {
+      "name": "onDownloadProgress",
+      "ios": [
+        "iosApp/LilacAnime/DownloadStore.swift",
+        "iosApp/LilacAnime/DownloadTransfer.swift"
+      ]
+    },
+    {
+      "name": "downloads",
+      "ios": [
+        "iosApp/LilacAnime/DownloadStore.swift",
+        "iosApp/LilacAnime/DownloadTransfer.swift"
+      ]
+    },
+    {
+      "name": "addDownload",
+      "ios": [
+        "iosApp/LilacAnime/DownloadStore.swift",
+        "iosApp/LilacAnime/DownloadTransfer.swift"
+      ]
+    },
+    {
+      "name": "cancelDownload",
+      "ios": [
+        "iosApp/LilacAnime/DownloadStore.swift",
+        "iosApp/LilacAnime/DownloadTransfer.swift"
+      ]
+    },
+    {
+      "name": "resumeDownload",
+      "ios": [
+        "iosApp/LilacAnime/DownloadStore.swift",
+        "iosApp/LilacAnime/DownloadTransfer.swift"
+      ]
+    },
+    {
+      "name": "removeDownload",
+      "ios": [
+        "iosApp/LilacAnime/DownloadStore.swift",
+        "iosApp/LilacAnime/DownloadTransfer.swift"
+      ]
+    },
+    {
+      "name": "playDownload",
+      "ios": [
+        "iosApp/LilacAnime/DownloadStore.swift",
+        "iosApp/LilacAnime/DownloadTransfer.swift"
+      ]
+    },
+    {
+      "name": "openDownloadsFolder",
+      "ios": [
+        "iosApp/LilacAnime/DownloadStore.swift",
+        "iosApp/LilacAnime/DownloadTransfer.swift"
+      ]
+    },
+    {
+      "name": "downloadRoot",
+      "ios": [
+        "iosApp/LilacAnime/DownloadStore.swift",
+        "iosApp/LilacAnime/DownloadTransfer.swift"
+      ]
+    },
+    {
+      "name": "chooseDownloadRoot",
+      "ios": [
+        "iosApp/LilacAnime/DownloadStore.swift",
+        "iosApp/LilacAnime/DownloadTransfer.swift"
+      ]
+    },
+    {
+      "name": "clearDownloads",
+      "ios": [
+        "iosApp/LilacAnime/DownloadStore.swift",
+        "iosApp/LilacAnime/DownloadTransfer.swift"
+      ]
+    },
+    {
+      "name": "onDownloadsChanged",
+      "ios": [
+        "iosApp/LilacAnime/DownloadStore.swift",
+        "iosApp/LilacAnime/DownloadTransfer.swift"
+      ]
+    },
+    {
+      "name": "findSubtitle",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SubtitleDiscovery.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/AnissiaDiscovery.kt",
+        "iosApp/LilacAnime/SubtitleFiles.swift",
+        "iosApp/LilacAnime/WinPNGReader.swift"
+      ]
+    },
+    {
+      "name": "anissiaMakers",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SubtitleDiscovery.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/AnissiaDiscovery.kt",
+        "iosApp/LilacAnime/SubtitleFiles.swift",
+        "iosApp/LilacAnime/WinPNGReader.swift"
+      ]
+    },
+    {
+      "name": "remoteSubtitle",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SubtitleDiscovery.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/AnissiaDiscovery.kt",
+        "iosApp/LilacAnime/SubtitleFiles.swift",
+        "iosApp/LilacAnime/WinPNGReader.swift"
+      ]
+    },
+    {
+      "name": "savedSubtitles",
+      "ios": [
+        "iosApp/LilacAnime/EpisodeSubtitleStore.swift"
+      ]
+    },
+    {
+      "name": "saveSubtitle",
+      "ios": [
+        "iosApp/LilacAnime/EpisodeSubtitleStore.swift"
+      ]
+    },
+    {
+      "name": "removeSavedSubtitle",
+      "ios": [
+        "iosApp/LilacAnime/EpisodeSubtitleStore.swift"
+      ]
+    },
+    {
+      "name": "subtitleCacheUsage",
+      "ios": [
+        "iosApp/LilacAnime/EpisodeSubtitleStore.swift"
+      ]
+    },
+    {
+      "name": "cleanSubtitleCache",
+      "ios": [
+        "iosApp/LilacAnime/EpisodeSubtitleStore.swift"
+      ]
+    },
+    {
+      "name": "clearSubtitleCache",
+      "ios": [
+        "iosApp/LilacAnime/EpisodeSubtitleStore.swift"
+      ]
+    },
+    {
+      "name": "mpvStatus",
+      "ios": [
+        "iosApp/LilacAnime/MPVEngine.swift",
+        "iosApp/LilacAnime/EpisodePlayerView.swift"
+      ]
+    },
+    {
+      "name": "mpvPlay",
+      "ios": [
+        "iosApp/LilacAnime/MPVEngine.swift",
+        "iosApp/LilacAnime/EpisodePlayerView.swift"
+      ]
+    },
+    {
+      "name": "setPlayerFullscreen",
+      "ios": [
+        "iosApp/LilacAnime/MPVEngine.swift",
+        "iosApp/LilacAnime/EpisodePlayerView.swift"
+      ]
+    },
+    {
+      "name": "chooseVideo",
+      "ios": [
+        "iosApp/LilacAnime/EpisodePlayerView.swift",
+        "iosApp/LilacAnime/SettingsView.swift",
+        "iosApp/LilacAnime/SubtitleFiles.swift"
+      ]
+    },
+    {
+      "name": "chooseSubtitle",
+      "ios": [
+        "iosApp/LilacAnime/EpisodePlayerView.swift",
+        "iosApp/LilacAnime/SettingsView.swift",
+        "iosApp/LilacAnime/SubtitleFiles.swift"
+      ]
+    },
+    {
+      "name": "chooseSubtitleDetails",
+      "ios": [
+        "iosApp/LilacAnime/EpisodePlayerView.swift",
+        "iosApp/LilacAnime/SettingsView.swift",
+        "iosApp/LilacAnime/SubtitleFiles.swift"
+      ]
+    },
+    {
+      "name": "setWindowTheme",
+      "ios": [
+        "iosApp/LilacAnime/LilacAnimeApp.swift",
+        "iosApp/LilacAnime/DesktopShell.swift"
+      ]
+    },
+    {
+      "name": "setWindowButtons",
+      "ios": [
+        "iosApp/LilacAnime/LilacAnimeApp.swift",
+        "iosApp/LilacAnime/DesktopShell.swift"
+      ]
+    },
+    {
+      "name": "updateState",
+      "ios": [
+        "iosApp/LilacAnime/DesktopUpdater.swift",
+        ".github/workflows/ipa.yml"
+      ]
+    },
+    {
+      "name": "checkUpdate",
+      "ios": [
+        "iosApp/LilacAnime/DesktopUpdater.swift",
+        ".github/workflows/ipa.yml"
+      ]
+    },
+    {
+      "name": "downloadUpdate",
+      "ios": [
+        "iosApp/LilacAnime/DesktopUpdater.swift",
+        ".github/workflows/ipa.yml"
+      ]
+    },
+    {
+      "name": "installUpdate",
+      "ios": [
+        "iosApp/LilacAnime/DesktopUpdater.swift",
+        ".github/workflows/ipa.yml"
+      ]
+    },
+    {
+      "name": "onUpdateState",
+      "ios": [
+        "iosApp/LilacAnime/DesktopUpdater.swift",
+        ".github/workflows/ipa.yml"
+      ]
+    },
+    {
+      "name": "tmdbKey",
+      "ios": [
+        "iosApp/LilacAnime/DesktopCatalog.swift",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopMetadata.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/TmdbTitleResolver.kt"
+      ]
+    },
+    {
+      "name": "resolveTitles",
+      "ios": [
+        "iosApp/LilacAnime/DesktopCatalog.swift",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopMetadata.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/TmdbTitleResolver.kt"
+      ]
+    },
+    {
+      "name": "animeOverview",
+      "ios": [
+        "iosApp/LilacAnime/DesktopCatalog.swift",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopMetadata.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/TmdbTitleResolver.kt"
+      ]
+    },
+    {
+      "name": "titleVariants",
+      "ios": [
+        "iosApp/LilacAnime/DesktopCatalog.swift",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopMetadata.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/TmdbTitleResolver.kt"
+      ]
+    },
+    {
+      "name": "catalogKoreanSearch",
+      "ios": [
+        "iosApp/LilacAnime/DesktopCatalog.swift",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopMetadata.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/TmdbTitleResolver.kt"
+      ]
+    },
+    {
+      "name": "catalogIndexState",
+      "ios": [
+        "iosApp/LilacAnime/DesktopCatalog.swift",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopMetadata.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/TmdbTitleResolver.kt"
+      ]
+    },
+    {
+      "name": "activateCatalog",
+      "ios": [
+        "iosApp/LilacAnime/DesktopCatalog.swift",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopMetadata.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/TmdbTitleResolver.kt"
+      ]
+    },
+    {
+      "name": "onCatalogIndexState",
+      "ios": [
+        "iosApp/LilacAnime/DesktopCatalog.swift",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopMetadata.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/TmdbTitleResolver.kt"
+      ]
+    },
+    {
+      "name": "setTmdbKey",
+      "ios": [
+        "iosApp/LilacAnime/DesktopCatalog.swift",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopMetadata.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/TmdbTitleResolver.kt"
+      ]
+    },
+    {
+      "name": "geminiSettings",
+      "ios": [
+        "iosApp/LilacAnime/SettingsView.swift",
+        "iosApp/LilacAnime/LibraryStore.swift",
+        "iosApp/LilacAnime/TranslationCoordinator.swift",
+        "iosApp/LilacAnime/DesktopSubtitlePreparer.swift"
+      ]
+    },
+    {
+      "name": "setGeminiSettings",
+      "ios": [
+        "iosApp/LilacAnime/SettingsView.swift",
+        "iosApp/LilacAnime/LibraryStore.swift",
+        "iosApp/LilacAnime/TranslationCoordinator.swift",
+        "iosApp/LilacAnime/DesktopSubtitlePreparer.swift"
+      ]
+    },
+    {
+      "name": "translateSubtitle",
+      "ios": [
+        "iosApp/LilacAnime/SettingsView.swift",
+        "iosApp/LilacAnime/LibraryStore.swift",
+        "iosApp/LilacAnime/TranslationCoordinator.swift",
+        "iosApp/LilacAnime/DesktopSubtitlePreparer.swift"
+      ]
+    },
+    {
+      "name": "jimakuList",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/JimakuRules.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SubtitleDiscovery.kt",
+        "iosApp/LilacAnime/DesktopSubtitlePreparer.swift"
+      ]
+    },
+    {
+      "name": "jimakuDownload",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/JimakuRules.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SubtitleDiscovery.kt",
+        "iosApp/LilacAnime/DesktopSubtitlePreparer.swift"
+      ]
+    },
+    {
+      "name": "installLocalModel",
+      "ios": [
+        "iosApp/LilacAnime/DesktopModelInstaller.swift",
+        "iosApp/LilacAnime/LocalModelsView.swift"
+      ]
+    },
+    {
+      "name": "cancelLocalModelInstall",
+      "ios": [
+        "iosApp/LilacAnime/DesktopModelInstaller.swift",
+        "iosApp/LilacAnime/LocalModelsView.swift"
+      ]
+    },
+    {
+      "name": "addLocalModelFile",
+      "ios": [
+        "iosApp/LilacAnime/DesktopModelInstaller.swift",
+        "iosApp/LilacAnime/LocalModelsView.swift"
+      ]
+    },
+    {
+      "name": "removeLocalModel",
+      "ios": [
+        "iosApp/LilacAnime/DesktopModelInstaller.swift",
+        "iosApp/LilacAnime/LocalModelsView.swift"
+      ]
+    },
+    {
+      "name": "onLocalModelProgress",
+      "ios": [
+        "iosApp/LilacAnime/DesktopModelInstaller.swift",
+        "iosApp/LilacAnime/LocalModelsView.swift"
+      ]
+    },
+    {
+      "name": "cancelTranslation",
+      "ios": [
+        "iosApp/LilacAnime/SettingsView.swift",
+        "iosApp/LilacAnime/LibraryStore.swift",
+        "iosApp/LilacAnime/TranslationCoordinator.swift",
+        "iosApp/LilacAnime/DesktopSubtitlePreparer.swift"
+      ]
+    },
+    {
+      "name": "jumpTranslation",
+      "ios": [
+        "iosApp/LilacAnime/SettingsView.swift",
+        "iosApp/LilacAnime/LibraryStore.swift",
+        "iosApp/LilacAnime/TranslationCoordinator.swift",
+        "iosApp/LilacAnime/DesktopSubtitlePreparer.swift"
+      ]
+    },
+    {
+      "name": "prepareEpisodeSubtitle",
+      "ios": [
+        "iosApp/LilacAnime/SettingsView.swift",
+        "iosApp/LilacAnime/LibraryStore.swift",
+        "iosApp/LilacAnime/TranslationCoordinator.swift",
+        "iosApp/LilacAnime/DesktopSubtitlePreparer.swift"
+      ]
+    },
+    {
+      "name": "onTranslateProgress",
+      "ios": [
+        "iosApp/LilacAnime/SettingsView.swift",
+        "iosApp/LilacAnime/LibraryStore.swift",
+        "iosApp/LilacAnime/TranslationCoordinator.swift",
+        "iosApp/LilacAnime/DesktopSubtitlePreparer.swift"
+      ]
+    },
+    {
+      "name": "defaultSubtitleFont",
+      "ios": [
+        "iosApp/LilacAnime/EpisodePlayerView.swift",
+        "iosApp/LilacAnime/SettingsView.swift",
+        "iosApp/LilacAnime/SubtitleFiles.swift"
+      ]
+    },
+    {
+      "name": "chooseFont",
+      "ios": [
+        "iosApp/LilacAnime/EpisodePlayerView.swift",
+        "iosApp/LilacAnime/SettingsView.swift",
+        "iosApp/LilacAnime/SubtitleFiles.swift"
+      ]
+    },
+    {
+      "name": "updateNotes",
+      "ios": [
+        "iosApp/LilacAnime/DesktopUpdater.swift",
+        ".github/workflows/ipa.yml"
+      ]
+    },
+    {
+      "name": "openExternal",
+      "ios": [
+        "iosApp/LilacAnime/EpisodePlayerView.swift",
+        "iosApp/LilacAnime/SettingsView.swift",
+        "iosApp/LilacAnime/DesktopUpdater.swift"
+      ]
+    }
+  ]
+}

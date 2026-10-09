@@ -62,9 +62,17 @@ final class DesktopSubtitlePreparer {
             let task = Task { [weak self] () -> (URL, String)? in
                 guard let self else { return nil }
                 let assets = await self.find(provider, item: item, context: context)
+                var candidates: [URL] = []
                 for asset in assets where asset.source != "post" {
                     if Task.isCancelled { return nil }
-                    if let url = URL(string: asset.url), let files = try? await SubtitleFiles.prepare(url), let file = self.select(files, item: item, offsets: context.2) { return (file, provider) }
+                    if let url = URL(string: asset.url), let files = try? await SubtitleFiles.prepare(url) { candidates += files }
+                }
+                if let first = assets.first(where: { $0.source != "post" }), let file = self.select(candidates, item: item, offsets: context.2, episode: first.episode?.intValue, strict: first.strict) { return (file, provider) }
+                if provider == "anissia" {
+                    for asset in assets where asset.source == "post" {
+                        if Task.isCancelled { return nil }
+                        if let url = URL(string: asset.url), let file = try? await WinPNGReader.subtitle(url, episode: item.number, matched: true) { return (file, provider) }
+                    }
                 }
                 return nil
             }
@@ -114,14 +122,24 @@ final class DesktopSubtitlePreparer {
             service.findSubtitles(provider: provider, title: context.0, episode: Int32(item.number), episodeKey: item.displayNumber, anilistId: context.1) { values, _ in continuation.resume(returning: values ?? []) }
         }
     }
-    private func select(_ files: [URL], item: PlaybackItem, offsets: [Int]) -> URL? {
-        let wanted = [item.number] + offsets.map { item.number + $0 }
-        return files.first { file in
+    private func select(_ files: [URL], item: PlaybackItem, offsets: [Int], episode: Int? = nil, strict: Bool = false) -> URL? {
+        let wanted = [episode ?? item.number] + offsets.map { item.number + $0 }
+        let compatible = files.filter { file in
+            guard let season = SubtitleEpisodeMatcher.shared.parse(name: file.lastPathComponent)?.season else { return true }
+            return season.intValue == Int(DesktopTitleRules.shared.season(title: item.anime.title))
+        }
+        let matching = compatible.first { file in
             let parsed = SubtitleEpisodeMatcher.shared.parse(name: file.lastPathComponent)
             if let season = parsed?.season, season.intValue != Int(DesktopTitleRules.shared.season(title: item.anime.title)) { return false }
-            if parsed?.episode == nil && files.count == 1 { return true }
+            if parsed?.episode == nil && files.count == 1 && !strict { return true }
             return wanted.contains { SubtitleEpisodeMatcher.shared.matches(name: file.lastPathComponent, episodeNumber: Int32($0), expectedSeason: nil) }
         }
+        if let matching { return matching }
+        if !strict { return compatible.first }
+        if item.number == 1 && !compatible.contains(where: { SubtitleEpisodeMatcher.shared.matches(name: $0.lastPathComponent, episodeNumber: 2, expectedSeason: nil) }) {
+            return compatible.max { ((try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) < ((try? $1.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
+        }
+        return nil
     }
     func cancel() { searches.values.forEach { $0.cancel() }; searches.removeAll(); service.cancel(); titleLookup.cancel() }
     deinit { service.close() }

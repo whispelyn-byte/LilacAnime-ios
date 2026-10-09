@@ -3,6 +3,18 @@ import com.lilac.anime.shared.ported.SubtitleDocument
 import com.fleeksoft.ksoup.Ksoup
 
 object SubtitleTools {
+    /** Same CHS+JPN overlap test as desktop subtitle-translator.cjs. */
+    fun translationBlanks(content: String, extension: String): List<Int> {
+        val cues = SubtitleDocument.parse(content, extension.lowercase())
+        val texts = cues.map { SubtitleDocument.modelText(it.text, it.kind) }
+        val kana = Regex("[぀-ヿ]"); val han = Regex("[一-鿿]")
+        val japanese = cues.indices.filter { kana.containsMatchIn(texts[it]) }
+        val paired = cues.indices.filter { index -> han.containsMatchIn(texts[index]) && !kana.containsMatchIn(texts[index]) &&
+            japanese.any { other -> cues[other].startMs < cues[index].endMs && cues[index].startMs < cues[other].endMs } }
+        val dropped = if (paired.size >= 20 && paired.size >= japanese.size / 3.0) paired.toSet() else emptySet()
+        val retainedTexts = cues.indices.filter { it !in dropped }.map { texts[it] }.toSet()
+        return dropped.filter { texts[it] !in retainedTexts }
+    }
     fun driveConfirmation(html: String, baseUrl: String): String {
         val document = Ksoup.parse(html, baseUrl)
         val form = document.selectFirst("form[action]") ?: return ""

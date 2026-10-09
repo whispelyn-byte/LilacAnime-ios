@@ -1,4 +1,148 @@
 {
+  "titles": [
+    {
+      "input": "Overlord IV",
+      "key": "overlordiv",
+      "season": 4,
+      "clean": "Overlord IV"
+    },
+    {
+      "input": "The Angel Next Door Spoils Me Rotten2",
+      "key": "theangelnextdoorspoilsmerotten2",
+      "season": 2,
+      "clean": "The Angel Next Door Spoils Me Rotten2"
+    },
+    {
+      "input": "Kaiju No. 8",
+      "key": "kaijuno8",
+      "season": 1,
+      "clean": "Kaiju No. 8"
+    },
+    {
+      "input": "Mob Psycho 100",
+      "key": "mobpsycho100",
+      "season": 1,
+      "clean": "Mob Psycho 100"
+    },
+    {
+      "input": "Part 2",
+      "key": "part2",
+      "season": 1,
+      "clean": "Part 2"
+    },
+    {
+      "input": "무직전생3",
+      "key": "무직전생",
+      "season": 3,
+      "clean": "무직전생3"
+    },
+    {
+      "input": "무직전생 Ⅱ",
+      "key": "무직전생",
+      "season": 2,
+      "clean": "무직전생 Ⅱ"
+    },
+    {
+      "input": "카구야 님은 고백받고 싶어 (애니메이션 1기)",
+      "key": "카구야님은고백받고싶어",
+      "season": 1,
+      "clean": "카구야 님은 고백받고 싶어"
+    },
+    {
+      "input": "봇치 더 록! (애니메이션)",
+      "key": "봇치더록",
+      "season": 1,
+      "clean": "봇치 더 록!"
+    },
+    {
+      "input": "진격의 거인(비디오 게임 시리즈)",
+      "key": "진격의거인",
+      "season": 1,
+      "clean": ""
+    },
+    {
+      "input": "나 혼자만 레벨업 1화",
+      "key": "나혼자만레벨업화",
+      "season": 1,
+      "clean": "나 혼자만 레벨업"
+    },
+    {
+      "input": "Anime Ｓｅａｓｏｎ ２",
+      "key": "animeseason2",
+      "season": 2,
+      "clean": "Anime Ｓｅａｓｏｎ ２"
+    }
+  ],
+  "community": [
+    {
+      "input": {
+        "title": "작품 3화",
+        "html": "<a href=\"/3.ass\">자막</a><a href=\"https://drive.google.com/file/d/fonts/view\">폰트</a>",
+        "episode": 3
+      },
+      "expected": {
+        "links": [
+          "https://fixture.test/3.ass",
+          "https://drive.google.com/file/d/fonts/view"
+        ],
+        "episode": 3
+      }
+    },
+    {
+      "input": {
+        "title": "작품",
+        "html": "<a href=\"/13.ass\">13화</a><a href=\"/14.ass\">14화</a><a href=\"/fonts.zip\">폰트</a>",
+        "episode": 2
+      },
+      "expected": {
+        "links": [
+          "https://fixture.test/14.ass",
+          "https://fixture.test/fonts.zip"
+        ],
+        "episode": 14,
+        "strict": false
+      }
+    },
+    {
+      "input": {
+        "title": "작품",
+        "html": "<a href=\"/bundle.zip\">1 ~ 12화</a>",
+        "episode": 4
+      },
+      "expected": {
+        "links": [
+          "https://fixture.test/bundle.zip"
+        ],
+        "episode": 4,
+        "strict": true
+      }
+    },
+    {
+      "input": {
+        "title": "작품 4화",
+        "html": "<a href=\"/4.ass\">자막</a>",
+        "episode": 3
+      },
+      "expected": {
+        "links": [],
+        "episode": 3
+      }
+    },
+    {
+      "input": {
+        "title": "극장판",
+        "html": "<a href=\"/movie.zip\">자막</a>",
+        "episode": 1
+      },
+      "expected": {
+        "links": [
+          "https://fixture.test/movie.zip"
+        ],
+        "episode": 1,
+        "strict": true
+      }
+    }
+  ],
   "subtitleTracks": [
     {
       "tracks": [],

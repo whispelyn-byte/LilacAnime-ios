@@ -72,7 +72,8 @@ class PortedFeaturesTest {
             val body = Json.parseToJsonElement((request.body as io.ktor.http.content.TextContent).text).jsonObject
             assertEquals(false, body["store"]!!.jsonPrimitive.boolean)
             assertEquals("json_schema", body["text"]!!.jsonObject["format"]!!.jsonObject["type"]!!.jsonPrimitive.content)
-            respond("""{"output":[{"content":[{"type":"output_text","text":"{\"lines\":[{\"i\":1,\"t\":\"안녕\"}]}"}]}]}""",
+            assertEquals(0, Json.parseToJsonElement(body.getValue("input").jsonPrimitive.content).jsonObject.getValue("lines").jsonArray.first().jsonObject.getValue("i").jsonPrimitive.int)
+            respond("""{"output":[{"content":[{"type":"output_text","text":"{\"lines\":[{\"i\":0,\"t\":\"안녕\"}]}"}]}]}""",
                 HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
         }
         val translator = CloudTranslator(HttpClient(engine) { expectSuccess = true })
@@ -90,7 +91,7 @@ class PortedFeaturesTest {
             if (request.url.encodedPath.endsWith("/models")) return@MockEngine respond("""{"models":[{"name":"models/gemini-2.5-flash","supportedGenerationMethods":["generateContent"]},{"name":"models/gemini-2.0-flash","supportedGenerationMethods":["generateContent"]},{"name":"models/gemini-2.5-pro","supportedGenerationMethods":["generateContent"]}]}""", HttpStatusCode.OK, json)
             called += request.url.encodedPath
             if (request.url.encodedPath.contains("2.5-flash")) respond("""{"error":{"message":"quota exhausted"}}""", HttpStatusCode.TooManyRequests, json)
-            else respond("""{"candidates":[{"content":{"parts":[{"text":"{\"lines\":[{\"i\":1,\"t\":\"안녕\"}]}"}]}}]}""", HttpStatusCode.OK, json)
+            else respond("""{"candidates":[{"content":{"parts":[{"text":"[{\"i\":0,\"t\":\"안녕\"}]"}]}}]}""", HttpStatusCode.OK, json)
         }
         val translator = CloudTranslator(HttpClient(engine) { expectSuccess = true })
         try {

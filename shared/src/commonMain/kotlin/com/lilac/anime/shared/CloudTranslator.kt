@@ -19,6 +19,7 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
     private val cache = mutableMapOf<String, List<String>>()
     private val modelLists = mutableMapOf<String, List<String>>()
     private val spent = mutableMapOf<String, kotlin.time.TimeMark>()
+    private val workingShapes = mutableMapOf<String, Int>()
     suspend fun models(config: TranslationConfig): List<String> {
         require(config.key.isNotBlank()) { "API Key를 설정하세요." }
         val auth = if (config.provider == "deepl") "DeepL-Auth-Key " + config.key else "Bearer " + config.key
@@ -87,9 +88,9 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
             }
         }
         val output = result ?: throw (failure ?: IllegalStateException("사용 가능한 번역 모델이 없습니다."))
-        check(output.size == lines.size && output.all { it.isNotBlank() }) { "번역 줄 수가 일치하지 않습니다." }
+        check(output.size == lines.size) { "번역 줄 수가 일치하지 않습니다." }
         if (cache.size > 512) cache.clear()
-        cache[cacheKey] = output
+        if (output.all { it.isNotBlank() }) cache[cacheKey] = output
         return output
     }
     private suspend fun post(url: String, body: JSONObject, authorization: String? = null, apiKey: String? = null): JSONObject {
@@ -114,7 +115,7 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
         }
         error("번역 API 요청 실패")
     }
-    private fun instruction(config: TranslationConfig) = "Translate Japanese or English anime subtitles into natural Korean. Preserve meaning, names and tone. Return exactly one translated item per input, with its original 1-based index. Return JSON {\"lines\":[{\"i\":1,\"t\":\"translation\"}]}. Do not add explanations." + if (config.terminology.isBlank()) "" else "\nUse these spellings consistently:\n" + config.terminology
+    private fun instruction(config: TranslationConfig) = DesktopCloudPrompt.build(config.terminology, config.provider != "gemini")
     private fun itemSchema() = JSONObject().put("type", "object").put("properties", JSONObject()
         .put("i", JSONObject().put("type", "integer")).put("t", JSONObject().put("type", "string")))
         .put("required", JSONArray().put("i").put("t")).put("additionalProperties", false)
@@ -122,10 +123,12 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
         JSONObject().put("type", "array").put("items", itemSchema()))).put("required", JSONArray().put("lines")).put("additionalProperties", false)
     private suspend fun openai(lines: List<String>, config: TranslationConfig): List<String> {
         val model = config.model.ifBlank { "gpt-4.1-mini" }
-        for (shape in 0..2) {
+        val shapeKey = "openai:" + model
+        for (shape in (workingShapes[shapeKey] ?: 0)..2) {
             try {
                 val body = JSONObject().put("model", model).put("store", false).put("instructions", instruction(config))
-                    .put("input", CloudTranslationText.markedInput(lines))
+                    .put("input", CloudTranslationText.jsonInput(lines, true))
+                if (shape < 2 && Regex("^(o\\d|gpt-5)").containsMatchIn(model)) body.put("reasoning", JSONObject().put("effort", "low"))
                 if (shape == 0) body.put("text", JSONObject().put("format", JSONObject().put("type", "json_schema").put("name", "subtitles").put("strict", true).put("schema", schema())))
                 if (shape == 1) body.put("text", JSONObject().put("format", JSONObject().put("type", "json_object")))
                 val root = post("https://api.openai.com/v1/responses", body, "Bearer " + config.key)
@@ -142,7 +145,8 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
                         }
                     }
                 }
-                return CloudTranslationText.parseMarked(text, lines)
+                workingShapes[shapeKey] = shape
+                return CloudTranslationText.parseDesktop(text, lines)
             } catch (error: ClientRequestException) {
                 if (error.response.status != HttpStatusCode.BadRequest || shape == 2) throw error
             }
@@ -160,12 +164,12 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
         for (model in models) {
             try {
                 val body = JSONObject().put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", instruction(config)))))
-                    .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", CloudTranslationText.markedInput(lines))))))
+                    .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", CloudTranslationText.jsonInput(lines, false))))))
                     .put("generationConfig", JSONObject().put("responseMimeType", "application/json").put("temperature", 0.3))
                 val root = post("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent", body, apiKey = config.key)
                 val parts = root.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts") ?: error("Gemini 번역 응답이 없습니다.")
                 val text = (0 until parts.length()).mapNotNull { parts.optJSONObject(it)?.takeIf { part -> !part.optBoolean("thought") }?.optString("text") }.joinToString("")
-                return CloudTranslationText.parseMarked(text, lines)
+                return CloudTranslationText.parseDesktop(text, lines)
             } catch (error: ClientRequestException) {
                 if (error.response.status.value !in listOf(400, 404) || model == models.last()) throw error
             }
@@ -174,21 +178,28 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
     }
     private suspend fun deepl(lines: List<String>, config: TranslationConfig): List<String> {
         val host = if (config.key.endsWith(":fx")) "api-free.deepl.com" else "api.deepl.com"
-        val root = post("https://$host/v2/translate", JSONObject().put("text", JSONArray().apply { lines.forEach { put(it) } })
-            .put("target_lang", "KO").put("preserve_formatting", true), "DeepL-Auth-Key " + config.key)
+        val body = JSONObject().put("text", JSONArray().apply { lines.forEach { put(it) } }).put("target_lang", "KO").put("preserve_formatting", true)
+        config.terminology.lineSequence().firstOrNull { it.startsWith("Anime:") }?.let { body.put("context", "Anime subtitles:" + it.removePrefix("Anime:")) }
+        val root = post("https://$host/v2/translate", body, "DeepL-Auth-Key " + config.key)
         val values = root.optJSONArray("translations") ?: error("DeepL 결과가 없습니다.")
         return (0 until values.length()).map { values.optJSONObject(it)?.optString("text").orEmpty() }
     }
     private suspend fun qwen(lines: List<String>, config: TranslationConfig): List<String> {
         val host = if (config.region == "china") "dashscope.aliyuncs.com" else "dashscope-intl.aliyuncs.com"
         val model = config.model.ifBlank { "qwen-plus" }
+        val shapeKey = "qwen:" + model
+        for (shape in (workingShapes[shapeKey] ?: 0)..2) try {
         val body = JSONObject().put("model", model).put("messages", JSONArray()
             .put(JSONObject().put("role", "system").put("content", instruction(config)))
-            .put(JSONObject().put("role", "user").put("content", CloudTranslationText.markedInput(lines))))
+            .put(JSONObject().put("role", "user").put("content", CloudTranslationText.jsonInput(lines, true))))
             .put("temperature", 0.3)
-        if (model.contains("qwen3", true)) body.put("enable_thinking", false)
+        if (shape < 2) body.put("response_format", JSONObject().put("type", "json_object"))
+        if (shape == 0) body.put("enable_thinking", false)
         val root = post("https://$host/compatible-mode/v1/chat/completions", body, "Bearer " + config.key)
-        return CloudTranslationText.parseMarked(root.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content").orEmpty(), lines)
+        workingShapes[shapeKey] = shape
+        return CloudTranslationText.parseDesktop(root.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content").orEmpty(), lines)
+        } catch (error: ClientRequestException) { if (error.response.status != HttpStatusCode.BadRequest || shape == 2) throw error }
+        error("Qwen 번역에 실패했습니다.")
     }
     fun clearCache() = cache.clear()
     fun close() = client.close()

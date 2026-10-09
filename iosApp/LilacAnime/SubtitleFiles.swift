@@ -43,6 +43,7 @@ enum SubtitleFiles {
         let safe = URL(fileURLWithPath: name.replacingOccurrences(of: "\\", with: "/")).lastPathComponent
         let file = folder.appendingPathComponent((safe.isEmpty || safe == "." || safe == ".." ? "source" : safe) + (ext.isEmpty ? ".ass" : ""))
         try data.write(to: file, options: .atomic)
+        if ["ttf", "otf", "ttc"].contains(ext) { _ = try importFont(file); return [] }
         if ["zip", "7z", "rar"].contains(ext) || data.starts(with: [0x50, 0x4b, 0x03, 0x04]) || data.starts(with: [0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c]) || data.starts(with: [0x52, 0x61, 0x72, 0x21]) {
             var results: [URL] = []
             for extracted in try SubtitleArchive.extract(file, into: folder) {

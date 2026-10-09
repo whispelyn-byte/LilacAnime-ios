@@ -382,7 +382,7 @@ final class DownloadStore: ObservableObject {
     func prepareCompletedDownloads() {
         guard preparationTask == nil, library != nil, !clearing else { return }
         preparationTask = Task(priority: .utility) {
-            defer { preparationTask = nil; translateSavedDownloads() }
+            defer { preparationTask = nil; if !Task.isCancelled { translateSavedDownloads() } }
             for entry in entries.reversed() where entry.localFile != nil && entry.subtitlesPrepared != true {
                 if Task.isCancelled { return }
                 do { try await prepareAssets(entry) }
@@ -482,7 +482,7 @@ final class DownloadStore: ObservableObject {
                 guard let original = jimaku.map({ folder.appendingPathComponent($0.file) }) ?? DesktopSubtitlePolicy.translationTrack(remote)?.url ?? (tracks.isEmpty ? files.first(where: { !SubtitleFiles.isKorean($0) }) : nil) else { continue }
                 let item = entry.playback
                 translationStatus = entry.anime.title + " · " + entry.title + " 자막 번역"
-                EpisodeSubtitleStore.shared.save(original, item: item, provider: "다운로드", translated: false)
+                EpisodeSubtitleStore.shared.save(original, item: item, provider: "download", translated: false)
                 downloadTranslator.translate(original, preferences: preferences, anime: entry.anime, background: true) { [weak self] output in
                     guard let self, !output.lastPathComponent.hasPrefix("working-") else { return }
                     do {
@@ -554,7 +554,6 @@ struct DownloadsView: View {
             List {
                 if downloads.pendingResolution > 0 {
                     VStack(alignment: .leading, spacing: 8) {
-                        if let poster = entry.posterFile { AnimeArtwork(url: DownloadStore.directory.appendingPathComponent(entry.id).appendingPathComponent(poster).absoluteString, width: 75, height: 105).clipShape(RoundedRectangle(cornerRadius: 8)) }
                         ProgressView("영상 준비 · \(downloads.pendingResolution)개 남음")
                         Text(downloads.resolvingTitle).font(.caption).foregroundStyle(.secondary)
                         Button("준비 중단") { downloads.stopResolving() }

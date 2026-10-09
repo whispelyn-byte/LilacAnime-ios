@@ -31,6 +31,7 @@ final class TranslationCoordinator: ObservableObject {
                 guard !lines.isEmpty else { throw SubtitleFiles.failure("번역할 자막이 없습니다.") }
                 let credential = SecureKeys.load(preferences.translationProvider)
                 let settings: [String: Any] = [
+                    "desktopPrompt": "prompt-3/local-4/bilingual-1",
                     "provider": preferences.translationProvider, "model": preferences.translationModel,
                     "region": preferences.qwenRegion, "local": preferences.selectedGGUF,
                     "context": preferences.contextSize, "maxTokens": preferences.maxTokens,
@@ -53,6 +54,10 @@ final class TranslationCoordinator: ObservableObject {
                 if let data = try? Data(contentsOf: partialFile), let saved = try? JSONDecoder().decode([String: String].self, from: data) {
                     kept = saved.filter { !$0.value.isEmpty }
                 }
+                for index in SubtitleTools.shared.translationBlanks(content: content, extension: ext) {
+                    let value = index.intValue; if lines.indices.contains(value) { kept[lines[value]] = "" }
+                }
+                for line in lines where line.rangeOfCharacter(from: .letters) == nil { kept[line] = line }
                 let working = SubtitleFiles.translations.appendingPathComponent("working-" + token.uuidString + "." + ext)
                 workingFiles.insert(working)
                 @MainActor func publish() throws {
@@ -99,8 +104,21 @@ final class TranslationCoordinator: ObservableObject {
                             guard !cleaned.isEmpty else { throw SubtitleFiles.failure("로컬 모델이 빈 번역을 반환했습니다.") }
                             kept[lines[first]] = cleaned
                         } else {
+                            let metadata = anime.flatMap { DesktopCatalog.shared.record($0) }
+                            var contextParts: [String] = []
+                            if let anime {
+                                contextParts.append("Anime: " + anime.title + " / " + anime.anime.native)
+                                contextParts.append("Genres: " + anime.anime.genres.joined(separator: ", "))
+                            }
+                            if let metadata { contextParts.append("Story: " + metadata.overview) }
+                            if !characters.isEmpty {
+                                let cast = characters.prefix(30).map { "- " + $0.native + " / " + $0.name + " (" + $0.gender + ")" }
+                                contextParts.append("Main characters (original / romanized, gender):\n" + cast.joined(separator: "\n"))
+                            }
+                            contextParts.append(AnimeGlossary.shared.hints(text: lines.joined(separator: "\n"), characters: characters, custom: preferences.translationGlossary ?? ""))
+                            let context = contextParts.filter { !$0.isEmpty }.joined(separator: "\n")
                             let config = TranslationConfig(provider: provider, key: SecureKeys.load(provider),
-                                model: preferences.translationModels?[provider] ?? (provider == preferences.translationProvider ? preferences.translationModel : ""), region: preferences.qwenRegion, terminology: AnimeGlossary.shared.hints(text: lines.joined(separator: "\n"), characters: characters, custom: preferences.translationGlossary ?? ""))
+                                model: preferences.translationModels?[provider] ?? (provider == preferences.translationProvider ? preferences.translationModel : ""), region: preferences.qwenRegion, terminology: context)
                             try await CloudSubtitleScheduler.translate(lines: lines, cues: cues, provider: provider, config: config,
                                 service: service, position: position, cached: { kept }) { additions in
                                     kept.merge(additions) { old, _ in old }
@@ -142,17 +160,16 @@ final class TranslationCoordinator: ObservableObject {
 
 enum TranslationPriority {
     static func indices(starts: [Double], ends: [Double], lines: [String], translated: [String: String], position: Double, limit: Int) -> [Int] {
-        let candidates = lines.indices.filter { translated[lines[$0]] == nil }
+        var seen: Set<String> = []
+        let candidates = lines.indices.filter { seen.insert(lines[$0]).inserted && translated[lines[$0]] == nil }
         let ordered = candidates.sorted { lhs, rhs in
             func score(_ index: Int) -> Double {
                 let start = starts.indices.contains(index) ? starts[index] : Double(index)
-                let end = ends.indices.contains(index) ? ends[index] : start
-                return (end < position ? 1_000_000 : 0) + abs(start - position)
+                return (start < max(0, position) - 5 ? 1_000_000 : 0) + start
             }
             let a = score(lhs), b = score(rhs)
             return a == b ? lhs < rhs : a < b
         }
-        var seen: Set<String> = []
-        return Array(ordered.filter { seen.insert(lines[$0]).inserted }.prefix(limit))
+        return Array(ordered.prefix(limit))
     }
 }

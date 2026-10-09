@@ -23,7 +23,8 @@ final class PlaybackTests: XCTestCase {
         app.buttons["플레이어 설정"].tap()
         let panel = app.otherElements["player-settings-panel"]
         XCTAssertTrue(panel.waitForExistence(timeout: 5))
-        XCTAssertLessThanOrEqual(panel.frame.width, 400)
+        // The accessibility container includes the right safe-area padding on notched iPhones.
+        XCTAssertLessThanOrEqual(panel.frame.width, min(480, viewport.width))
         XCTAssertGreaterThanOrEqual(panel.frame.minX, viewport.minX)
         XCTAssertLessThanOrEqual(panel.frame.maxY, viewport.maxY)
         for tab in 0...2 { app.buttons["player-settings-tab-\(tab)"].tap() }

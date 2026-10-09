@@ -285,10 +285,10 @@ final class DownloadStore: ObservableObject {
                 let decoded = try HLSData.validatedFragment(Data(contentsOf: staged))
                 try decoded.write(to: target, options: .atomic); try FileManager.default.removeItem(at: staged)
             } else if entries[index].stream.manifestKey != nil && (fields[1].hasSuffix(".ts") || mime.hasPrefix("image/")) {
-                let decoded = HLSData.transportStream(Data(contentsOf: staged))
+                let decoded = HLSData.transportStream(try Data(contentsOf: staged))
                 try decoded.write(to: target, options: .atomic); try FileManager.default.removeItem(at: staged)
             } else if fields[1].hasSuffix(".ts") {
-                let decoded = HLSData.transportStream(Data(contentsOf: staged))
+                let decoded = HLSData.transportStream(try Data(contentsOf: staged))
                 try decoded.write(to: target, options: .atomic); try FileManager.default.removeItem(at: staged)
             } else {
                 if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }

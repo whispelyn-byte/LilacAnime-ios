@@ -1,5 +1,8 @@
 #pragma once
 #include <stdbool.h>
+#ifdef __OBJC__
+#import "NativeWebKit.h"
+#endif
 #ifdef __cplusplus
 extern "C" {
 #endif

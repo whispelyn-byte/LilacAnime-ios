@@ -37,7 +37,7 @@ struct PlayerSettingsPanel<Content: View>: View {
                                 Text(tabs[index]).font(.system(size: 13, weight: .semibold))
                                     .frame(maxWidth: .infinity).padding(.vertical, 10)
                                     .background(tab == index ? LilacStyle.accent.opacity(0.2) : .clear, in: RoundedRectangle(cornerRadius: 10))
-                            }.foregroundStyle(tab == index ? LilacStyle.accent : .white.opacity(0.65))
+                            }.buttonStyle(.plain).foregroundStyle(tab == index ? LilacStyle.accent : .white.opacity(0.65))
                                 .accessibilityIdentifier("player-settings-tab-\(index)")
                                 .accessibilityAddTraits(tab == index ? .isSelected : [])
                         }
@@ -55,7 +55,7 @@ struct PlayerSettingsPanel<Content: View>: View {
                     .accessibilityIdentifier("player-settings-panel")
             }.frame(width: geometry.size.width, height: geometry.size.height)
         }.foregroundStyle(.white).font(.system(size: 13)).tint(LilacStyle.accent)
-            .buttonStyle(.bordered).pickerStyle(.menu).textFieldStyle(.roundedBorder).preferredColorScheme(.dark)
+            .buttonStyle(.bordered).pickerStyle(.menu).textFieldStyle(.roundedBorder).environment(\.colorScheme, .dark)
     }
 }
 

@@ -38,6 +38,16 @@ jobs:
           xcrun xcresulttool get test-results summary --path "$RESULT" > build/report/summary.json
           xcrun xcresulttool export attachments --path "$RESULT" --output-path build/report/attachments
           xcrun xcresulttool export diagnostics --path "$RESULT" --output-path build/report/diagnostics
+          mkdir -p build/crash-report
+          cp build/report/summary.json build/crash-report/
+          find build/report/diagnostics -type f \( -name '*.ips' -o -name '*.crash' \) -exec cp {} build/crash-report/ \;
+          find build/report/diagnostics -type f | head -80
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-crash-report
+          path: build/crash-report
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: always()
         with:

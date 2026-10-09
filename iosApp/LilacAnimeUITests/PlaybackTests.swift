@@ -1,6 +1,33 @@
 import XCTest
 
 final class PlaybackTests: XCTestCase {
+    func testLocalModelsBackAndWorkspaceNavigation() {
+        let app = XCUIApplication(); app.launchArguments = ["--ui-preview", "workspace"]; app.launch()
+        let settings = app.buttons["workspace-settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 15)); settings.tap()
+        let category = app.buttons["settings-category-translate"]
+        for _ in 0..<3 { if category.isHittable { break }; app.scrollViews["settings-categories"].swipeLeft(velocity: .slow) }
+        XCTAssertTrue(category.isHittable); category.tap()
+        let models = app.buttons["settings-local-models"]
+        let form = app.descendants(matching: .any)["settings-form"].firstMatch
+        for _ in 0..<6 { if models.exists && models.isHittable { break }; dragUp(form) }
+        XCTAssertTrue(models.isHittable); models.tap()
+        let list = app.descendants(matching: .any)["local-models-list"].firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 5))
+        let back = app.navigationBars.buttons.matching(NSPredicate(format: "label IN %@", ["설정", "Back", "뒤로"])).firstMatch
+        XCTAssertTrue(back.waitForExistence(timeout: 5)); XCTAssertTrue(back.isHittable); back.tap()
+        XCTAssertTrue(models.waitForExistence(timeout: 5)); XCTAssertFalse(list.exists)
+        models.tap(); XCTAssertTrue(list.waitForExistence(timeout: 5))
+        let menu = app.buttons["workspace-menu"]; menu.tap()
+        let home = app.buttons["workspace-route-home"]
+        if !home.isHittable { menu.tap() }
+        XCTAssertTrue(home.waitForExistence(timeout: 5)); home.tap()
+        XCTAssertTrue(app.buttons["전체 작품 둘러보기"].waitForExistence(timeout: 10))
+        XCTAssertFalse(list.exists)
+        settings.tap()
+        XCTAssertTrue(app.staticTexts["화면과 콘텐츠"].waitForExistence(timeout: 5))
+        XCTAssertFalse(list.exists)
+    }
     func testPlayerPanelAndFitModes() {
         let app = XCUIApplication(); app.launchArguments = ["--ui-preview", "player"]; app.launch()
         XCTAssertTrue(app.buttons["플레이어 설정"].waitForExistence(timeout: 15))
@@ -40,12 +67,15 @@ final class PlaybackTests: XCTestCase {
         let scroll = app.scrollViews["player-settings-scroll"]
         for _ in 0..<10 {
             if option.exists && option.isHittable { break }
-            scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8)).press(forDuration: 0.05,
-                thenDragTo: scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)),
-                withVelocity: .slow, thenHoldForDuration: 0.2)
+            dragUp(scroll)
         }
         XCTAssertTrue(option.isHittable); option.tap()
         app.buttons["닫기"].tap()
+    }
+    private func dragUp(_ element: XCUIElement) {
+        element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8)).press(forDuration: 0.05,
+            thenDragTo: element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)),
+            withVelocity: .slow, thenHoldForDuration: 0.2)
     }
     func testScreenHoldKeepsPlaybackRunningAfterRelease() {
         let app = XCUIApplication(); app.launchArguments = ["--ui-preview", "player"]; app.launch()

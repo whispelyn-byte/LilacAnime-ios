@@ -19,9 +19,9 @@ struct DesktopWorkspace: View {
                 NavigationSplitView(columnVisibility: $columns) {
                     sidebar.navigationTitle("LilacAnime")
                         .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 240)
-                } detail: { page }
+                } detail: { page.id(navigation.section) }
                 .navigationSplitViewStyle(.balanced)
-            } else { page }
+            } else { page.id(navigation.section) }
         }.environmentObject(navigation)
             .safeAreaInset(edge: .top, spacing: 0) { searchBar }
             .sheet(isPresented: $menu) {
@@ -44,6 +44,7 @@ struct DesktopWorkspace: View {
                         Label(entry.1, systemImage: entry.2).font(.subheadline.weight(.semibold))
                             .foregroundStyle(navigation.section == entry.0 ? LilacStyle.accent : Color.primary)
                     }.listRowBackground(navigation.section == entry.0 ? LilacStyle.accent.opacity(0.12) : Color.clear)
+                        .accessibilityIdentifier("workspace-route-" + entry.0)
                 }
             }
             Section {
@@ -68,7 +69,8 @@ struct DesktopWorkspace: View {
                     .submitLabel(.search).onSubmit { navigation.search(search) }
                 if !search.isEmpty { Button { search = "" } label: { Image(systemName: "xmark.circle.fill") }.accessibilityLabel("검색어 지우기") }
             }.padding(12).background(LilacStyle.card, in: RoundedRectangle(cornerRadius: 14))
-            Button { navigation.section = "settings" } label: { Image(systemName: "gearshape").frame(width: 36, height: 36) }.accessibilityLabel("설정")
+            Button { navigation.section = "settings" } label: { Image(systemName: "gearshape").frame(width: 36, height: 36) }
+                .accessibilityLabel("설정").accessibilityIdentifier("workspace-settings")
         }.padding(.horizontal, 16).padding(.vertical, 8).background(LilacStyle.background)
     }
     @ViewBuilder private var page: some View {

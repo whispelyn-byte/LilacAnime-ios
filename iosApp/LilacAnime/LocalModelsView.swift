@@ -147,7 +147,10 @@ struct LocalModelsView: View {
                 Text("iPhone 메모리에 맞는 양자화 모델을 사용하세요. 모델 파일은 앱 내부에 저장됩니다.").font(.footnote)
             }
             if let error { Text(error).foregroundStyle(.red) }
-        }.navigationTitle("로컬 AI 모델").onAppear(perform: refresh)
+        }.accessibilityIdentifier("local-models-list")
+            .navigationTitle("로컬 AI 모델").navigationBarTitleDisplayMode(.inline)
+            .navigationBarBackButtonHidden(false)
+            .toolbar(.visible, for: .navigationBar).onAppear(perform: refresh)
             .onChange(of: modelInstaller.revision) { _ in refresh() }
             .sheet(isPresented: $modelSearch) { HuggingFaceSearchView { address = $0 } }
             .fileImporter(isPresented: $importing, allowedContentTypes: [.data]) { result in

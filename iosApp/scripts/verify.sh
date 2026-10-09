@@ -53,7 +53,7 @@ IPAD_ID="$(xcrun simctl list devices available -j | python3 -c 'import json,sys;
 if [ -n "$IPAD_ID" ]; then
   xcrun simctl boot "$IPAD_ID" || true
   xcrun simctl bootstatus "$IPAD_ID" -b
-  xcodebuild -project LilacAnime.xcodeproj -scheme LilacAnime -configuration Debug -derivedDataPath build/DerivedData -destination "platform=iOS Simulator,id=$IPAD_ID" -resultBundlePath build/iPadMenu.xcresult CODE_SIGNING_ALLOWED=NO MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$APP_BUILD" -parallel-testing-enabled NO -only-testing:LilacAnimeUITests/PlaybackTests/testWorkspaceMenuCanReachCatalog -only-testing:LilacAnimeUITests/PlaybackTests/testPlayerPanelAndFitModes test
+  xcodebuild -project LilacAnime.xcodeproj -scheme LilacAnime -configuration Debug -derivedDataPath build/DerivedData -destination "platform=iOS Simulator,id=$IPAD_ID" -resultBundlePath build/iPadMenu.xcresult CODE_SIGNING_ALLOWED=NO MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$APP_BUILD" -parallel-testing-enabled NO -only-testing:LilacAnimeUITests/PlaybackTests/testWorkspaceMenuCanReachCatalog -only-testing:LilacAnimeUITests/PlaybackTests/testPlayerPanelAndFitModes -only-testing:LilacAnimeUITests/PlaybackTests/testLocalModelsBackAndWorkspaceNavigation test
   xcrun simctl install "$IPAD_ID" build/DerivedData/Build/Products/Debug-iphonesimulator/LilacAnime.app
   xcrun simctl ui "$IPAD_ID" appearance dark
   xcrun simctl launch --terminate-running-process "$IPAD_ID" com.lilac.anime.ios --ui-preview workspace

@@ -3,7 +3,9 @@ import UniformTypeIdentifiers
 import LilacShared
 
 struct SettingsView: View {
+    private enum Destination: Hashable { case localModels }
     @EnvironmentObject private var store: LibraryStore
+    @EnvironmentObject private var navigation: DesktopNavigation
     @ObservedObject private var updater = DesktopUpdater.shared
     @State private var apiKey = ""
     @State private var apiModels: [String] = []
@@ -17,16 +19,18 @@ struct SettingsView: View {
     @State private var tmdbTesting = false
     @State private var tmdbService = IosServices()
     @State private var category = "general"
+    @State private var path: [Destination] = []
     private let categories = ["general", "playback", "subtitle", "titles", "translate", "oped", "about"]
     private let categoryNames = ["일반", "재생", "자막", "한국어 제목 검색", "자막 자동 번역", "OP/ED 분석 데이터", "업데이트 · 정보"]
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             VStack(spacing: 0) {
             ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 8) {
                 ForEach(Array(categories.enumerated()), id: \.offset) { index, key in
                     Button(categoryNames[index]) { category = key }.buttonStyle(.bordered).tint(category == key ? LilacStyle.accent : .secondary)
+                        .accessibilityIdentifier("settings-category-" + key)
                 }
-            }.padding(16) }
+            }.padding(16) }.accessibilityIdentifier("settings-categories")
             Form {
                 if category == "general" {
                 Section("화면과 콘텐츠") {
@@ -142,7 +146,8 @@ struct SettingsView: View {
                         Picker("지역", selection: $store.preferences.qwenRegion) { Text("International").tag("international"); Text("China").tag("china") }
                     }
                     Toggle("모델별 권장 프롬프트·샘플링", isOn: Binding(get: { store.preferences.modelSampling ?? true }, set: { store.preferences.modelSampling = $0 }))
-                    NavigationLink("로컬 GGUF 모델") { LocalModelsView() }
+                    NavigationLink("로컬 GGUF 모델", value: Destination.localModels)
+                        .accessibilityIdentifier("settings-local-models")
                     Stepper("컨텍스트 \(store.preferences.contextSize)", value: $store.preferences.contextSize, in: 512...32768, step: 512)
                     Stepper("스레드 \(store.preferences.threads) (0=자동)", value: $store.preferences.threads, in: 0...16)
                     Stepper("최대 토큰 \(store.preferences.maxTokens)", value: $store.preferences.maxTokens, in: 32...2048, step: 32)
@@ -175,8 +180,11 @@ struct SettingsView: View {
                 }
                 if let error { Text(error).foregroundStyle(.red) }
                 if let error = store.persistenceError { Text(error).foregroundStyle(.red) }
-            }
+            }.accessibilityIdentifier("settings-form")
             }.navigationTitle("설정")
+            .toolbar(.visible, for: .navigationBar)
+            .navigationDestination(for: Destination.self) { _ in LocalModelsView() }
+            .onChange(of: navigation.section) { _ in path.removeAll() }
             .onAppear { previousProvider = store.preferences.translationProvider; apiKey = SecureKeys.load(store.preferences.translationProvider); tmdbKey = SecureKeys.load("tmdb") }
              .onChange(of: store.preferences.translationProvider) { provider in
                 var models = store.preferences.translationModels ?? [:]

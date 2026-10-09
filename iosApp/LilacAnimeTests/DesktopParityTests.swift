@@ -63,4 +63,30 @@ final class DesktopParityTests: XCTestCase {
         let order = HLSData.references("#EXTM3U\n10.png\n2.png\n3.png\n", base: URL(string: "https://fixture.test/index.m3u8")!)
         XCTAssertEqual(order.map(\.lastPathComponent), ["10.png", "2.png", "3.png"])
     }
+    @MainActor
+    func testWinPngUsesPostsConverterAndReadsConvertedBlob() async throws {
+        let html = """
+        <article><img onclick="convert()"></article><script>
+        window.downloadZip=function(){};
+        function convert(){
+          const a=document.createElement('a'); a.download='Anime - 03.ass';
+          const file=URL.createObjectURL(new Blob(['[Script Info]\\nTitle: Converted 03'],{type:'text/plain'}));
+          a.setAttribute('data-href',file); a.setAttribute('data-ass',file); document.body.appendChild(a);
+        }
+        </script>
+        """
+        let rows = try await WinPNGReader().read(URL(string: "https://fixture.invalid/post")!, html: html)
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?["name"], "Anime - 03.ass")
+        XCTAssertEqual(rows.first?["ass"], "[Script Info]\nTitle: Converted 03")
+    }
+    @MainActor
+    func testWinPngCancellationStopsPendingPage() async {
+        let task = Task { try await WinPNGReader().read(URL(string: "https://fixture.invalid/post")!, html: "<html></html>") }
+        await Task.yield()
+        task.cancel()
+        do { _ = try await task.value; XCTFail("Expected cancellation") }
+        catch is CancellationError { }
+        catch { XCTFail("Unexpected error: \(error)") }
+    }
 }

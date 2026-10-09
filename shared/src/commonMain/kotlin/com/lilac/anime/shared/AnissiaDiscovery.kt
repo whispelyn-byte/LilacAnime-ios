@@ -14,8 +14,8 @@ internal class AnissiaDiscovery(private val repository: SourceRepository) {
         val rows = api("/anime/list/0", mapOf("q" to title)).optJSONObject("data")?.optJSONArray("content") ?: return emptyList()
         val anime = (0 until rows.length()).mapNotNull(rows::optJSONObject)
             .filter { DesktopTitleRules.season(it.optString("subject")) == DesktopTitleRules.season(title) }
-            .maxByOrNull { HangulSimilarityMatcher.similarity(title, it.optString("subject")) } ?: return emptyList()
-        if (HangulSimilarityMatcher.similarity(title, anime.optString("subject")) < 0.52) return emptyList()
+            .maxByOrNull { DesktopCommunity.score(title, it.optString("subject")) } ?: return emptyList()
+        if (DesktopCommunity.score(title, anime.optString("subject")) < 0.52) return emptyList()
         val captions = api("/anime/caption/animeNo/" + anime.optInt("animeNo")).optJSONArray("data") ?: return emptyList()
         return (0 until captions.length()).mapNotNull { index ->
             val row = captions.optJSONObject(index) ?: return@mapNotNull null
@@ -27,12 +27,10 @@ internal class AnissiaDiscovery(private val repository: SourceRepository) {
         val query = title.replace(Regex("[!?！？.,:;·'\"“”‘’♡♥☆★]"), " ").replace(Regex("\\s+"), " ").trim()
         val root = api("/anime/list/0", mapOf("q" to query)).optJSONObject("data") ?: return emptyList()
         val entries = root.optJSONArray("content") ?: return emptyList()
-        fun season(name: String) = Regex("(\\d+)\\s*기|season\\s*(\\d+)|시즌\\s*(\\d+)", RegexOption.IGNORE_CASE)
-            .find(name)?.groupValues?.drop(1)?.firstOrNull(String::isNotBlank)?.toIntOrNull() ?: 1
         val anime = (0 until entries.length()).mapNotNull(entries::optJSONObject)
-            .filter { season(it.optString("subject")) == season(title) }
-            .maxByOrNull { HangulSimilarityMatcher.similarity(query, it.optString("subject")) } ?: return emptyList()
-        if (HangulSimilarityMatcher.similarity(query, anime.optString("subject")) < 0.52) return emptyList()
+            .filter { DesktopTitleRules.season(it.optString("subject")) == DesktopTitleRules.season(title) }
+            .maxByOrNull { DesktopCommunity.score(query, it.optString("subject")) } ?: return emptyList()
+        if (DesktopCommunity.score(query, anime.optString("subject")) < 0.52) return emptyList()
         val captions = api("/anime/caption/animeNo/" + anime.optInt("animeNo")).optJSONArray("data") ?: return emptyList()
         val output = mutableListOf<SubtitleAsset>()
         for (index in 0 until captions.length()) {
@@ -97,7 +95,23 @@ internal class AnissiaDiscovery(private val repository: SourceRepository) {
                     posts += doc.select("a[href]").filter { Regex("/(?:entry/)?\\d+$").containsMatchIn(it.attr("href")) }
                         .map { KairanPost(it.text(), it.absUrl("href")) }
                 }
-                val match = DesktopEpisodeRules.findPost(subject, episode, posts.distinctBy { it.url }, episodeKey, offsets) ?: continue
+                val candidates = posts.distinctBy { it.url }
+                val likely = candidates.filter { post ->
+                    val own = DesktopCommunity.episodes(post.title)
+                    val season = DesktopTitleRules.explicitSeason(post.title)
+                    ((season ?: 1) == DesktopTitleRules.season(subject) && own.has(episode) ||
+                        season == null && offsets.any { own.has(episode + it) }) &&
+                        maxOf(DesktopCommunity.score(subject, post.title), DesktopCommunity.score(title, post.title)) >= .52
+                }.take(4)
+                for (post in likely) if (pages[post.url] == null) attempt { repository.getText(post.url) }?.let { pages[post.url] = it }
+                val hydrated = candidates.mapNotNull { post -> pages[post.url]?.let { CommunityPost(post.title, post.url, it) } }
+                val direct = DesktopCommunity.rank(hydrated, subject, episode, offsets).firstOrNull()
+                    ?: DesktopCommunity.rank(hydrated, title, episode, offsets).firstOrNull()
+                if (direct != null) {
+                    output += direct.links.map { link -> SubtitleAsset("Anissia · " + maker.optString("name"), link, "anissia", direct.score, direct.episode, direct.strict) }
+                    continue
+                }
+                val match = DesktopEpisodeRules.findPost(subject, episode, candidates, episodeKey, offsets) ?: continue
                 val html = pages[match.post.url] ?: repository.getText(match.post.url)
                 output += attachments(html, match.post.url, maker.optString("name"), episode)
                 output += SubtitleAsset("Anissia · " + maker.optString("name") + " 원본 게시물", match.post.url, "post", match.similarity)
@@ -119,14 +133,16 @@ internal class AnissiaDiscovery(private val repository: SourceRepository) {
             val files = runCatching { JSONArray(match.groupValues[1].replace("\\'", "")) }.getOrNull() ?: return@forEach
             for (i in 0 until files.length()) files.optJSONObject(i)?.let { links += it.optString("encodedAttachFileName") to it.optString("encodedAttachFileUrl") }
         }
-        return links.mapNotNull { (name, link) ->
+        val assets = links.mapNotNull { (name, link) ->
             if (!link.startsWith("https://")) return@mapNotNull null
             val driveId = Regex("/file/d/([^/?]+)").find(link)?.groupValues?.get(1) ?: runCatching { Url(link).parameters["id"] }.getOrNull().takeIf { Url(link).host in listOf("drive.google.com", "docs.google.com") }
             val suffix = Url(link).encodedPath.substringAfterLast('.').lowercase()
             if (driveId == null && suffix !in listOf("ass", "ssa", "srt", "vtt", "smi", "zip", "7z", "rar", "ttml", "sub") && !link.contains("attach", true)) return@mapNotNull null
             SubtitleAsset("Anissia · " + maker + " · " + name.ifBlank { link.substringAfterLast('/') },
-                if (driveId != null) "https://drive.google.com/uc?export=download&id=" + driveId else link, "anissia",
+                if (driveId != null) "https://drive.usercontent.google.com/download?id=" + driveId + "&export=download&confirm=t" else link, "anissia",
                 if (SubtitleEpisodeMatcher.matches(name, episode)) 1.0 else 0.6)
         }
+        val numbered = assets.filter { SubtitleEpisodeMatcher.parse(it.name)?.episode != null }
+        return if (numbered.isEmpty()) assets else assets.filter { it !in numbered || SubtitleEpisodeMatcher.matches(it.name, episode) }
     }
 }

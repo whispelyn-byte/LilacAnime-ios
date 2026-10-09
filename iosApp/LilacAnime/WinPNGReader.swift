@@ -28,16 +28,19 @@ final class WinPNGReader: NSObject, WKNavigationDelegate {
         try content.replacingOccurrences(of: "\u{feff}", with: "").write(to: file, atomically: true, encoding: .utf8)
         return file
     }
-    private func read(_ url: URL) async throws -> [[String: String]] {
+    func read(_ url: URL, html: String? = nil) async throws -> [[String: String]] {
         webView.navigationDelegate = self
         return try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
+            try Task.checkCancellation()
+            return try await withCheckedThrowingContinuation { continuation in
                 pending = continuation
                 timeout = Task { [weak self] in
                     do { try await Task.sleep(nanoseconds: 60_000_000_000) } catch { return }
                     self?.finish(.failure(SubtitleFiles.failure("WinPNG 글을 여는 데 너무 오래 걸립니다.")))
                 }
-                webView.load(URLRequest(url: url))
+                if let html { webView.loadHTMLString(html, baseURL: url) }
+                else if url.isFileURL { webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent()) }
+                else { webView.load(URLRequest(url: url)) }
             }
         } onCancel: { Task { @MainActor in self.finish(.failure(CancellationError())) } }
     }

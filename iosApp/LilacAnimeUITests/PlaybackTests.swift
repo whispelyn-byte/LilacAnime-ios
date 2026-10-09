@@ -36,7 +36,8 @@ final class PlaybackTests: XCTestCase {
         XCTAssertTrue(app.buttons["player-settings-tab-0"].waitForExistence(timeout: 5))
         app.buttons["player-settings-tab-0"].tap()
         let option = app.buttons[identifier]
-        for _ in 0..<6 { if option.isHittable { break }; app.scrollViews["player-settings-scroll"].swipeUp() }
+        // Short landscape panels need slow swipes so a whole option group is not skipped by momentum.
+        for _ in 0..<10 { if option.exists && option.isHittable { break }; app.scrollViews["player-settings-scroll"].swipeUp(velocity: .slow) }
         XCTAssertTrue(option.isHittable); option.tap()
         app.buttons["닫기"].tap()
     }

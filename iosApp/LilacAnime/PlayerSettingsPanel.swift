@@ -90,7 +90,7 @@ struct PlayerChoiceGrid<Value: Hashable>: View {
                     .accessibilityIdentifier(identifier + "-" + String(describing: item.0))
                     .accessibilityAddTraits(selection == item.0 ? .isSelected : [])
             }
-        }.accessibilityIdentifier(identifier)
+        }.accessibilityElement(children: .contain).accessibilityIdentifier(identifier)
     }
 }
 

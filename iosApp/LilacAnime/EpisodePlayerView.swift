@@ -357,6 +357,7 @@ struct EpisodePlayerView: View {
             if settings { playerSettings.zIndex(10) }
         }.frame(maxWidth: .infinity, maxHeight: .infinity).background(.black).ignoresSafeArea(.container)
             .background(PlayerOrientationView().allowsHitTesting(false))
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("fullscreen-player")
             .statusBarHidden(true).persistentSystemOverlays(.hidden)
             .toolbar(.hidden, for: .navigationBar).toolbar(.hidden, for: .tabBar)

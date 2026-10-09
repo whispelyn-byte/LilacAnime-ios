@@ -18,7 +18,7 @@
   작품 탐색부터 회차 재생, 자막 검색·번역, 이어보기와 오프라인 감상까지 제공합니다.
 </p>
 
-현재 Android 원본과 같은 **0.4.0**을 기준으로 iOS 빌드 **34**을 사용합니다. 새 설치의 기본 영상 소스는 **ReAnime**이며, 기존에 선택한 소스는 유지합니다.
+현재 Android 원본과 같은 **0.4.0**을 기준으로 iOS 빌드 **35**를 사용합니다. 새 설치의 기본 영상 소스는 **ReAnime**이며, 기존에 선택한 소스는 유지합니다.
 
 ## 주요 기능
 
@@ -104,7 +104,8 @@ https://github.com/whispelyn-byte/LilacAnime-ios/releases/latest/download/source
 | 중앙 더블탭 또는 재생 버튼 | 재생·일시정지 |
 | 이전/다음 회차 버튼 | 이 재생 세션에서 시청한 이전 회차·다음 회차 이동 |
 | 잠금 버튼 | 터치 조작 잠금, 잠금 해제 버튼으로 복귀 |
-| 톱니바퀴 | 자막·재생 트랙·속도·원본/16:9/21:9/4:3/화면 채움 선택 |
+| 톱니바퀴 | 영상 위 오른쪽 설정 패널: 재생·자막·자막 모양 탭, 화질·배속·화면 비율 선택 |
+| 맞춤 / 채움 / 늘림 | 원본 비율 유지 / 비율을 유지하며 가장자리 자르기 / 여백 없이 화면 전체로 늘리기 |
 | 회차 재생 | 가로 전체 화면으로 진입 |
 | 더보기 메뉴 | 다운로드·Cast·시스템 재생/PiP·웹 플레이어 |
 | 외부 키보드 Space / ← / → | Space 짧게 누른 뒤 떼면 재생·일시정지, 길게 누르면 2배속 / 뒤로·앞으로 탐색 |
@@ -141,7 +142,7 @@ sh iosApp/scripts/verify.sh
 
 GitHub Actions는 공통 테스트, KMP iOS 테스트, 네이티브 iOS 테스트, 시뮬레이터 캡처, unsigned arm64 IPA 패키징을 실행합니다. 릴리즈에는 실기기용 IPA와 SideStore source.json을 게시합니다. 시뮬레이터 앱은 개발·검증용 Actions 아티팩트로만 제공합니다. **App Store 배포용 서명 빌드가 아닙니다.**
 
-앱 버전은 app/module.toml의 Android versionName을 사용합니다. iOS 빌드 번호는 Android versionCode에 iosApp/revision.txt의 값을 더합니다. 배포 태그는 `python3 iosApp/scripts/android-version.py --tag`로 확인합니다(현재 **v0.4.0-ios.4**). 해당 태그를 푸시하면 모든 테스트·빌드가 성공한 뒤 IPA와 실제 메타데이터로 생성한 SideStore source.json을 릴리스에 게시합니다. 최신 소스 주소는 그대로 유지됩니다.
+앱 버전은 app/module.toml의 Android versionName을 사용합니다. iOS 빌드 번호는 Android versionCode에 iosApp/revision.txt의 값을 더합니다. 배포 태그는 `python3 iosApp/scripts/android-version.py --tag`로 확인합니다(현재 **v0.4.0-ios.5**). 해당 태그를 푸시하면 모든 테스트·빌드가 성공한 뒤 IPA와 실제 메타데이터로 생성한 SideStore source.json을 릴리스에 게시합니다. 최신 소스 주소는 그대로 유지됩니다.
 
 | 경로 | 내용 |
 |---|---|

@@ -52,7 +52,7 @@ verify.sh는 KMP iOS 테스트, hash-pinned tiny GGUF test fixture, llama.cpp XC
 
 ## 버전과 배포
 
-Android app/module.toml의 versionName **0.4.0**을 유지합니다. iOS build = Android versionCode **30** + iosApp/revision.txt **4**, 즉 **34**이며 태그는 **v0.4.0-ios.4**입니다.
+Android app/module.toml의 versionName **0.4.0**을 유지합니다. iOS build = Android versionCode **30** + iosApp/revision.txt **5**, 즉 **35**이며 태그는 **v0.4.0-ios.5**입니다.
 모든 검사에 통과한 Actions의 실기기 앱 아티팩트를 Package SideStore IPA 워크플로로 다시 패키징하여 Release에 올립니다. APK 생성은 이번 iOS 검증 절차에 포함하지 않습니다.
 
 - [공개 저장소](https://github.com/whispelyn-byte/LilacAnime-ios)

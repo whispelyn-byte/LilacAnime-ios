@@ -5,6 +5,10 @@ on:
       run_id:
         description: KMP and iOS run containing ios-test-results
         required: true
+      bundle:
+        description: Optional xcresult bundle filename (for example iPadMenu.xcresult)
+        required: false
+        default: ''
 permissions:
   actions: read
   contents: read
@@ -21,16 +25,19 @@ jobs:
           path: build/results
       - name: Export test summary and screenshots
         shell: bash
+        env:
+          RESULT_BUNDLE: ${{ inputs.bundle }}
         run: |
           set -eu
           if [ -d /Applications/Xcode_26.3.app ]; then
             sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
           fi
-          RESULT="$(find build/results -type d -name '*.xcresult' -print -quit)"
+          RESULT="$(find build/results -type d -name "${RESULT_BUNDLE:-*.xcresult}" -print -quit)"
           test -n "$RESULT"
           mkdir -p build/report
           xcrun xcresulttool get test-results summary --path "$RESULT" > build/report/summary.json
           xcrun xcresulttool export attachments --path "$RESULT" --output-path build/report/attachments
+          xcrun xcresulttool export diagnostics --path "$RESULT" --output-path build/report/diagnostics
       - uses: actions/upload-artifact@v4
         if: always()
         with:

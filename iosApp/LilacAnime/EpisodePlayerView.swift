@@ -470,7 +470,10 @@ struct EpisodePlayerView: View {
             PlayerChoiceGrid(options: [("auto", "자동"), ("kairan", "Kairan"), ("csora", "Csora"), ("anissia", "Anissia"), ("jimaku", "Jimaku"), ("manual", "직접 선택")], selection: Binding(get: { library.preferences.subtitleProvider ?? "auto" }, set: { library.preferences.subtitleProvider = $0 }), identifier: "player-subtitle-source")
             Text("다음 자막 검색부터 선택한 곳을 먼저 찾습니다.").font(.caption).foregroundStyle(.white.opacity(0.5))
             Button("자막 검색 · Jimaku 파일 · 저장 자막", action: openSubtitleList)
-            Button("한국어 자막 다시 찾기") { model.search(library.preferences.subtitleProvider == "auto" ? "kairan" : library.preferences.subtitleProvider ?? "kairan") }
+            Button("한국어 자막 다시 찾기") {
+                let provider = library.preferences.subtitleProvider ?? "auto"
+                model.search(["auto", "manual"].contains(provider) ? "kairan" : provider)
+            }
             Button("자막 파일 열기") { importingFont = false; settings = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { importer = true } }
         }
         if !(model.active?.subtitles ?? model.resolver.subtitles).isEmpty {

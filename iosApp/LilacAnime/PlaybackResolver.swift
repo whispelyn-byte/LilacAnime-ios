@@ -1,5 +1,6 @@
 import Foundation
 import WebKit
+import AVFoundation
 import LilacShared
 
 struct ResolvedStream: Codable, Identifiable, Hashable {
@@ -60,6 +61,10 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
     private var currentItem: PlaybackItem?
     private var serverCandidates: [DesktopPlaybackServer] = []
     private var preferRaw = false
+    private var ohliPlayer: URL?
+    private var candidateTasks: [URL: Task<Void, Never>] = [:]
+    private var pendingOhli: [(url: URL, frame: URL?, kind: String)] = []
+    private var lastOhliCandidate: Task<Void, Never>?
     private let desktop = IosServices()
     private let agent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1"
 
@@ -73,7 +78,17 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
         super.init()
         // Weak proxy avoids a content-controller -> self -> webView retain cycle.
         controller.add(WeakScriptHandler(self), name: "lilacMedia")
+        installCaptureScripts(ohli: false)
+        webView.navigationDelegate = self
+        webView.customUserAgent = agent
+    }
+    private func installCaptureScripts(ohli: Bool) {
+        let controller = webView.configuration.userContentController
+        controller.removeAllUserScripts()
         controller.addUserScript(WKUserScript(source: Self.captureScript, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        if ohli, let file = Bundle.main.url(forResource: "ohli-capture", withExtension: "js"), let script = try? String(contentsOf: file) {
+            controller.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        }
         if let url = Bundle.main.url(forResource: "flix-bootstrap", withExtension: "js"),
            let bootstrap = try? String(contentsOf: url) {
             let script = """
@@ -98,11 +113,10 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
             """
             controller.addUserScript(WKUserScript(source: script.replacingOccurrences(of: "BOOTSTRAP", with: bootstrap), injectionTime: .atDocumentEnd, forMainFrameOnly: false))
         }
-        webView.navigationDelegate = self
-        webView.customUserAgent = agent
     }
     func resolve(_ item: PlaybackItem, preferRaw: Bool = false, preferred: String? = nil) {
         cancel(); currentItem = item; streams = []; subtitles = []; servers = []; serverCandidates = []; error = nil; loading = true; self.preferRaw = preferRaw
+        installCaptureScripts(ohli: item.anime.source == "ohli24")
         let token = generation
         if let direct = item.directURL, direct.isFileURL || ["m3u8", "mp4", "mkv", "webm"].contains(direct.pathExtension.lowercased()) {
             streams = [ResolvedStream(label: "영상", url: direct, referer: "", headers: [:], subtitles: item.localSubtitleTracks)]; loading = false; return
@@ -165,7 +179,12 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
             if self.streams.isEmpty { self.loadNextServer() }
         }
     }
-    func cancel() { desktop.cancel(); generation = UUID(); timeout?.cancel(); timeout = nil; webView.stopLoading(); loading = false }
+    func cancel() {
+        desktop.cancel(); generation = UUID(); timeout?.cancel(); timeout = nil
+        candidateTasks.values.forEach { $0.cancel() }; candidateTasks.removeAll(); ohliPlayer = nil
+        pendingOhli.removeAll(); lastOhliCandidate = nil
+        webView.stopLoading(); loading = false
+    }
     func shutdown() { cancel(); webView.configuration.userContentController.removeScriptMessageHandler(forName: "lilacMedia"); webView.navigationDelegate = nil; webView.loadHTMLString("", baseURL: nil) }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         guard webView.url?.host?.contains("flixcloud") == true,
@@ -191,12 +210,59 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: String], let value = body["url"],
               let url = URL(string: value), url.scheme == "https" || url.scheme == "http" else { return }
+        if currentItem?.anime.source == "ohli24" {
+            if body["kind"] == "ohliPlayer", message.frameInfo.isMainFrame,
+               message.frameInfo.request.url?.host == currentItem?.watchURL.host {
+                ohliPlayer = url
+                for candidate in pendingOhli where OhliPlayback.accepts(kind: candidate.kind, frame: candidate.frame, selected: url) {
+                    verifyOhli(candidate.url, hls: candidate.kind == "ohliVariant")
+                }
+                pendingOhli.removeAll()
+                return
+            }
+            let kind = body["kind"] ?? ""
+            if ohliPlayer == nil, ["ohliVariant", "ohliMedia"].contains(kind), pendingOhli.count < 32 {
+                pendingOhli.append((url, message.frameInfo.request.url, kind)); return
+            }
+            guard OhliPlayback.accepts(kind: kind, frame: message.frameInfo.request.url, selected: ohliPlayer) else { return }
+            verifyOhli(url, hls: body["kind"] == "ohliVariant")
+            return
+        }
         if body["kind"] == "subtitle" {
             let track = RemoteSubtitle(label: body["label"] ?? "자막", url: url, language: body["language"] ?? "")
             if !subtitles.contains(where: { $0.url == url }) { subtitles.append(track) }
         } else {
             capture(value, referer: body["referer"] ?? message.frameInfo.request.url?.absoluteString ?? "", key: body["pk"])
         }
+    }
+    private func verifyOhli(_ url: URL, hls: Bool) {
+        guard candidateTasks[url] == nil, !streams.contains(where: { $0.url == url }) else { return }
+        let token = generation
+        let previous = lastOhliCandidate
+        candidateTasks[url] = Task { [weak self] in
+            guard let self else { return }
+            defer { if generation == token { candidateTasks[url] = nil } }
+            await previous?.value
+            guard generation == token, !Task.isCancelled, streams.isEmpty else { return }
+            let referer = hls ? "" : ohliPlayer?.absoluteString ?? ""
+            var headers = ["User-Agent": agent]
+            if !referer.isEmpty { headers["Referer"] = referer }
+            let stream = ResolvedStream(label: hls ? "HLS" : "MP4", url: url, referer: referer, headers: headers)
+            do {
+                if hls {
+                    let (data, _) = try await HLSData.fetch(url, stream: stream)
+                    let text = try HLSData.manifest(data, key: nil)
+                    guard OhliPlayback.isEpisodePlaylist(text) else { return }
+                } else {
+                    let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": stream.headers])
+                    let duration = try await asset.load(.duration).seconds
+                    guard duration.isFinite, duration > 30 else { return }
+                }
+                guard generation == token, !Task.isCancelled else { return }
+                streams.append(stream); loading = false; error = nil; timeout?.cancel()
+            } catch { /* An advertising or unavailable candidate must not end episode discovery. */ }
+        }
+        lastOhliCandidate = candidateTasks[url]
     }
     private func capture(_ value: String, referer: String, key: String?) {
         guard let url = URL(string: value) else { return }

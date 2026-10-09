@@ -46,13 +46,13 @@ final class WinPNGReader: NSObject, WKNavigationDelegate {
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         guard let file = Bundle.main.url(forResource: "winpng-reader", withExtension: "js"), let script = try? String(contentsOf: file) else { finish(.success([])); return }
-        webView.callAsyncJavaScript("return await " + script, arguments: [:], in: nil, contentWorld: .page) { [weak self] result in
-            switch result {
-            case .success(let value):
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let value = try await webView.callAsyncJavaScript("return await " + script, arguments: [:], in: nil, contentWorld: .page)
                 let rows = (value as? [[String: Any]] ?? []).map { $0.compactMapValues { $0 as? String } }
-                self?.finish(.success(rows))
-            case .failure(let error): self?.finish(.failure(error))
-            }
+                self.finish(.success(rows))
+            } catch { self.finish(.failure(error)) }
         }
     }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { finish(.failure(error)) }

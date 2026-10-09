@@ -1,0 +1,50 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const script = fs.readFileSync(require('node:path').join(__dirname, '../LilacAnime/Resources/ohli-capture.js'), 'utf8');
+function page() {
+  const messages = [], calls = [], timers = [], events = {}, responses = new Map();
+  const doc = {querySelector: () => null, querySelectorAll: () => [], addEventListener: (name, fn) => { events[name] = fn; }};
+  class XHR { open() {} addEventListener(name, fn) { this[name] = fn; } }
+  const fetch = async function(url, options) {
+    calls.push({url, options});
+    const entry = responses.get(String(url));
+    if (entry instanceof Error) throw entry;
+    return {url: entry?.url || String(url), clone() { return this; }, text: async () => entry?.text || ''};
+  };
+  const window = {fetch, webkit: {messageHandlers: {lilacMedia: {postMessage: x => messages.push(x)}}}};
+  vm.runInNewContext(script, {window, document: doc, location: {href: 'https://cdndania.com/video/episode'}, XMLHttpRequest: XHR, URL, TextDecoder, setInterval: fn => timers.push(fn)});
+  return {window, messages, calls, responses, events, doc, timers, XHR};
+}
+const flush = () => new Promise(resolve => setImmediate(resolve));
+(async () => {
+  const p = page();
+  await p.window.fetch('https://ad.test/6seconds.mp4'); await flush();
+  assert.equal(p.messages.length, 0, 'An advertising MP4 must not be published');
+  const master = 'https://cdn.test/master.txt?token=fixture';
+  p.responses.set(master, {url:'https://cdn.test/episode/master.txt', text:'#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000\n480/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=5000\n# comment\n1080/index.m3u8'});
+  const options = {credentials:'include', referrerPolicy:'no-referrer'};
+  await p.window.fetch(master, options); await flush();
+  assert.equal(p.calls.at(-1).options, options, 'Preserve cookie/referrer options');
+  assert.deepEqual(p.messages.map(x => x.url), ['https://cdn.test/episode/1080/index.m3u8','https://cdn.test/episode/480/index.m3u8']);
+  assert.ok(p.messages.every(x => x.kind === 'ohliVariant' && x.referer === ''));
+  const q = page();
+  q.responses.set('https://ad.test/ad.m3u8', {text:'#EXTM3U\n#EXTINF:6,\nad.ts\n#EXT-X-ENDLIST'});
+  await q.window.fetch('https://ad.test/ad.m3u8'); await flush(); assert.equal(q.messages.length, 0);
+  const xhr = new q.XHR(); xhr.open('GET', '/master.txt');
+  xhr.responseURL = 'https://cdn.test/redirect/master.txt'; xhr.responseText = '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=2000\n720.m3u8'; xhr.load();
+  assert.equal(q.messages[0].url, 'https://cdn.test/redirect/720.m3u8');
+  const r = page();
+  r.window.jwplayer = () => ({getPlaylistItem: () => ({file:'https://ad.test/ad.mp4'}), getDuration: () => 6});
+  r.timers[0](); assert.equal(r.messages.length, 0);
+  r.window.jwplayer = () => ({getPlaylistItem: () => ({file:'https://cdn.test/episode.mp4'}), getDuration: () => 1440});
+  r.timers[0](); assert.equal(r.messages[0].kind, 'ohliMedia');
+  const s = page(); s.doc.querySelector = selector => selector === 'iframe#video' ? {src:'https://cdndania.com/video/episode'} : null;
+  s.events.DOMContentLoaded(); assert.equal(s.messages[0].kind, 'ohliPlayer');
+  const t = page();
+  t.responses.set('https://cdn.test/master.txt', new Error('Temporary failure'));
+  t.window.jwplayer = () => ({getPlaylistItem: () => ({file:'https://cdn.test/master.txt'})});
+  t.timers[0](); await flush(); t.responses.set('https://cdn.test/master.txt', {text:'#EXTM3U\n#EXTINF:40,\nmain.ts\n#EXT-X-ENDLIST'});
+  t.timers[0](); await flush(); assert.equal(t.messages[0].url, 'https://cdn.test/master.txt');
+  console.log('Ohli capture: advertising isolation, HLS/XHR redirects, ranking, headers, MP4 fallback and retry passed.');
+})().catch(error => { console.error(error); process.exitCode = 1; });

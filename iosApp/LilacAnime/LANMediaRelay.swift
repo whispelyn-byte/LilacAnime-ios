@@ -183,7 +183,7 @@ final class LANMediaRelay {
                             try await self.sendManifest(connection, data: data, base: url, stream: stream, head: method == "HEAD")
                         } else {
                             let type = response.mimeType?.hasPrefix("image/") == true || url.pathExtension == "ts" ? "video/mp2t" : response.mimeType ?? "application/octet-stream"
-                            try await self.sendBytes(connection, data: HLSData.fragment(data), type: type, range: range, head: method == "HEAD")
+                            try await self.sendBytes(connection, data: HLSData.transportStream(data), type: type, range: range, head: method == "HEAD")
                         }
                     } else {
                         try await self.sendRemote(connection, url: url, stream: stream, range: range, head: method == "HEAD")

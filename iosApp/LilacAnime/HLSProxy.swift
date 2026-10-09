@@ -64,13 +64,22 @@ enum HLSData {
         guard data.count >= 8 else { return false }
         return ["ftyp", "styp", "moof", "sidx", "emsg"].contains(String(data: data.dropFirst(4).prefix(4), encoding: .isoLatin1) ?? "")
     }
-    static func validatedFragment(_ raw: Data) throws -> Data {
+    private static func transportPayload(_ data: Data) -> Data? {
+        let bytes = Array(data), limit = min(bytes.count - 377, 65535)
+        guard limit >= 0 else { return nil }
+        for index in 0...limit where bytes[index] == 71 && bytes[index + 188] == 71 && bytes[index + 376] == 71 { return Data(bytes[index...]) }
+        return nil
+    }
+    // Inspect padding before the image wrapper: an ordinary padded PNG is not XOR encrypted.
+    // Preserve opaque segments so HLS AES decryption can still be handled by the player.
+    static func transportStream(_ raw: Data) -> Data {
+        if let payload = transportPayload(raw) { return payload }
         let decoded = fragment(raw)
+        return transportPayload(decoded) ?? decoded
+    }
+    static func validatedFragment(_ raw: Data) throws -> Data {
+        let decoded = transportStream(raw)
         if isMedia(decoded) { return decoded }
-        let bytes = Array(decoded), limit = min(bytes.count - 377, 65535)
-        if limit >= 1 {
-            for index in 1...limit where bytes[index] == 71 && bytes[index + 188] == 71 && bytes[index + 376] == 71 { return Data(bytes[index...]) }
-        }
         throw SubtitleFiles.failure("영상 조각 복호화에 실패했습니다.")
     }
 

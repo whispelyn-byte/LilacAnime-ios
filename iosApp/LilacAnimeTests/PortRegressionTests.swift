@@ -101,7 +101,15 @@ final class PortRegressionTests: XCTestCase {
             var bytes = Data(repeating: 0, count: padding + 377)
             bytes[padding] = 71; bytes[padding + 188] = 71; bytes[padding + 376] = 71
             XCTAssertEqual(try HLSData.validatedFragment(bytes).count, 377)
+            if padding >= 8 {
+                bytes.replaceSubrange(0..<8, with: [137,80,78,71,13,10,26,10])
+                XCTAssertEqual(try HLSData.validatedFragment(bytes).count, 377)
+                XCTAssertEqual(HLSData.transportStream(bytes).count, 377)
+            }
         }
+        let opaque = Data(repeating: 0xA5, count: 512)
+        XCTAssertEqual(HLSData.transportStream(opaque), opaque)
+        XCTAssertThrowsError(try HLSData.validatedFragment(opaque))
     }
     func testCatalogRetryMatchesAuthTransientAndServerCooldownRules() {
         XCTAssertEqual(CatalogTitleRetry.delay(auth: true, retryAfter: 0), 1800)

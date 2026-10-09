@@ -51,7 +51,7 @@ PC 창 버튼·설치 프로그램·CUDA·외장 폴더 직접 지정은 iOS의 
   <img src="docs/screenshots/workspace-ipad-dark.png" width="700" alt="iPad 홈">
 </p>
 
-캡처는 [빌드 33 검증](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37778376087)에서 시뮬레이터와 예시 데이터로 생성했습니다. 실제 작품 이미지나 영상 재생 캡처가 아닙니다. 플레이어는 가로 전체 화면으로 표시되며, 원본 디스플레이 캡처의 방향을 유지했습니다.
+캡처는 [빌드 34 검증](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/37860678497)에서 시뮬레이터와 예시 데이터로 생성했습니다. 실제 작품 이미지나 영상 재생 캡처가 아닙니다. 플레이어는 가로 전체 화면으로 표시되며, 원본 디스플레이 캡처의 방향을 유지했습니다.
 
 ## 설치
 

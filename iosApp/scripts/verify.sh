@@ -38,7 +38,7 @@ mkdir -p build/screenshots
 xcrun simctl bootstatus "$SIMULATOR_ID" -b
 xcrun simctl install "$SIMULATOR_ID" build/DerivedData/Build/Products/Debug-iphonesimulator/LilacAnime.app
 xcrun simctl status_bar "$SIMULATOR_ID" override --time '9:41' --batteryState charged --batteryLevel 100
-for SCREEN in home detail player catalog models settings; do
+for SCREEN in home detail player player-settings catalog models settings; do
   xcrun simctl ui "$SIMULATOR_ID" appearance dark
   xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" com.lilac.anime.ios --ui-preview "$SCREEN"
   sleep 12
@@ -53,12 +53,17 @@ IPAD_ID="$(xcrun simctl list devices available -j | python3 -c 'import json,sys;
 if [ -n "$IPAD_ID" ]; then
   xcrun simctl boot "$IPAD_ID" || true
   xcrun simctl bootstatus "$IPAD_ID" -b
-  xcodebuild -project LilacAnime.xcodeproj -scheme LilacAnime -configuration Debug -derivedDataPath build/DerivedData -destination "platform=iOS Simulator,id=$IPAD_ID" -resultBundlePath build/iPadMenu.xcresult CODE_SIGNING_ALLOWED=NO MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$APP_BUILD" -parallel-testing-enabled NO -only-testing:LilacAnimeUITests/PlaybackTests/testWorkspaceMenuCanReachCatalog test
+  xcodebuild -project LilacAnime.xcodeproj -scheme LilacAnime -configuration Debug -derivedDataPath build/DerivedData -destination "platform=iOS Simulator,id=$IPAD_ID" -resultBundlePath build/iPadMenu.xcresult CODE_SIGNING_ALLOWED=NO MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$APP_BUILD" -parallel-testing-enabled NO -only-testing:LilacAnimeUITests/PlaybackTests/testWorkspaceMenuCanReachCatalog -only-testing:LilacAnimeUITests/PlaybackTests/testPlayerPanelAndFitModes test
   xcrun simctl install "$IPAD_ID" build/DerivedData/Build/Products/Debug-iphonesimulator/LilacAnime.app
   xcrun simctl ui "$IPAD_ID" appearance dark
   xcrun simctl launch --terminate-running-process "$IPAD_ID" com.lilac.anime.ios --ui-preview workspace
   sleep 12
   xcrun simctl io "$IPAD_ID" screenshot build/screenshots/workspace-ipad-dark.png
+  for SCREEN in player-settings player-fit-contain player-fit-cover player-fit-stretch; do
+    xcrun simctl launch --terminate-running-process "$IPAD_ID" com.lilac.anime.ios --ui-preview "$SCREEN"
+    sleep 12
+    xcrun simctl io "$IPAD_ID" screenshot "build/screenshots/$SCREEN-ipad-dark.png"
+  done
   xcrun simctl terminate "$IPAD_ID" com.lilac.anime.ios
 fi
 xcodebuild -project LilacAnime.xcodeproj -scheme LilacAnime -configuration Debug -derivedDataPath build/DerivedData -destination "generic/platform=iOS" CODE_SIGNING_ALLOWED=NO MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$APP_BUILD" build

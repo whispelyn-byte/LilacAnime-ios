@@ -1,6 +1,44 @@
 import XCTest
 
 final class PlaybackTests: XCTestCase {
+    func testPlayerPanelAndFitModes() {
+        let app = XCUIApplication(); app.launchArguments = ["--ui-preview", "player"]; app.launch()
+        XCTAssertTrue(app.buttons["플레이어 설정"].waitForExistence(timeout: 15))
+        let landscape = NSPredicate { _, _ in app.windows.firstMatch.frame.width > app.windows.firstMatch.frame.height }
+        expectation(for: landscape, evaluatedWith: app); waitForExpectations(timeout: 10)
+        selectPlayerOption(app, identifier: "player-aspect-21:9")
+        selectPlayerOption(app, identifier: "player-fit-contain")
+        let video = app.descendants(matching: .any)["preview-video-frame"].firstMatch
+        XCTAssertTrue(video.waitForExistence(timeout: 5))
+        let viewport = app.windows.firstMatch.frame
+        let contain = video.frame
+        XCTAssertEqual(contain.width / contain.height, 16 / 9, accuracy: 0.03)
+        XCTAssertTrue(contain.width < viewport.width - 10 || contain.height < viewport.height - 10)
+        selectPlayerOption(app, identifier: "player-fit-cover")
+        XCTAssertGreaterThanOrEqual(video.frame.width, viewport.width - 2)
+        XCTAssertGreaterThanOrEqual(video.frame.height, viewport.height - 2)
+        selectPlayerOption(app, identifier: "player-fit-stretch")
+        XCTAssertEqual(video.frame.width, viewport.width, accuracy: 2)
+        XCTAssertEqual(video.frame.height, viewport.height, accuracy: 2)
+        app.buttons["플레이어 설정"].tap()
+        let panel = app.otherElements["player-settings-panel"]
+        XCTAssertTrue(panel.waitForExistence(timeout: 5))
+        XCTAssertLessThanOrEqual(panel.frame.width, 400)
+        XCTAssertGreaterThanOrEqual(panel.frame.minX, viewport.minX)
+        XCTAssertLessThanOrEqual(panel.frame.maxY, viewport.maxY)
+        for tab in 0...2 { app.buttons["player-settings-tab-\(tab)"].tap() }
+        app.buttons["닫기"].tap()
+        XCTAssertFalse(panel.exists)
+    }
+    private func selectPlayerOption(_ app: XCUIApplication, identifier: String) {
+        app.buttons["플레이어 설정"].tap()
+        XCTAssertTrue(app.buttons["player-settings-tab-0"].waitForExistence(timeout: 5))
+        app.buttons["player-settings-tab-0"].tap()
+        let option = app.buttons[identifier]
+        for _ in 0..<6 { if option.isHittable { break }; app.scrollViews["player-settings-scroll"].swipeUp() }
+        XCTAssertTrue(option.isHittable); option.tap()
+        app.buttons["닫기"].tap()
+    }
     func testScreenHoldKeepsPlaybackRunningAfterRelease() {
         let app = XCUIApplication(); app.launchArguments = ["--ui-preview", "player"]; app.launch()
         let play = app.buttons["재생"]
@@ -36,9 +74,9 @@ final class PlaybackTests: XCTestCase {
         XCTAssertFalse(app.buttons["전체 화면 해제"].exists)
         XCTAssertFalse(app.buttons["전체 화면"].exists)
         settings.tap()
-        let tabs = app.segmentedControls["player-settings-tabs"]
-        XCTAssertTrue(tabs.waitForExistence(timeout: 5))
-        tabs.buttons["자막 모양"].tap()
+        let style = app.buttons["player-settings-tab-2"]
+        XCTAssertTrue(style.waitForExistence(timeout: 5))
+        style.tap()
         XCTAssertTrue(app.staticTexts["글꼴"].exists || app.textFields.count > 0)
         app.buttons["닫기"].tap()
         if !app.buttons["뒤로"].isHittable { app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }

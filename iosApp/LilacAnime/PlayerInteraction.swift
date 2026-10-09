@@ -6,9 +6,42 @@ enum PlayerAspect: String, CaseIterable {
     var title: String { switch self { case .original: return "원본"; case .fill: return "화면 채움"; default: return rawValue } }
     var ratio: CGFloat? { switch self { case .widescreen: return 16 / 9; case .ultrawide: return 21 / 9; case .standard: return 4 / 3; default: return nil } }
     func stageSize(in size: CGSize) -> CGSize {
-        guard let ratio else { return size }
-        let width = min(size.width, size.height * ratio)
+        PlayerPresentation(aspect: self, fit: .contain).stageSize(in: size)
+    }
+}
+
+enum PlayerFit: String, CaseIterable {
+    case contain, cover, stretch
+    var title: String { switch self { case .contain: return "맞춤"; case .cover: return "채움"; case .stretch: return "늘림" } }
+}
+
+struct PlayerPresentation {
+    let aspect: PlayerAspect
+    let fit: PlayerFit
+    init(aspect: PlayerAspect, fit: PlayerFit) { self.aspect = aspect; self.fit = aspect == .fill ? .stretch : fit }
+    init(_ preferences: AppPreferences) {
+        self.init(aspect: PlayerAspect(rawValue: preferences.playerAspect ?? "original") ?? .original,
+                  fit: PlayerFit(rawValue: preferences.playerFit ?? "contain") ?? .contain)
+    }
+    var mpvOptions: [String: String] {
+        ["video-aspect-override": aspect.ratio == nil ? "no" : aspect.rawValue,
+         "keepaspect": fit == .stretch ? "no" : "yes", "panscan": fit == .cover ? "1" : "0"]
+    }
+    func stageSize(in viewport: CGSize, sourceAspect: CGFloat = 16 / 9) -> CGSize {
+        guard viewport.width > 0, viewport.height > 0 else { return .zero }
+        if fit == .stretch { return viewport }
+        let ratio = aspect.ratio ?? (sourceAspect.isFinite && sourceAspect > 0 ? sourceAspect : 16 / 9)
+        let width = fit == .cover ? max(viewport.width, viewport.height * ratio) : min(viewport.width, viewport.height * ratio)
         return CGSize(width: width, height: width / ratio)
+    }
+}
+
+extension AppPreferences {
+    mutating func selectPlayerFit(_ value: PlayerFit) {
+        playerFit = value.rawValue; playerAspect = value == .stretch ? PlayerAspect.fill.rawValue : PlayerAspect.original.rawValue
+    }
+    mutating func selectPlayerAspect(_ value: PlayerAspect) {
+        playerAspect = value.rawValue; playerFit = value == .fill ? PlayerFit.stretch.rawValue : PlayerFit.contain.rawValue
     }
 }
 

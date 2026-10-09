@@ -56,6 +56,7 @@ struct AppPreferences: Codable, Equatable {
     var assEffects = true
     var autoPlay = true
     var autoSkip = true
+    var showSkipButton: Bool? = true
     var offlineAnalysis = true
     var backgroundAudio = true
     var subtitleProvider: String? = "auto"

@@ -12,7 +12,7 @@ struct LilacAnimeApp: App {
             Group {
                 if UIShowcase.enabled && UIShowcase.screen == "detail" {
                     NavigationStack { DetailView(summary: UIShowcase.anime, source: "linkkf") }
-                } else if UIShowcase.enabled && UIShowcase.screen == "player" {
+                } else if UIShowcase.enabled && ["player", "player-settings", "player-fit-contain", "player-fit-cover", "player-fit-stretch"].contains(UIShowcase.screen) {
                     NavigationStack { EpisodePlayerView(item: PlaybackItem(anime: SavedAnime(UIShowcase.anime, source: "linkkf"), episode: UIShowcase.anime.episodes[0])) }
                 } else if UIShowcase.enabled && UIShowcase.screen == "models" {
                     NavigationStack { LocalModelsView() }

@@ -62,8 +62,9 @@ final class MPVEngine: ObservableObject {
     }
     func configure(_ settings: AppPreferences) {
         preferences = settings
-        aspect = PlayerAspect(rawValue: settings.playerAspect ?? "original") ?? .original
-        setFit(settings.playerFit ?? "contain")
+        let presentation = PlayerPresentation(settings)
+        aspect = presentation.aspect; fit = presentation.fit.rawValue
+        applyPresentation()
         setSpeed(settings.speed)
         set("sub-scale", (settings.subtitleSize / 100).description)
         set("sub-delay", settings.subtitleOffset.description)
@@ -89,9 +90,16 @@ final class MPVEngine: ObservableObject {
     func setVolume(_ value: Double) { volume = max(0, min(100, value)); set("volume", String(volume)) }
     func toggleMute() { muted.toggle(); set("mute", muted ? "yes" : "no") }
     func setFit(_ value: String) {
-        fit = value; set("keepaspect", aspect != .original || value == "stretch" ? "no" : "yes"); set("panscan", aspect == .original && value == "cover" ? "1" : "0")
+        preferences.selectPlayerFit(PlayerFit(rawValue: value) ?? .contain)
+        let presentation = PlayerPresentation(preferences); aspect = presentation.aspect; fit = presentation.fit.rawValue
+        applyPresentation()
     }
-    func setAspect(_ value: PlayerAspect) { aspect = value; setFit(fit) }
+    func setAspect(_ value: PlayerAspect) {
+        preferences.selectPlayerAspect(value); aspect = value; fit = PlayerPresentation(preferences).fit.rawValue
+        applyPresentation()
+    }
+    var presentation: PlayerPresentation { PlayerPresentation(aspect: aspect, fit: PlayerFit(rawValue: fit) ?? .contain) }
+    private func applyPresentation() { for (name, value) in presentation.mpvOptions { set(name, value) } }
     func setSpeed(_ value: Double) { speed = value; set("speed", value.description) }
     func beginSpaceHold() {
         guard spaceHold == nil else { return }

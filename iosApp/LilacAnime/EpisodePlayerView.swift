@@ -314,23 +314,17 @@ struct EpisodePlayerView: View {
     @ObservedObject private var savedSubtitles = EpisodeSubtitleStore.shared
     @State private var showWeb = false
     @State private var importer = false
+    @State private var importingFont = false
     @State private var subtitleSheet = false
     @State private var settings = false
-    @State private var settingsTab = 0
+    @AppStorage("playerSettingsTab") private var settingsTab = 0
     @State private var originalOrientation: UIInterfaceOrientation = .portrait
     init(item: PlaybackItem) { _model = StateObject(wrappedValue: EpisodePlayerModel(item: item)) }
     var body: some View {
         ZStack {
             Color.black
-            if UIShowcase.enabled {
-                LinearGradient(colors: [Color(red: 0.18, green: 0.12, blue: 0.3), .black], startPoint: .topLeading, endPoint: .bottomTrailing)
-                Text("UI PREVIEW · 예시 데이터").font(.caption).foregroundStyle(.white.opacity(0.4))
-            } else {
-                GeometryReader { geometry in
-                    let size = model.engine.aspect.stageSize(in: geometry.size)
-                    MPVPlayerView(engine: model.engine).frame(width: size.width, height: size.height)
-                        .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
-                }
+            PlayerVideoSurface(engine: model.engine).allowsHitTesting(false)
+            if !UIShowcase.enabled {
                 ProviderPlayerView(resolver: model.resolver).opacity(showWeb ? 1 : 0.001).allowsHitTesting(showWeb)
             }
             if model.systemPlayback, let stream = model.systemStream {
@@ -360,12 +354,20 @@ struct EpisodePlayerView: View {
                     if let error = model.error ?? model.resolver.error { Text(error).font(.caption).multilineTextAlignment(.center); Button("다시 시도") { model.begin(library: library) }; Button("웹 플레이어 열기") { showWeb = true } }
                 }.padding(24).foregroundStyle(.white).background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 16))
             }
-        }.frame(maxWidth: .infinity, maxHeight: .infinity).background(.black).ignoresSafeArea()
+            if settings { playerSettings.zIndex(10) }
+        }.frame(maxWidth: .infinity, maxHeight: .infinity).background(.black).ignoresSafeArea(.container)
             .background(PlayerOrientationView().allowsHitTesting(false))
             .accessibilityIdentifier("fullscreen-player")
             .statusBarHidden(true).persistentSystemOverlays(.hidden)
             .toolbar(.hidden, for: .navigationBar).toolbar(.hidden, for: .tabBar)
-            .onAppear { originalOrientation = OrientationController.current; OrientationController.landscape(); if UIShowcase.enabled { model.engine.position = 183; model.engine.duration = 1440 } else { model.begin(library: library) } }
+            .onAppear {
+                originalOrientation = OrientationController.current; OrientationController.landscape()
+                if UIShowcase.enabled {
+                    if UIShowcase.screen.hasPrefix("player-fit-"), let fit = PlayerFit(rawValue: String(UIShowcase.screen.dropFirst("player-fit-".count))) { library.preferences.selectPlayerFit(fit) }
+                    model.applyPreferences(library); model.engine.position = 183; model.engine.duration = 1440
+                    if UIShowcase.screen == "player-settings" { settingsTab = 0; settings = true }
+                } else { model.begin(library: library) }
+            }
             .onDisappear { model.shutdown(library: library); OrientationController.restore(originalOrientation) }
             .onChange(of: model.resolver.streams) { streams in
                 if let stream = streams.first(where: { $0.label == library.preferences.preferredStream }) ?? streams.first,
@@ -374,9 +376,18 @@ struct EpisodePlayerView: View {
                 }
             }
             .fileImporter(isPresented: $importer, allowedContentTypes: [.data, .text]) { result in
-                do { model.importSubtitle(try result.get(), library: library) } catch { model.error = error.localizedDescription }
+                defer { importingFont = false }
+                do {
+                    let file = try result.get()
+                    if importingFont {
+                        guard ["ttf", "otf", "ttc"].contains(file.pathExtension.lowercased()) else { throw SubtitleFiles.failure("TTF · OTF · TTC 글꼴 파일을 선택하세요.") }
+                        library.preferences.subtitleFont = try SubtitleFiles.importFont(file)
+                        model.applyPreferences(library)
+                    } else { model.importSubtitle(file, library: library) }
+                } catch { model.error = error.localizedDescription }
             }
-            .sheet(isPresented: $settings) { playerSettings }
+            .onChange(of: library.preferences) { _ in model.applyPreferences(library) }
+            .onChange(of: settings) { if $0 { model.engine.finishSpaceHold() } }
             .sheet(isPresented: $subtitleSheet) { NavigationStack { subtitleList.navigationTitle("자막 선택").toolbar { Button("닫기") { subtitleSheet = false } } } }
     }
     private func nextEpisode() {
@@ -386,44 +397,54 @@ struct EpisodePlayerView: View {
     }
     private func openSubtitleList() { settings = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { subtitleSheet = true } }
     private var playerSettings: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                Picker("플레이어 설정", selection: $settingsTab) { Text("재생").tag(0); Text("자막").tag(1); Text("자막 모양").tag(2) }.pickerStyle(.segmented).accessibilityIdentifier("player-settings-tabs").padding(16)
-                Form {
-                    if settingsTab == 0 { playbackSettings }
-                    else if settingsTab == 1 { subtitleSettings }
-                    else { styleSettings }
-                }
-            }.navigationTitle("플레이어 설정").navigationBarTitleDisplayMode(.inline).toolbar { Button("닫기") { settings = false } }
-        }.presentationDetents([.large])
+        PlayerSettingsPanel(tab: $settingsTab, close: { settings = false }) {
+            if settingsTab == 0 { playbackSettings }
+            else if settingsTab == 1 { subtitleSettings }
+            else { styleSettings }
+        }
     }
     @ViewBuilder private var playbackSettings: some View {
-        Section("영상 서버 · 화질") {
+        PlayerSettingsGroup("영상 서버 · 화질") {
+            Text("영상이 끊기면 다른 서버나 낮은 화질을 선택하세요.").font(.caption).foregroundStyle(.white.opacity(0.5))
             ForEach(model.resolver.streams) { stream in
                 Button { library.preferences.preferredStream = stream.label; model.play(stream, library: library); showWeb = false } label: {
                     HStack { Text(stream.label); Spacer(); if model.active?.id == stream.id { Image(systemName: "checkmark") } }
                 }
             }
-            Picker("화질", selection: $library.preferences.quality) { ForEach(["Auto", "480p", "720p", "1080p"], id: \.self) { Text($0) } }
-                .onChange(of: library.preferences.quality) { _ in if let stream = model.active { model.play(stream, library: library) } }
-            Button(showWeb ? "네이티브 플레이어" : "웹 플레이어") { showWeb.toggle(); settings = false }
+            PlayerChoiceGrid(options: ["Auto", "480p", "720p", "1080p"].map { ($0, $0) }, selection: Binding(get: { library.preferences.quality }, set: {
+                library.preferences.quality = $0; if let stream = model.active { model.play(stream, library: library) }
+            }), identifier: "player-quality")
         }
-        Section("재생") {
-            Picker("재생 속도", selection: $library.preferences.speed) { ForEach([0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2], id: \.self) { Text(String(format: "%.2fx", $0)).tag($0) } }.onChange(of: library.preferences.speed) { model.engine.finishSpaceHold(); model.engine.setSpeed($0) }
-            Picker("화면 비율", selection: Binding(get: { library.preferences.playerAspect ?? "original" }, set: {
-                library.preferences.playerAspect = $0
-                if $0 == "original" { library.preferences.playerFit = "contain"; model.engine.setFit("contain") }
-                model.engine.setAspect(PlayerAspect(rawValue: $0) ?? .original)
-            })) { ForEach(PlayerAspect.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) } }
-                .accessibilityIdentifier("player-aspect")
+        PlayerSettingsGroup("재생 속도") {
+            PlayerChoiceGrid(options: [0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 3, 4].map { ($0, String(format: "%.2fx", $0)) }, selection: Binding(get: { library.preferences.speed }, set: {
+                model.engine.finishSpaceHold(); library.preferences.speed = $0; model.engine.setSpeed($0)
+            }), identifier: "player-speed")
+            Text("뒤로/앞으로 이동: \(Int(library.preferences.seekSeconds))초").font(.caption).foregroundStyle(.white.opacity(0.5))
+        }
+        PlayerSettingsGroup("화면 비율") {
+            PlayerChoiceGrid(options: PlayerAspect.allCases.map { ($0.rawValue, $0.title) }, selection: Binding(get: { library.preferences.playerAspect ?? "original" }, set: {
+                let value = PlayerAspect(rawValue: $0) ?? .original
+                library.preferences.selectPlayerAspect(value); model.engine.setAspect(value)
+            }), identifier: "player-aspect")
+            Text("선택한 비율로 표시합니다. 화면 채움은 여백 없이 늘립니다.").font(.caption).foregroundStyle(.white.opacity(0.5))
+            Text("화면 맞춤").font(.caption.bold()).foregroundStyle(.white.opacity(0.65))
+            PlayerChoiceGrid(options: PlayerFit.allCases.map { ($0.rawValue, $0.title) }, selection: Binding(get: { PlayerPresentation(library.preferences).fit.rawValue }, set: {
+                library.preferences.selectPlayerFit(PlayerFit(rawValue: $0) ?? .contain); model.engine.setFit($0)
+            }), identifier: "player-fit")
+            Text("맞춤: 원본 비율 유지 · 채움: 가장자리 자르기 · 늘림: 화면 전체로 늘리기").font(.caption).foregroundStyle(.white.opacity(0.5))
+        }
+        PlayerSettingsGroup("자동 재생 · 건너뛰기") {
             Toggle("다음 화 자동 재생", isOn: $library.preferences.autoPlay)
-            Toggle("OP/ED 자동 스킵", isOn: $library.preferences.autoSkip)
-            Picker("화면 맞춤", selection: Binding(get: { library.preferences.playerFit ?? "contain" }, set: { library.preferences.playerFit = $0; model.engine.setFit($0) })) { Text("맞춤").tag("contain"); Text("채움").tag("cover"); Text("늘림").tag("stretch") }
+            Toggle("오프닝·엔딩 건너뛰기 버튼", isOn: Binding(get: { library.preferences.showSkipButton ?? true }, set: { library.preferences.showSkipButton = $0 }))
+            Toggle("오프닝·엔딩 자동으로 건너뛰기", isOn: $library.preferences.autoSkip)
+        }
+        PlayerSettingsGroup("오디오") {
             Toggle("음소거", isOn: Binding(get: { model.engine.muted }, set: { _ in model.engine.toggleMute() }))
-            Slider(value: Binding(get: { model.engine.volume }, set: { model.engine.setVolume($0) }), in: 0...100) { Text("볼륨") }
+            Text("음량 \(Int(model.engine.volume))%").font(.caption)
+            Slider(value: Binding(get: { model.engine.volume }, set: { model.engine.setVolume($0) }), in: 0...100).accessibilityLabel("음량")
             ForEach(model.engine.tracks.filter { $0.type == "audio" }) { track in Button(track.title) { model.engine.selectTrack(track) } }
         }
-        Section("저장 · 연결") {
+        PlayerSettingsGroup("저장 · 연결") {
             if let active = model.active {
                 Button("회차 다운로드") { downloads.download(model.item, stream: active, quality: library.preferences.quality) }
                 Button("Cast 재생") { model.castVideo() }
@@ -432,62 +453,89 @@ struct EpisodePlayerView: View {
             }
             HStack { Text("AirPlay / Chromecast"); Spacer(); AirPlayButton().frame(width: 32, height: 32); CastButton().frame(width: 32, height: 32) }
             Button("Cast 중계 종료") { model.stopCast() }
+            Button(showWeb ? "네이티브 플레이어" : "웹 플레이어") { showWeb.toggle(); settings = false }
         }
-        if let error = model.error { Section { Text(error).foregroundStyle(.red) } }
+        PlayerSettingsGroup("조작") {
+            Text("영상 꾹 누르기: 2배속 · 왼쪽/오른쪽 더블탭: 탐색\nSpace 짧게: 재생/정지 · 길게: 2배속\n←/→ 탐색 · C 자막 · Z/X 싱크 · M 음소거\nPageUp/PageDown 이전/다음 화").font(.caption).foregroundStyle(.white.opacity(0.5))
+        }
+        if let error = model.error { PlayerSettingsGroup("알림") { Text(error).foregroundStyle(.red) } }
     }
     @ViewBuilder private var subtitleSettings: some View {
-        Section("자막 가져올 곳") {
-            Picker("자막 소스", selection: Binding(get: { library.preferences.subtitleProvider ?? "auto" }, set: { library.preferences.subtitleProvider = $0 })) {
-                Text("자동").tag("auto"); Text("Kairan").tag("kairan"); Text("Csora").tag("csora"); Text("Anissia").tag("anissia"); Text("Jimaku / AI 번역").tag("jimaku"); Text("직접 선택").tag("manual")
-            }
-            Button("한국어 자막 다시 찾기") { model.search(library.preferences.subtitleProvider == "auto" ? "kairan" : library.preferences.subtitleProvider ?? "kairan") }
+        PlayerSettingsGroup("자막 표시") {
+            Toggle("자막 표시", isOn: Binding(get: { model.engine.subtitlesVisible }, set: { _ in model.engine.toggleSubtitleVisibility() }))
+            if let subtitle = model.subtitle { Text(subtitle.lastPathComponent).font(.caption).foregroundStyle(.white.opacity(0.65)) }
+            if model.searching { ProgressView("자막을 찾는 중") }
+        }
+        PlayerSettingsGroup("자막 가져올 곳") {
+            PlayerChoiceGrid(options: [("auto", "자동"), ("kairan", "Kairan"), ("csora", "Csora"), ("anissia", "Anissia"), ("jimaku", "Jimaku"), ("manual", "직접 선택")], selection: Binding(get: { library.preferences.subtitleProvider ?? "auto" }, set: { library.preferences.subtitleProvider = $0 }), identifier: "player-subtitle-source")
+            Text("다음 자막 검색부터 선택한 곳을 먼저 찾습니다.").font(.caption).foregroundStyle(.white.opacity(0.5))
             Button("자막 검색 · Jimaku 파일 · 저장 자막", action: openSubtitleList)
-            Button("자막 파일 열기") { settings = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { importer = true } }
-            if let subtitle = model.subtitle { Text(subtitle.lastPathComponent).font(.caption) }
-            Button(model.engine.subtitlesVisible ? "자막 표시 끄기" : "자막 표시 켜기") { model.engine.toggleSubtitleVisibility() }
-            ForEach(model.active?.subtitles ?? model.resolver.subtitles) { track in
-                Button(track.label) { model.importSubtitle(track.url, library: library, headers: track.headers ?? [:]) }
+            Button("한국어 자막 다시 찾기") { model.search(library.preferences.subtitleProvider == "auto" ? "kairan" : library.preferences.subtitleProvider ?? "kairan") }
+            Button("자막 파일 열기") { importingFont = false; settings = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { importer = true } }
+        }
+        if !(model.active?.subtitles ?? model.resolver.subtitles).isEmpty {
+            PlayerSettingsGroup("사이트 자막 트랙") {
+                ForEach(model.active?.subtitles ?? model.resolver.subtitles) { track in Button(track.label) { model.importSubtitle(track.url, library: library, headers: track.headers ?? [:]) } }
             }
         }
-        Section("번역") {
+        PlayerSettingsGroup("한국어로 번역") {
             Button("번역 API") { model.translate(library: library, provider: library.preferences.translationProvider == "local" ? "gemini" : library.preferences.translationProvider) }
             Button("로컬 AI") { model.translate(library: library, provider: "local") }
             Button("캐시 없이 다시 번역") { model.translate(library: library, fresh: true) }
             TranslationStatus(coordinator: model.translation)
             if let status = model.prefetchStatus { Text(status).font(.caption) }
         }
-        Section("이 회차에 저장한 자막") {
-            ForEach(savedSubtitles.list(model.item)) { record in
-                if let file = record.file {
-                    HStack {
-                        Button(record.name) { model.selectSubtitle(file, library: library, translate: !record.translated) }
-                        Spacer(); ShareLink(item: file) { Image(systemName: "square.and.arrow.up") }
-                        Button(role: .destructive) { savedSubtitles.remove(record.id) } label: { Image(systemName: "trash") }
+        if !savedSubtitles.list(model.item).isEmpty {
+            PlayerSettingsGroup("이 회차에 저장한 자막") {
+                ForEach(savedSubtitles.list(model.item)) { record in
+                    if let file = record.file {
+                        HStack {
+                            Button(record.name) { model.selectSubtitle(file, library: library, translate: !record.translated) }
+                            Spacer(); ShareLink(item: file) { Image(systemName: "square.and.arrow.up") }
+                            Button(role: .destructive) { savedSubtitles.remove(record.id) } label: { Image(systemName: "trash") }
+                        }
                     }
                 }
             }
         }
-        if model.searching { ProgressView("자막을 찾는 중") }
-        ForEach(Array(model.assets.enumerated()), id: \.offset) { _, asset in
-            if asset.source == "post", let url = URL(string: asset.url) { Link(asset.name, destination: url) }
-            else { Button(asset.name) { if let url = URL(string: asset.url) { model.importSubtitle(url, library: library) } } }
+        if !model.assets.isEmpty {
+            PlayerSettingsGroup("검색한 자막") {
+                ForEach(Array(model.assets.enumerated()), id: \.offset) { _, asset in
+                    if asset.source == "post", let url = URL(string: asset.url) { Link(asset.name, destination: url) }
+                    else { Button(asset.name) { if let url = URL(string: asset.url) { model.importSubtitle(url, library: library) } } }
+                }
+            }
         }
     }
     private var styleSettings: some View {
-        Section("자막 모양") {
-            Slider(value: $library.preferences.subtitleSize, in: 50...300, step: 10)
-            Text("크기 \(Int(library.preferences.subtitleSize))%")
-            Toggle("굵게", isOn: $library.preferences.subtitleBold)
-            Toggle("ASS 효과", isOn: $library.preferences.assEffects)
-            TextField("폰트", text: $library.preferences.subtitleFont)
-            TextField("글자 색", text: $library.preferences.subtitleColor)
-            TextField("테두리 색", text: $library.preferences.outlineColor)
-            Slider(value: $library.preferences.outlineWidth, in: 0...6, step: 0.5)
-            Slider(value: $library.preferences.subtitlePadding, in: 0...40)
-            HStack { Button("빠르게 −0.5초") { model.shiftSubtitle(-0.5, library: library) }; Text("\(model.subtitleOffset, specifier: "%.1f")초"); Button("늦게 +0.5초") { model.shiftSubtitle(0.5, library: library) } }
-            SubtitleSyncInput(value: model.subtitleOffset) { model.shiftSubtitle($0 - model.subtitleOffset, library: library) }
-            Button("싱크 초기화") { model.shiftSubtitle(-model.subtitleOffset, library: library) }
-        }.onChange(of: library.preferences) { _ in model.applyPreferences(library) }
+        Group {
+            PlayerSettingsGroup("크기 · 높이") {
+                Text("자막 크기 \(Int(library.preferences.subtitleSize))%")
+                Slider(value: $library.preferences.subtitleSize, in: 50...300, step: 5).accessibilityLabel("자막 크기")
+                Text("자막 높이 \(Int(library.preferences.subtitlePadding))%")
+                Slider(value: $library.preferences.subtitlePadding, in: 0...40).accessibilityLabel("자막 높이")
+            }
+            PlayerSettingsGroup("자막 타이밍") {
+                SubtitleSyncInput(value: model.subtitleOffset) { model.shiftSubtitle($0 - model.subtitleOffset, library: library) }
+                PlayerChoiceGrid(options: [("fast", "0.25초 빠르게"), ("reset", "원래대로"), ("slow", "0.25초 늦게")], selection: Binding(get: { "" }, set: {
+                    model.shiftSubtitle($0 == "reset" ? -model.subtitleOffset : $0 == "fast" ? -0.25 : 0.25, library: library)
+                }), identifier: "player-subtitle-sync")
+            }
+            PlayerSettingsGroup("특수 효과 자막 (ASS)") {
+                Toggle("원본 효과 그대로", isOn: $library.preferences.assEffects)
+                Text("노래 가사·간판 번역 등의 위치·색·움직임을 보여 줍니다.").font(.caption).foregroundStyle(.white.opacity(0.5))
+            }
+            PlayerSettingsGroup("일반 자막 · 글꼴") {
+                Toggle("글자 굵게", isOn: $library.preferences.subtitleBold)
+                Text("글자 테두리 \(library.preferences.outlineWidth, specifier: "%.1f")px")
+                Slider(value: $library.preferences.outlineWidth, in: 0...6, step: 0.5).accessibilityLabel("글자 테두리 두께")
+                TextField("글자 색", text: $library.preferences.subtitleColor)
+                TextField("테두리 색", text: $library.preferences.outlineColor)
+                TextField("글꼴", text: $library.preferences.subtitleFont)
+                Button("글꼴 파일 선택") { importingFont = true; settings = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { importer = true } }
+                Text("파일 앱에서 TTF · OTF · TTC 글꼴을 가져옵니다.").font(.caption).foregroundStyle(.white.opacity(0.5))
+            }
+        }
     }
     private var subtitleList: some View {
         List {
@@ -605,7 +653,7 @@ struct PlayerControls: View {
                 if !feedback.isEmpty { Text(feedback).font(.headline).padding(14).background(.black.opacity(0.7), in: Capsule()).allowsHitTesting(false) }
                 if engine.buffering { ProgressView().tint(.white).allowsHitTesting(false) }
                 if engine.speedBoosted { VStack { Text("2배속").font(.headline).padding(.horizontal, 18).padding(.vertical, 8).background(.black.opacity(0.75), in: Capsule()).accessibilityIdentifier("speed-boost"); Spacer() }.padding(.top, 72).allowsHitTesting(false) }
-                if let chapter, !locked {
+                if let chapter, !locked, library.preferences.showSkipButton ?? true {
                     VStack { Spacer(); HStack { Spacer(); Button(action: skipChapter) { Label(chapter.type.uppercased() + " 건너뛰기", systemImage: "forward.fill").font(.caption.bold()).padding(12).background(.black.opacity(0.65), in: Capsule()) } }.padding(.bottom, visible ? 70 : 18).padding(.trailing, 18) }
                 }
             }.frame(width: geometry.size.width, height: geometry.size.height)
@@ -629,7 +677,7 @@ struct PlayerControls: View {
                         Button("") { if canPrevious { previous() } }.keyboardShortcut(.pageUp, modifiers: [])
                         ForEach(0..<10) { digit in Button("") { engine.seek(engine.duration * Double(digit) / 10) }.keyboardShortcut(KeyEquivalent(Character(String(digit))), modifiers: []) }
                     }
-                }.disabled(locked).frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
+                }.disabled(locked || !keyboardEnabled).frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
             }
             .background(SpaceHoldKeyboard(enabled: keyboardEnabled && !locked,
                 began: engine.beginSpaceHold, ended: { engine.finishSpaceHold(toggle: true); touch() }, cancelled: { engine.finishSpaceHold() }).frame(width: 0, height: 0))
@@ -646,7 +694,7 @@ struct PlayerControls: View {
         adjustSubtitle(delta)
     }
     private func changeSpeed(_ delta: Double) {
-        library.preferences.speed = max(0.25, min(2, library.preferences.speed + delta))
+        library.preferences.speed = max(0.1, min(4, library.preferences.speed + delta))
         engine.finishSpaceHold(); engine.setSpeed(library.preferences.speed)
     }
     private func tapZone(_ delta: Double) -> some View {

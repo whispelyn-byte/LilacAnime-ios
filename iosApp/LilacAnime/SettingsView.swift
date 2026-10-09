@@ -41,11 +41,11 @@ struct SettingsView: View {
                 Section("재생") {
                     Picker("영상 소스", selection: $store.preferences.source) { ForEach(ContentSources.keys, id: \.self) { Text(ContentSources.name($0)).tag($0) } }
                     Picker("기본 화질", selection: $store.preferences.quality) { ForEach(["Auto", "480p", "720p", "1080p"], id: \.self) { Text($0) } }
-                    Picker("화면 맞춤", selection: Binding(get: { store.preferences.playerFit ?? "contain" }, set: { store.preferences.playerFit = $0 })) { Text("맞춤").tag("contain"); Text("채움").tag("cover"); Text("늘림").tag("stretch") }
-                    Picker("화면 비율", selection: Binding(get: { store.preferences.playerAspect ?? "original" }, set: { store.preferences.playerAspect = $0 })) { ForEach(PlayerAspect.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) } }
+                    Picker("화면 맞춤", selection: Binding(get: { PlayerPresentation(store.preferences).fit.rawValue }, set: { store.preferences.selectPlayerFit(PlayerFit(rawValue: $0) ?? .contain) })) { ForEach(PlayerFit.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) } }
+                    Picker("화면 비율", selection: Binding(get: { store.preferences.playerAspect ?? "original" }, set: { store.preferences.selectPlayerAspect(PlayerAspect(rawValue: $0) ?? .original) })) { ForEach(PlayerAspect.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) } }
                     Toggle("다운로드 자막도 자동 번역", isOn: Binding(get: { store.preferences.translateDownloads ?? true }, set: { store.preferences.translateDownloads = $0 }))
                     Toggle("다운로드에 자막 포함", isOn: Binding(get: { store.preferences.downloadSubtitles ?? true }, set: { store.preferences.downloadSubtitles = $0 }))
-                    Slider(value: $store.preferences.speed, in: 0.25...2, step: 0.25) { Text("배속") }
+                    Slider(value: $store.preferences.speed, in: 0.1...4, step: 0.05) { Text("배속") }
                     Text("기본 배속 \(store.preferences.speed, specifier: "%.2f")x")
                     Stepper("탐색 \(Int(store.preferences.seekSeconds))초", value: $store.preferences.seekSeconds, in: 1...120)
                     Toggle("다음 회차 자동 재생", isOn: $store.preferences.autoPlay)

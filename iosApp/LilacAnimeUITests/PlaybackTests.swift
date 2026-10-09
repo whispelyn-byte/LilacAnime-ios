@@ -36,8 +36,14 @@ final class PlaybackTests: XCTestCase {
         XCTAssertTrue(app.buttons["player-settings-tab-0"].waitForExistence(timeout: 5))
         app.buttons["player-settings-tab-0"].tap()
         let option = app.buttons[identifier]
-        // Short landscape panels need slow swipes so a whole option group is not skipped by momentum.
-        for _ in 0..<10 { if option.exists && option.isHittable { break }; app.scrollViews["player-settings-scroll"].swipeUp(velocity: .slow) }
+        // Stop each short drag before lifting the finger so momentum cannot skip an option group.
+        let scroll = app.scrollViews["player-settings-scroll"]
+        for _ in 0..<10 {
+            if option.exists && option.isHittable { break }
+            scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8)).press(forDuration: 0.05,
+                thenDragTo: scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)),
+                withVelocity: .slow, thenHoldForDuration: 0.2)
+        }
         XCTAssertTrue(option.isHittable); option.tap()
         app.buttons["닫기"].tap()
     }

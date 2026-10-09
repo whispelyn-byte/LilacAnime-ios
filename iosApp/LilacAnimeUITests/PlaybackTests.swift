@@ -48,7 +48,7 @@ final class PlaybackTests: XCTestCase {
         XCTAssertEqual(video.frame.width, viewport.width, accuracy: 2)
         XCTAssertEqual(video.frame.height, viewport.height, accuracy: 2)
         app.buttons["플레이어 설정"].tap()
-        let panel = app.otherElements["player-settings-panel"]
+        let panel = app.descendants(matching: .any)["player-settings-panel"].firstMatch
         XCTAssertTrue(panel.waitForExistence(timeout: 5))
         // The accessibility container includes the right safe-area padding on notched iPhones.
         XCTAssertLessThanOrEqual(panel.frame.width, min(480, viewport.width))

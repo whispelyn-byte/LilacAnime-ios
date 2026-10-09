@@ -14,7 +14,9 @@ struct DesktopWorkspace: View {
         ("favorites", "내 목록", "heart"), ("settings", "설정", "gearshape")
     ]
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
+            searchBar
+            Group {
             if sizeClass == .regular {
                 NavigationSplitView(columnVisibility: $columns) {
                     sidebar.navigationTitle("LilacAnime")
@@ -22,8 +24,8 @@ struct DesktopWorkspace: View {
                 } detail: { page.id(navigation.section) }
                 .navigationSplitViewStyle(.balanced)
             } else { page.id(navigation.section) }
+            }
         }.environmentObject(navigation)
-            .safeAreaInset(edge: .top, spacing: 0) { searchBar }
             .sheet(isPresented: $menu) {
                 NavigationStack { sidebar.navigationTitle("LilacAnime").toolbar { Button("닫기") { menu = false } } }
                     .presentationDetents([.medium, .large])

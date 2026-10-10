@@ -46,6 +46,7 @@ final class DesktopCatalog: ObservableObject {
         return anime.title
     }
     func record(_ anime: SavedAnime) -> CatalogName? { names[anime.id] }
+    func record(_ anime: Anime, source: String) -> CatalogName? { names[source + ":" + anime.id] }
     @discardableResult
     func enrich(_ anime: Anime, source: String, cast: Bool = false, force: Bool = false, bulk: Bool = false) async -> Bool {
         let key = source + ":" + anime.id
@@ -143,17 +144,26 @@ final class DesktopCatalog: ObservableObject {
                 let bulk: String? = await withCheckedContinuation { continuation in
                     service.catalogKoreanIndex { value, _ in continuation.resume(returning: value) }
                 }
-                if let data = bulk?.data(using: .utf8), let titles = try? JSONDecoder().decode([String: String].self, from: data) {
+                if let bulk {
                     let credential = SubtitleFiles.key(SecureKeys.load("tmdb"))
+                    let missing = gathered.filter { names[$0.id]?.korean.isEmpty != false }
+                    // The index has tens of thousands of titles and the catalog thousands of works: matched off the main thread.
+                    let found = await Task.detached(priority: .utility) { () -> [String: CatalogName] in
+                        guard let titles = try? JSONDecoder().decode([String: String].self, from: Data(bulk.utf8)) else { return [:] }
+                        var found: [String: CatalogName] = [:]
+                        for item in missing {
+                            let anime = item.anime
+                            guard let id = anime.anilistId, let korean = titles[String(id.intValue)] else { continue }
+                            found[item.id] = CatalogName(korean: DesktopTitleRules.shared.seasonal(title: korean, original: item.title, format: anime.format), english: anime.english,
+                                overview: "", aliases: [korean], cast: [], anilist: id.intValue, mal: anime.malId?.intValue ?? 0, updated: Date(), credential: credential)
+                        }
+                        return found
+                    }.value
+                    guard token == generation else { return }
                     // Applied together: one change of the published names instead of one per title.
                     var updated = names
-                    for item in gathered where updated[item.id]?.korean.isEmpty != false {
-                        guard let id = item.anime.anilistId, let korean = titles[String(id.intValue)] else { continue }
-                        updated[item.id] = CatalogName(korean: DesktopTitleRules.shared.seasonal(title: korean, original: item.title, format: item.anime.format), english: item.anime.english,
-                            overview: "", aliases: [korean], cast: [], anilist: id.intValue, mal: item.anime.malId?.intValue ?? 0, updated: Date(), credential: credential)
-                    }
-                    names = updated
-                    saveNames()
+                    for (id, name) in found where updated[id]?.korean.isEmpty != false { updated[id] = name }
+                    if !found.isEmpty { names = updated; saveNames() }
                 }
                 guard !SecureKeys.load("tmdb").isEmpty else {
                     status = "\(knownCount(gathered))/\(gathered.count)개 한국어 제목 · 나머지는 TMDB 키를 설정하면 찾습니다."

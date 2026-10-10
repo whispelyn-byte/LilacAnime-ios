@@ -122,6 +122,8 @@ final class DownloadStore: ObservableObject {
     }()
     private var tasks: [String: Task<Void, Never>] = [:]
     private var backgroundTasks: [String: URLSessionDownloadTask] = [:]
+    /// Parts downloaded and still being decoded and written off the main thread.
+    private var writing: Set<String> = []
     private let delegate = BackgroundDownloadDelegate()
     private var restoring = true
     private lazy var session: URLSession = {
@@ -268,7 +270,7 @@ final class DownloadStore: ObservableObject {
         }
     }
     private func busy(_ id: String) -> Bool {
-        restoring || tasks[id] != nil || backgroundTasks.keys.contains { $0.hasPrefix(id + "|") }
+        restoring || tasks[id] != nil || backgroundTasks.keys.contains { $0.hasPrefix(id + "|") } || writing.contains { $0.hasPrefix(id + "|") }
     }
     func retry(_ entry: DownloadEntry) { retryTasks[entry.id]?.cancel(); retryTasks[entry.id] = nil; update(entry.id) { $0.retries = 0 }; if entry.status == "실패" { enqueue([entry.playback], quality: entry.quality ?? "Auto") } else { start(entry.id) } }
     private func start(_ id: String) {
@@ -354,22 +356,36 @@ final class DownloadStore: ObservableObject {
               let partIndex = entries[index].parts?.firstIndex(where: { $0.name == fields[1] }),
               let target = BackgroundDownloadDelegate.destination(description) else { try? FileManager.default.removeItem(at: staged); return }
         guard entries[index].status == "다운로드 중" else { try? FileManager.default.removeItem(at: staged); return }
-        do {
-            if entries[index].stream.hlsManifest != nil && entries[index].parts?[partIndex].url.pathExtension.lowercased() == "html" {
-                let decoded = try HLSData.validatedFragment(Data(contentsOf: staged))
-                try decoded.write(to: target, options: .atomic); try FileManager.default.removeItem(at: staged)
-            } else if entries[index].stream.manifestKey != nil && (fields[1].hasSuffix(".ts") || mime.hasPrefix("image/")) {
-                let decoded = HLSData.transportStream(try Data(contentsOf: staged))
-                try decoded.write(to: target, options: .atomic); try FileManager.default.removeItem(at: staged)
-            } else if fields[1].hasSuffix(".ts") {
-                let decoded = HLSData.transportStream(try Data(contentsOf: staged))
-                try decoded.write(to: target, options: .atomic); try FileManager.default.removeItem(at: staged)
-            } else {
-                if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
-                try FileManager.default.moveItem(at: staged, to: target)
+        let decode: ((Data) throws -> Data)?
+        if entries[index].stream.hlsManifest != nil && entries[index].parts?[partIndex].url.pathExtension.lowercased() == "html" { decode = HLSData.validatedFragment }
+        else if (entries[index].stream.manifestKey != nil && (fields[1].hasSuffix(".ts") || mime.hasPrefix("image/"))) || fields[1].hasSuffix(".ts") { decode = HLSData.transportStream }
+        else { decode = nil }
+        // A part is megabytes: reading and decoding it on the main thread, part after part, stalled the video being watched.
+        let part = fields[1]
+        writing.insert(description)
+        Task.detached(priority: .utility) { [weak self] in
+            let written = Result { () throws -> Int64 in
+                if let decode {
+                    try decode(Data(contentsOf: staged)).write(to: target, options: .atomic); try FileManager.default.removeItem(at: staged)
+                } else {
+                    if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
+                    try FileManager.default.moveItem(at: staged, to: target)
+                }
+                try? FileManager.default.removeItem(at: target.appendingPathExtension("resume"))
+                return Int64((try? target.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
             }
-            try? FileManager.default.removeItem(at: target.appendingPathExtension("resume"))
-            entries[index].bytes = (entries[index].bytes ?? 0) + Int64((try? target.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+            await self?.partWritten(description, part: part, written: written)
+        }
+    }
+    private func partWritten(_ description: String, part: String, written: Result<Int64, Error>) {
+        writing.remove(description)
+        defer { pump() }
+        let id = description.components(separatedBy: "|")[0]
+        guard let index = entries.firstIndex(where: { $0.id == id }), DownloadIdentity.accepts(description, attempt: entries[index].attemptID),
+              entries[index].status == "다운로드 중", let partIndex = entries[index].parts?.firstIndex(where: { $0.name == part }) else { return }
+        do {
+            let size = try written.get()
+            entries[index].bytes = (entries[index].bytes ?? 0) + size
             entries[index].parts?[partIndex].done = true
             entries[index].completed = entries[index].parts?.filter(\.done).count ?? 0
             if entries[index].parts?.allSatisfy(\.done) == true {
@@ -406,7 +422,7 @@ final class DownloadStore: ObservableObject {
                 guard backgroundTasks.count < 12 else { return }
                 if backgroundTasks.keys.filter({ $0.hasPrefix(entry.id + "|") }).count >= 6 { break }
                 let description = entry.id + "|" + part.name + (entry.attemptID.map { "|" + $0 } ?? "")
-                guard backgroundTasks[description] == nil else { continue }
+                guard backgroundTasks[description] == nil, !writing.contains(description) else { continue }
                 let resumed = Self.directory.appendingPathComponent(entry.id).appendingPathComponent(part.name + ".resume")
                 let task: URLSessionDownloadTask
                 if let data = try? Data(contentsOf: resumed) { task = session.downloadTask(withResumeData: data) }

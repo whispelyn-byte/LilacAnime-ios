@@ -11,11 +11,29 @@ struct SavedAnime: Codable, Identifiable {
     var snapshot: String
     /// When it went into 내 목록 (기기 동기화 orders and compares by it); nil for items saved before.
     var savedAt: Date? = nil
+    private var decoded = DecodedAnime()
+    private enum CodingKeys: String, CodingKey { case id, title, poster, source, snapshot, savedAt }
     init(_ anime: Anime, source: String) {
         id = source + ":" + anime.id; title = anime.title; poster = anime.poster
         self.source = source; snapshot = AnimeSnapshot.shared.encode(anime: anime)
+        decoded.store(anime, for: snapshot)
     }
-    var anime: Anime { AnimeSnapshot.shared.decode(content: snapshot) }
+    /// Decoded once per snapshot: views read this on every redraw (the player many times a second), and decoding a
+    /// long series' snapshot with all its episodes each time kept the main thread busy.
+    var anime: Anime { decoded.anime(for: snapshot) }
+}
+private final class DecodedAnime: @unchecked Sendable {
+    private let lock = NSLock()
+    private var snapshot = ""
+    private var value: Anime?
+    func anime(for snapshot: String) -> Anime {
+        lock.lock(); defer { lock.unlock() }
+        if let value, self.snapshot == snapshot { return value }
+        let anime = AnimeSnapshot.shared.decode(content: snapshot)
+        self.snapshot = snapshot; value = anime
+        return anime
+    }
+    func store(_ anime: Anime, for snapshot: String) { lock.lock(); self.snapshot = snapshot; value = anime; lock.unlock() }
 }
 struct WatchEntry: Codable, Identifiable {
     var id: String

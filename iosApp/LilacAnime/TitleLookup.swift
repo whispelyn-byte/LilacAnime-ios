@@ -39,8 +39,9 @@ final class TitleLookup: NSObject {
                     for _ in 0..<10 {
                         try? await Task.sleep(nanoseconds: 1_000_000_000)
                         if Task.isCancelled { return }
+                        // The search page is large: reading it on the main thread every second stalled playback.
                         if let html = try? await web.evaluateJavaScript("document.documentElement.outerHTML") as? String,
-                           let result = TitleCandidates.shared.namu(html: html, query: query) {
+                           let result = await Task.detached(priority: .utility, operation: { TitleCandidates.shared.namu(html: html, query: query) }).value {
                             guard token == generation, !Task.isCancelled else { return }
                             TitleLookupCache.write(result, key: key)
                             finish(result); return

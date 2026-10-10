@@ -3,7 +3,8 @@ import LilacShared
 
 @MainActor
 final class DesktopRecentUpdates: ObservableObject {
-    struct Update { var anime: Anime; var rank: Int }
+    /// The saved form and update time are made once when loaded: the library list orders by them on every redraw.
+    struct Update { var anime: Anime; var rank: Int; var saved: SavedAnime; var date: Date? }
     static let shared = DesktopRecentUpdates()
     @Published private(set) var home: [Anime] = []
     @Published private(set) var library: [String: Update] = [:]
@@ -50,7 +51,7 @@ final class DesktopRecentUpdates: ObservableObject {
         let pending = sources.filter(Self.supported.contains).map { ($0, recent($0, pages: 8)) }
         var found: [String: Update] = [:]; var failures: [String] = []
         for (source, task) in pending {
-            do { for (rank, anime) in try await task.value.enumerated() { found[source + ":" + anime.id] = Update(anime: anime, rank: rank) } }
+            do { for (rank, anime) in try await task.value.enumerated() { found[source + ":" + anime.id] = Update(anime: anime, rank: rank, saved: SavedAnime(anime, source: source), date: Self.timestamp(anime.updatedAt)) } }
             catch { failures.append(ContentSources.name(source)); cache[source + ":8"] = nil }
         }
         guard request == libraryRequest else { return }
@@ -63,16 +64,14 @@ final class DesktopRecentUpdates: ObservableObject {
             let a = library[lhs.element.id], b = library[rhs.element.id]
             if (a != nil) != (b != nil) { return a != nil }
             guard let a, let b else { return lhs.offset < rhs.offset }
-            let ad = Self.timestamp(a.anime.updatedAt), bd = Self.timestamp(b.anime.updatedAt)
+            let ad = a.date, bd = b.date
             if (ad != nil) != (bd != nil) { return ad != nil }
             if let ad, let bd { return ad == bd ? lhs.offset < rhs.offset : ad > bd }
             if lhs.element.source != rhs.element.source { return lhs.element.source < rhs.element.source }
             return a.rank == b.rank ? lhs.offset < rhs.offset : a.rank < b.rank
-        }.map { entry in library[entry.element.id].map { SavedAnime($0.anime, source: entry.element.source) } ?? entry.element }
+        }.map { entry in library[entry.element.id]?.saved ?? entry.element }
     }
-    private static func timestamp(_ text: String) -> Date? {
-        let formatter = ISO8601DateFormatter()
-        if let date = formatter.date(from: text) { return date }
-        formatter.formatOptions.insert(.withFractionalSeconds); return formatter.date(from: text)
-    }
+    private static let plainDate = ISO8601DateFormatter()
+    private static let fractionalDate: ISO8601DateFormatter = { let formatter = ISO8601DateFormatter(); formatter.formatOptions.insert(.withFractionalSeconds); return formatter }()
+    private static func timestamp(_ text: String) -> Date? { plainDate.date(from: text) ?? fractionalDate.date(from: text) }
 }

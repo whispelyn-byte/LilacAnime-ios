@@ -33,9 +33,13 @@ struct DesktopFullCatalog: View {
         if sort == "default" || remoteSource { return result }
         let date = Calendar.current.dateComponents([.year, .month, .day], from: Date())
         let today = (date.year ?? 0) * 10000 + (date.month ?? 0) * 100 + (date.day ?? 0)
-        return DesktopAnimeMetadata.shared.sortedCatalog(items: result.map(\.anime), sort: sort, today: Int32(today)).map { SavedAnime($0, source: library.preferences.source) }
+        // The sorted list points back at the saved items: encoding thousands of them again on every redraw was slow.
+        let saved = Dictionary(result.map { ($0.id, $0) }) { first, _ in first }
+        let source = library.preferences.source
+        return DesktopAnimeMetadata.shared.sortedCatalog(items: result.map(\.anime), sort: sort, today: Int32(today)).map { saved[source + ":" + $0.id] ?? SavedAnime($0, source: source) }
     }
     var body: some View {
+        let values = self.values
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {

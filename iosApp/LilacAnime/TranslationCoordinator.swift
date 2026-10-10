@@ -13,6 +13,8 @@ final class TranslationCoordinator: ObservableObject {
     private var task: Task<Void, Never>?
     private var generation = UUID()
     private var workingFiles: Set<URL> = []
+    /// Rebuilds and writes the subtitle file: the whole file after every batch was too slow for the main thread.
+    private let writer = DispatchQueue(label: "Lilac.TranslationOutput", qos: .userInitiated)
     func translate(_ file: URL, preferences: AppPreferences, position: @escaping () -> Double = { 0 }, seekRevision: @escaping () -> UInt64 = { 0 }, anime: SavedAnime? = nil, fresh: Bool = false, background: Bool = false, localOnly: Bool = false, completion: @escaping (URL) -> Void) {
         cancel(); if fresh { service.clearTranslationCache() }; running = true; error = nil; status = nil; progress = 0
         let token = generation
@@ -24,10 +26,14 @@ final class TranslationCoordinator: ObservableObject {
                     characters = DesktopCatalog.shared.record(anime)?.cast.map(\.shared) ?? []
                 }
                 try Task.checkCancellation()
-                let content = try SubtitleFiles.text(file)
                 let ext = file.pathExtension
-                let lines = SubtitleTools.shared.lines(content: content, extension: ext)
-                let cues = SubtitleTools.shared.cues(content: content, extension: ext)
+                // Reading and parsing the whole file happens off the main thread, which is playing the video.
+                let (content, lines, cues, blanks) = try await Task.detached(priority: .userInitiated) { () throws -> (String, [String], [SubtitleCue], [KotlinInt]) in
+                    let content = try SubtitleFiles.text(file)
+                    return (content, SubtitleTools.shared.lines(content: content, extension: ext), SubtitleTools.shared.cues(content: content, extension: ext),
+                            SubtitleTools.shared.translationBlanks(content: content, extension: ext))
+                }.value
+                try Task.checkCancellation()
                 guard !lines.isEmpty else { throw SubtitleFiles.failure("번역할 자막이 없습니다.") }
                 let settings: [String: Any] = [
                     "desktopPrompt": "prompt-3/local-5/bilingual-1/requests-2", "localOnly": localOnly,
@@ -55,7 +61,7 @@ final class TranslationCoordinator: ObservableObject {
                 if let data = try? Data(contentsOf: partialFile), let saved = try? JSONDecoder().decode([String: String].self, from: data) {
                     kept = saved.filter { !$0.value.isEmpty }
                 }
-                for index in SubtitleTools.shared.translationBlanks(content: content, extension: ext) {
+                for index in blanks {
                     let value = index.intValue; if lines.indices.contains(value) { kept[lines[value]] = "" }
                 }
                 for line in lines where line.rangeOfCharacter(from: .letters) == nil { kept[line] = line }
@@ -65,12 +71,15 @@ final class TranslationCoordinator: ObservableObject {
                 workingFiles.insert(working)
                 @MainActor func publish() throws {
                     guard token == generation else { return }
-                    let translated = lines.map { kept[$0] ?? $0 }
-                    let output = SubtitleTools.shared.replace(content: content, extension: ext, lines: translated)
-                    try output.write(to: working, atomically: true, encoding: .utf8)
-                    try JSONEncoder().encode(kept).write(to: partialFile, options: .atomic)
+                    let translated = lines.map { kept[$0] ?? $0 }, saved = kept
                     progress = Double(lines.filter { kept[$0] != nil }.count) / Double(lines.count)
-                    completion(working)
+                    writer.async { [weak self] in
+                        do {
+                            try SubtitleTools.shared.replace(content: content, extension: ext, lines: translated).write(to: working, atomically: true, encoding: .utf8)
+                            try JSONEncoder().encode(saved).write(to: partialFile, options: .atomic)
+                        } catch { return }
+                        DispatchQueue.main.async { guard let self, token == self.generation, self.running else { return }; completion(working) }
+                    }
                 }
                 if !kept.isEmpty { try publish(); status = "중단된 번역을 이어서 진행합니다." }
                 var provider = preferences.translationProvider
@@ -179,11 +188,21 @@ final class TranslationCoordinator: ObservableObject {
                 guard token == generation else { return }
                 let outcome = TranslationOutcome(lines: lines, kept: kept)
                 guard outcome.translated > 0 else { throw terminalFailure ?? SubtitleFiles.failure("번역 결과를 받지 못했습니다.") }
-                let output = SubtitleTools.shared.replace(content: content, extension: ext, lines: lines.map { kept[$0] ?? $0 })
                 // A partial result is usable, but must never masquerade as a finished cache hit.
                 let destination = outcome.failed == 0 ? resultFile : SubtitleFiles.translations.appendingPathComponent(cacheID + "-partial-" + token.uuidString + "." + ext)
-                try output.write(to: destination, atomically: true, encoding: .utf8)
-                try SubtitleFiles.associateFonts(SubtitleFiles.fonts(for: file), with: destination)
+                let finished = lines.map { kept[$0] ?? $0 }
+                // After the batches still being written, so none of them replaces the finished file in the player.
+                let written: Result<Void, Error> = await withCheckedContinuation { continuation in
+                    writer.async {
+                        continuation.resume(returning: Result {
+                            try SubtitleTools.shared.replace(content: content, extension: ext, lines: finished).write(to: destination, atomically: true, encoding: .utf8)
+                            try SubtitleFiles.associateFonts(SubtitleFiles.fonts(for: file), with: destination)
+                        })
+                    }
+                }
+                try written.get()
+                try Task.checkCancellation()
+                guard token == generation else { return }
                 if outcome.failed == 0 { try? FileManager.default.removeItem(at: partialFile) }
                 completion(destination); progress = 1; running = false
                 if outcome.failed > 0 { status = "\(outcome.failed)줄은 번역하지 못해 원문으로 남겼습니다." }

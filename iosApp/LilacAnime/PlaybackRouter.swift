@@ -13,9 +13,11 @@ final class PlaybackRouter: ObservableObject {
 
 struct PlaybackButton<Content: View>: View {
     @EnvironmentObject private var playback: PlaybackRouter
-    let item: PlaybackItem
-    @ViewBuilder let content: () -> Content
-    var body: some View { Button { playback.open(item) } label: { content() } }
+    /// Made when pressed: an episode list builds one per row on every redraw, each carrying the series' other episodes.
+    let item: () -> PlaybackItem
+    let content: () -> Content
+    init(item: @autoclosure @escaping () -> PlaybackItem, @ViewBuilder content: @escaping () -> Content) { self.item = item; self.content = content }
+    var body: some View { Button { playback.open(item()) } label: { content() } }
 }
 
 @MainActor

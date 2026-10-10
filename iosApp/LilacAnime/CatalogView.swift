@@ -327,6 +327,7 @@ struct DetailView: View {
                 let ordered = newestFirst ? Array(server.episodes.reversed()) : server.episodes
                 let pages = max(1, (ordered.count + pageSize - 1) / pageSize)
                 let current = min(page, pages - 1)
+                let saved = savedAnime(server.episodes)
                 HStack(spacing: 10) {
                     Button { newestFirst.toggle(); UserDefaults.standard.set(newestFirst, forKey: sortKey); page = 0 } label: {
                         Label(newestFirst ? "최신화순" : "오래된화순", systemImage: "arrow.up.arrow.down").font(.subheadline)
@@ -351,9 +352,9 @@ struct DetailView: View {
                 LazyVStack(spacing: 10) {
                     ForEach(Array(ordered[(current * pageSize)..<min(ordered.count, (current + 1) * pageSize)]), id: \.id) { episode in
                         let index = server.episodes.firstIndex { $0.id == episode.id } ?? 0
-                        let item = playback(server.episodes, index: index)
+                        let item = PlaybackItem(anime: saved, episode: episode)
                         HStack(spacing: 10) {
-                        PlaybackButton(item: item) {
+                        PlaybackButton(item: playback(server.episodes, index: index, saved: saved)) {
                             HStack(spacing: 14) {
                                 Text(episodeName(episode))
                                     .font(.headline).lineLimit(2).minimumScaleFactor(0.5).multilineTextAlignment(.center).frame(width: 44, height: 44)
@@ -382,7 +383,7 @@ struct DetailView: View {
     private var information: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("작품 소개").font(.title3.bold())
-            let overview = DisplayText.shared.plain(value: names.record(SavedAnime(anime, source: source))?.overview.isEmpty == false ? names.record(SavedAnime(anime, source: source))!.overview : anime.description)
+            let overview = DisplayText.shared.plain(value: names.record(anime, source: source)?.overview.isEmpty == false ? names.record(anime, source: source)!.overview : anime.description)
             Text(overview.isEmpty ? "등록된 소개가 없습니다." : overview)
                 .font(.subheadline).lineSpacing(6).foregroundStyle(.secondary)
             Divider()
@@ -430,8 +431,9 @@ struct DetailView: View {
     private func downloadLabel(_ state: DownloadStore.EpisodeState) -> String {
         switch state { case .completed: return "다운로드 삭제"; case .active: return "다운로드 취소"; case .stopped: return "다운로드 다시 시작"; case .idle: return "다운로드" }
     }
-    private func playback(_ episodes: [Episode], index: Int) -> PlaybackItem {
-        let saved = SavedAnime(AnimeSnapshot.shared.withEpisodes(anime: anime, episodes: episodes), source: source)
+    private func savedAnime(_ episodes: [Episode]) -> SavedAnime { SavedAnime(AnimeSnapshot.shared.withEpisodes(anime: anime, episodes: episodes), source: source) }
+    private func playback(_ episodes: [Episode], index: Int, saved: SavedAnime? = nil) -> PlaybackItem {
+        let saved = saved ?? savedAnime(episodes)
         var item = PlaybackItem(anime: saved, episode: episodes[index])
         item.next = episodes.dropFirst(index + 1).map { PlaybackItem(anime: saved, episode: $0) }
         item.preceding = episodes.prefix(index).map { PlaybackItem(anime: saved, episode: $0) }

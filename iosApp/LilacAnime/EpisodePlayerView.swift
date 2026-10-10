@@ -342,9 +342,9 @@ final class EpisodePlayerModel: ObservableObject {
             if ["kairan", "csora", "anissia"].contains(selectedProvider) { library.preferences.subtitleProvider = selectedProvider }
             else if selectedProvider == "reanime" && library.preferences.subtitleProvider != "manual" { library.preferences.subtitleProvider = "auto" }
         }
-        if translate && selectedProvider != "user" && saved?.translated != true && library.preferences.translationPreferences(automatic: true) != nil && !SubtitleFiles.isKorean(url) { self.translate(library: library, manual: false) }
+        if translate && selectedProvider != "user" && saved?.translated != true && library.preferences.translationPreferences(automatic: true) != nil && !isKoreanSubtitle(url) { self.translate(library: library, manual: false) }
         else { prepareAlongside(library: library) }
-        if automatic && saved?.translated != true && !SubtitleFiles.isKorean(url) && !["kairan", "csora", "anissia", "user"].contains(selectedProvider) { offerKorean(library: library) }
+        if automatic && saved?.translated != true && !isKoreanSubtitle(url) && !["kairan", "csora", "anissia", "user"].contains(selectedProvider) { offerKorean(library: library) }
         prefetchNext(library: library, token: generation)
     }
     private func preferredSubtitle(_ files: [URL], asset: SubtitleAsset? = nil) -> URL? {

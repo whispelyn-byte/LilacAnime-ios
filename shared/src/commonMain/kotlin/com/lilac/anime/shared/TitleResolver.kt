@@ -6,12 +6,17 @@ object TitleCandidates {
         fun normalize(text: String) = text.lowercase().replace("…", "...").replace(Regex("\\s+"), "")
         val q = normalize(query)
         val tokens = query.split(Regex("\\s+")).filter { it.length >= 2 }.map(::normalize)
+        // Links come in document order, so neighbours share a section: its text is read once, not once per link.
+        var section: com.fleeksoft.ksoup.nodes.Element? = null
+        var sectionText = ""
         return Ksoup.parse(html, "https://namu.wiki/").select("a[href]").mapNotNull { anchor ->
             val href = anchor.absUrl("href")
             val title = anchor.text().trim()
             if (!href.startsWith("https://namu.wiki/w/") || !isKorean(title) ||
                 title in listOf("나무위키", "최근 변경", "최근 토론", "편집", "역링크")) return@mapNotNull null
-            val card = normalize(anchor.closest("section")?.text().orEmpty())
+            val closest = anchor.closest("section")
+            if (closest !== section) { section = closest; sectionText = normalize(closest?.text().orEmpty()) }
+            val card = sectionText
             var score = if (q.isNotBlank() && card.contains(q)) 10000 else 0
             score += tokens.count { card.contains(it) } * 500
             if (anchor.parent()?.tagName() == "h4") score += 300

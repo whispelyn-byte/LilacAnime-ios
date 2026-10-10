@@ -57,6 +57,20 @@ final class DeviceSyncTests: XCTestCase {
     }
 }
 
+final class SavedAnimeTests: XCTestCase {
+    func testDecodedSnapshotFollowsItsChangesAndIsNotSaved() throws {
+        var saved = SavedAnime(AnimeSnapshot.shared.decode(content: #"{"id":"a","title":"하나"}"#), source: "reanime")
+        let copy = saved
+        XCTAssertEqual(saved.anime.title, "하나")
+        saved.snapshot = AnimeSnapshot.shared.encode(anime: AnimeSnapshot.shared.decode(content: #"{"id":"a","title":"둘"}"#))
+        XCTAssertEqual(saved.anime.title, "둘")
+        XCTAssertEqual(copy.anime.title, "하나")
+        let data = try JSONEncoder().encode(saved)
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("decoded"))
+        XCTAssertEqual(try JSONDecoder().decode(SavedAnime.self, from: data).anime.title, "둘")
+    }
+}
+
 final class BackgroundWriterTests: XCTestCase {
     func testChangesCloseTogetherAreWrittenOnceWithTheLatestValue() throws {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("state.json")

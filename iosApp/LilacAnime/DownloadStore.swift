@@ -120,24 +120,28 @@ final class DownloadStore: ObservableObject {
         configuration.isDiscretionary = false
         configuration.sessionSendsLaunchEvents = true
         configuration.httpMaximumConnectionsPerHost = 4
+        configuration.timeoutIntervalForRequest = 180
         return URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
     }()
     private let indexFile: URL?
     private var file: URL { indexFile ?? Self.directory.appendingPathComponent("index.json") }
     init(index: URL? = nil, restoreSession: Bool = true) {
         indexFile = index
+        var continuing: Set<String> = []
         if let data = try? Data(contentsOf: file), let saved = try? JSONDecoder().decode([DownloadEntry].self, from: data) {
+            continuing = Set(saved.filter { $0.status == "다운로드 중" }.map(\.id))
             entries = saved.map { entry in var item = entry; if restoreSession && (item.status == "다운로드 중" || item.status == "준비 중") { item.status = "중단됨" }; return item }
         }
         delegate.owner = self
         guard restoreSession else { restoring = false; return }
+        let resumeIDs = continuing
         session.getAllTasks { [weak self] found in
             Task { @MainActor in
                 guard let self else { return }
                 for task in found {
                     guard let task = task as? URLSessionDownloadTask, let description = task.taskDescription else { continue }
                     let id = description.components(separatedBy: "|")[0]
-                    guard let entry = self.entries.first(where: { $0.id == id }), DownloadIdentity.accepts(description, attempt: entry.attemptID) else { task.cancel(); continue }
+                    guard resumeIDs.contains(id), let entry = self.entries.first(where: { $0.id == id }), DownloadIdentity.accepts(description, attempt: entry.attemptID) else { task.cancel(); continue }
                     self.backgroundTasks[description] = task
                     self.update(id) { $0.status = "다운로드 중" }
                 }

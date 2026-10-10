@@ -3,6 +3,91 @@
   "desktopVersion": "0.5.9",
   "files": [
     {
+      "desktop": "electron/desktop-state.cjs",
+      "sha256": "89a4d714a5112324dd3312fad95a7bfc44b120efe3134f632407909cececff85",
+      "uncommitted": true,
+      "category": "runtime",
+      "ios": [
+        "iosApp/LilacAnime/LilacAnimeApp.swift",
+        "iosApp/LilacAnime/LibraryStore.swift"
+      ]
+    },
+    {
+      "desktop": "electron/download-transfer.cjs",
+      "sha256": "afd01d2b60c17c02819bba29bfadd270a561eed6e8af8f64f9baf20b814eb6b8",
+      "uncommitted": true,
+      "category": "runtime",
+      "ios": [
+        "iosApp/LilacAnime/BackgroundDownloads.swift",
+        "iosApp/LilacAnime/DownloadStore.swift"
+      ]
+    },
+    {
+      "desktop": "electron/tmdb-client.cjs",
+      "sha256": "e7a98e598626f7ecd041a7f7122565de3ff32268cbaf0d735e173b129995dc82",
+      "uncommitted": true,
+      "category": "runtime",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/TmdbRequestGate.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/TmdbTitleResolver.kt"
+      ]
+    },
+    {
+      "desktop": "tests/desktop-state.test.cjs",
+      "sha256": "339fc1c8423ea8c030a132b8a7fd495d32fa7eb5a823a36b51f27985c22d03ae",
+      "uncommitted": true,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/download-manager.test.cjs",
+      "sha256": "29025d069814b246eb4eaea109dcec60807f05d9423938602fb5bcd06a48ba08",
+      "uncommitted": true,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/download-transfer.test.cjs",
+      "sha256": "065c133700443742145c743bb34192608e33ac5445a3f56e84c0c5fc37493fec",
+      "uncommitted": true,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/issue7.electron.cjs",
+      "sha256": "775dff0032f84a2b5fe1a8cf9bf025220b1182b6695c1142255b781c0c902d70",
+      "uncommitted": true,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/tmdb-client.test.cjs",
+      "sha256": "590dab64c68dd33f816995dc50f19af8181e9814d1be28afbf4e0200c1837ba1",
+      "uncommitted": true,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
       "desktop": ".github/workflows/build.yml",
       "sha256": "5fbd6509d7bf59c95d6cd72fe232eeb2bc1df497ea89a37ce0695e594c7981dc",
       "uncommitted": false,
@@ -45,8 +130,8 @@
     },
     {
       "desktop": "electron/download-manager.cjs",
-      "sha256": "0d153a2db187c81be8c6f65119e7a4717c79660fd387446107da6eadc3e8d1cb",
-      "uncommitted": false,
+      "sha256": "ac24d5cac1fd8c498991801f12e3a08f5fcf36ba803736957cbab5ac89413f97",
+      "uncommitted": true,
       "category": "runtime",
       "ios": [
         "iosApp/LilacAnime/DownloadStore.swift",
@@ -76,8 +161,8 @@
     },
     {
       "desktop": "electron/main.cjs",
-      "sha256": "cafd1a61d30c8e9328c267ba69c5b8d66fb43ca5fd3f82c328bdc9a4b3129444",
-      "uncommitted": false,
+      "sha256": "7541d3fcb87db039bc66575980394c3865d4dd23cc7a36dad40cc8c58a86474f",
+      "uncommitted": true,
       "category": "runtime",
       "ios": [
         "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt",
@@ -107,8 +192,8 @@
     },
     {
       "desktop": "electron/preload.cjs",
-      "sha256": "775e18e8dabb5744bbcd110c35fd016a734579212ebaa0a6569ed5ca15fdb53b",
-      "uncommitted": false,
+      "sha256": "f307c306ab22035c28f865238a47353e7074d382238623df497cdc71c651aaf5",
+      "uncommitted": true,
       "category": "runtime",
       "ios": [
         "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
@@ -201,8 +286,8 @@
     },
     {
       "desktop": "src/app.js",
-      "sha256": "011891797a201b4b1984f5cfc805689c0092cc8137776b7b93485773106d27c1",
-      "uncommitted": false,
+      "sha256": "ee3449f99b2df65fcbbcc1745ed853c02d1c1ec6fb09a682334553dc23b87836",
+      "uncommitted": true,
       "category": "runtime",
       "ios": [
         "iosApp/LilacAnime/DesktopShell.swift",
@@ -283,8 +368,8 @@
     },
     {
       "desktop": "src/index.html",
-      "sha256": "3ff9cb995e1acee40d3486b4c1c1d3615176268fc2794bcb9ca4f0e0098577bf",
-      "uncommitted": false,
+      "sha256": "fdbd723f1ae8d00a0ecebde71f9483a73b088bd0701db7f859c8bda68e7fe968",
+      "uncommitted": true,
       "category": "runtime",
       "ios": [
         "iosApp/LilacAnime/DesktopShell.swift",
@@ -515,8 +600,8 @@
     },
     {
       "desktop": "tests/catalog-title-retry.test.cjs",
-      "sha256": "99ac49f8b8070524cca156d7095226c8d509ac290e6d862fc6ae495b8ea32b01",
-      "uncommitted": false,
+      "sha256": "f33edb1cf9e6b0465d7cbff7bb43fe009452bcd5edb91b441794ed535a2b3c90",
+      "uncommitted": true,
       "category": "validation",
       "ios": [
         "iosApp/LilacAnimeTests",
@@ -813,6 +898,20 @@
       ]
     },
     {
+      "name": "desktopSettings",
+      "ios": [
+        "iosApp/LilacAnime/LilacAnimeApp.swift",
+        "iosApp/LilacAnime/DesktopShell.swift"
+      ]
+    },
+    {
+      "name": "setTrayMode",
+      "ios": [
+        "iosApp/LilacAnime/LilacAnimeApp.swift",
+        "iosApp/LilacAnime/DesktopShell.swift"
+      ]
+    },
+    {
       "name": "addDownload",
       "ios": [
         "iosApp/LilacAnime/DownloadStore.swift",
@@ -821,6 +920,13 @@
     },
     {
       "name": "cancelDownload",
+      "ios": [
+        "iosApp/LilacAnime/DownloadStore.swift",
+        "iosApp/LilacAnime/DownloadTransfer.swift"
+      ]
+    },
+    {
+      "name": "controlDownloads",
       "ios": [
         "iosApp/LilacAnime/DownloadStore.swift",
         "iosApp/LilacAnime/DownloadTransfer.swift"

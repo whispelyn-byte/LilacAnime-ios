@@ -11,6 +11,8 @@ class CloudCooldownTest {
         assertTrue(CloudCooldown.canSwitch("qwen", 403, "free tier quota exceeded"))
         assertFalse(CloudCooldown.canSwitch("qwen", 403, "invalid key"))
         assertFalse(CloudCooldown.canSwitch("openai", 429, "insufficient_quota billing"))
+        assertTrue(CloudCooldown.canSwitch("openai", 503, "billing service unavailable"))
+        assertTrue(CloudCooldown.canSwitch("openai", 404, "billing model not found"))
         assertEquals(3600, CloudCooldown.seconds("qwen", 403, "quota", 12345))
     }
 }

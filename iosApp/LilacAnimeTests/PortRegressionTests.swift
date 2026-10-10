@@ -3,6 +3,28 @@ import LilacShared
 @testable import LilacAnime
 
 final class PortRegressionTests: XCTestCase {
+    func testVideoAndAudioPlaylistsKeepSharedKeysReachable() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let master = "#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",DEFAULT=YES,URI=\"audio.m3u8\"\n#EXT-X-STREAM-INF:BANDWIDTH=1000,AUDIO=\"audio\"\nvideo.m3u8\n"
+        let manifests = ["/master.m3u8": master,
+            "/video.m3u8": "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"shared.key\"\n#EXTINF:5,\nv.ts\n#EXT-X-ENDLIST",
+            "/audio.m3u8": "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"shared.key\"\n#EXTINF:5,\na.ts\n#EXT-X-ENDLIST"]
+        let stream = ResolvedStream(label: "영상", url: URL(string: "https://fixture.test/master.m3u8")!, referer: "", headers: [:])
+        let (root, parts, _) = try await HLSPlanBuilder(stream: stream, folder: folder, quality: "Auto", fetch: { url, _ in
+            (Data(manifests[url.path]!.utf8), HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        }).build()
+        XCTAssertEqual(parts.count, 3)
+        let key = try XCTUnwrap(parts.first { $0.url.path == "/shared.key" })
+        let rootText = try String(contentsOf: folder.appendingPathComponent(root), encoding: .utf8)
+        for child in HLSData.references(rootText, base: folder.appendingPathComponent(root)) {
+            let text = try String(contentsOf: child, encoding: .utf8)
+            XCTAssertTrue(text.contains(key.name))
+            let references = HLSData.references(text, base: folder.appendingPathComponent(root))
+            XCTAssertTrue(references.allSatisfy { resource in parts.contains { $0.name == resource.lastPathComponent } })
+        }
+    }
     func testKoreanSubtitleDecodingDoesNotMistakeLegacyBytesForUTF16() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

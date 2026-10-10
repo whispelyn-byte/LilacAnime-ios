@@ -60,11 +60,14 @@ actor HLSPlanBuilder {
     private let stream: ResolvedStream
     private let folder: URL
     private let quality: String
+    private let fetch: @Sendable (URL, ResolvedStream) async throws -> (Data, HTTPURLResponse)
     private var files: [URL: String] = [:]
     private var parts: [URL: DownloadPart] = [:]
     private var active: Set<URL> = []
     private var identity: [String] = []
-    init(stream: ResolvedStream, folder: URL, quality: String) { self.stream = stream; self.folder = folder; self.quality = quality }
+    init(stream: ResolvedStream, folder: URL, quality: String, fetch: @escaping @Sendable (URL, ResolvedStream) async throws -> (Data, HTTPURLResponse) = { try await HLSData.fetch($0, stream: $1) }) {
+        self.stream = stream; self.folder = folder; self.quality = quality; self.fetch = fetch
+    }
     func build() async throws -> (String, [DownloadPart], String) {
         let root = try await playlist(stream.url, depth: 0)
         return (root, parts.values.sorted { $0.name < $1.name }, SubtitleFiles.key(identity.joined(separator: "\n")))
@@ -80,7 +83,7 @@ actor HLSPlanBuilder {
         guard depth < 8, !active.contains(url), files.count < 10000 else { throw SubtitleFiles.failure("재생목록 구조가 잘못되었습니다.") }
         if let existing = files[url] { return existing }
         active.insert(url); defer { active.remove(url) }
-        let (body, _) = try await HLSData.fetch(url, stream: stream)
+        let (body, _) = try await fetch(url, stream)
         var text = try HLSData.manifest(body, key: stream.manifestKey)
         text = HLSData.selectVariant(text, quality: quality)
         let name = filename(url, manifest: true); files[url] = name

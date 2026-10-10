@@ -3,6 +3,13 @@ import LilacShared
 @testable import LilacAnime
 
 final class PortRegressionTests: XCTestCase {
+    func testRefreshedCommunityAttachmentRetriesChangedLinksOnly() {
+        var tried = Set<String>()
+        XCTAssertTrue(CommunityAttachmentAttempt.claim(post: "post", links: ["old", "fonts"], tried: &tried))
+        XCTAssertFalse(CommunityAttachmentAttempt.claim(post: "post", links: ["fonts", "old"], tried: &tried))
+        XCTAssertTrue(CommunityAttachmentAttempt.claim(post: "post", links: ["new", "fonts"], tried: &tried))
+        XCTAssertTrue(CommunityAttachmentAttempt.claim(post: "other", links: ["old", "fonts"], tried: &tried))
+    }
     func testVideoAndAudioPlaylistsKeepSharedKeysReachable() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

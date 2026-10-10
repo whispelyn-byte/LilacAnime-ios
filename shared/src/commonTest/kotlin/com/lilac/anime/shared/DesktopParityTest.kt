@@ -64,10 +64,12 @@ class DesktopParityTest {
     @Test fun communityLinksMatchDesktopEpisodeBundlesFontsAndShiftedNumbering() {
         for (test in desktopOracle.list("community").filterIsInstance<JsonObject>()) {
             val input = test.obj("input"); val expected = test.obj("expected")
-            val result = DesktopCommunity.links(CommunityPost(input.text("title"), "https://fixture.test/post", input.text("html")), input.number("episode")!!)
+            val number = input.text("episode").toDouble()
+            val result = DesktopCommunity.links(CommunityPost(input.text("title"), "https://fixture.test/post", input.text("html")), number.toInt(), episodeNumber = number)
             assertEquals(expected.list("links").map { it.jsonPrimitive.content }, result.links, input.toString())
-            assertEquals(expected.number("episode"), result.episode)
+            assertEquals(expected.text("episode").toDouble(), result.episodeNumber)
             assertEquals(expected["strict"]?.jsonPrimitive?.booleanOrNull ?: false, result.strict)
+            assertEquals(expected["bundle"]?.jsonPrimitive?.booleanOrNull ?: false, result.bundle)
         }
     }
     @Test fun desktopCloudResponsePreservesPartialAndRejectsStrayIds() {

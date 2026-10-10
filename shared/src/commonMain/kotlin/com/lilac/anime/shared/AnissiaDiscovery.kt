@@ -96,19 +96,20 @@ internal class AnissiaDiscovery(private val repository: SourceRepository) {
                         .map { KairanPost(it.text(), it.absUrl("href")) }
                 }
                 val candidates = posts.distinctBy { it.url }
+                val number = episodeKey.toDoubleOrNull()?.takeIf { it.isFinite() && it > 0 } ?: episode.toDouble()
                 val likely = candidates.filter { post ->
                     val own = DesktopCommunity.episodes(post.title)
                     val season = DesktopTitleRules.explicitSeason(post.title)
-                    ((season ?: 1) == DesktopTitleRules.season(subject) && own.has(episode) ||
-                        season == null && offsets.any { own.has(episode + it) }) &&
+                    ((season ?: 1) == DesktopTitleRules.season(subject) && own.has(number) ||
+                        season == null && offsets.any { own.has(number + it) }) &&
                         maxOf(DesktopCommunity.score(subject, post.title), DesktopCommunity.score(title, post.title)) >= .52
                 }.take(4)
                 for (post in likely) if (pages[post.url] == null) attempt { repository.getText(post.url) }?.let { pages[post.url] = it }
                 val hydrated = candidates.mapNotNull { post -> pages[post.url]?.let { CommunityPost(post.title, post.url, it) } }
-                val direct = DesktopCommunity.rank(hydrated, subject, episode, offsets).firstOrNull()
-                    ?: DesktopCommunity.rank(hydrated, title, episode, offsets).firstOrNull()
+                val direct = DesktopCommunity.rank(hydrated, subject, episode, offsets, number).firstOrNull()
+                    ?: DesktopCommunity.rank(hydrated, title, episode, offsets, number).firstOrNull()
                 if (direct != null) {
-                    output += direct.links.map { link -> SubtitleAsset("Anissia · " + maker.optString("name"), link, "anissia", direct.score, direct.episode, direct.strict, direct.bundle, direct.post.url) }
+                    output += direct.links.map { link -> SubtitleAsset("Anissia · " + maker.optString("name"), link, "anissia", direct.score, direct.episode, direct.strict, direct.bundle, direct.post.url, direct.episodeNumber) }
                     continue
                 }
                 val match = DesktopEpisodeRules.findPost(subject, episode, candidates, episodeKey, offsets) ?: continue

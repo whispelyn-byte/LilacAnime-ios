@@ -236,7 +236,7 @@ final class EpisodePlayerModel: ObservableObject {
     }
     private func preferredSubtitle(_ files: [URL], asset: SubtitleAsset? = nil) -> URL? {
         if let asset, ["kairan", "csora", "anissia"].contains(asset.source) {
-            let index = DesktopCommunityFiles.shared.select(names: files.map(\.lastPathComponent), sizes: files.map { KotlinLong(value: Int64((try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)) }, episode: Double(asset.episode?.intValue ?? item.number), strict: asset.strict, bundle: asset.bundle, season: DesktopTitleRules.shared.season(title: item.anime.title))
+            let index = DesktopCommunityFiles.shared.select(names: files.map(\.lastPathComponent), sizes: files.map { KotlinLong(value: Int64((try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)) }, episode: asset.matchedEpisode?.doubleValue ?? Double(asset.episode?.intValue ?? item.number), strict: asset.strict, bundle: asset.bundle, season: DesktopTitleRules.shared.season(title: item.anime.title))
             return index >= 0 && Int(index) < files.count ? files[Int(index)] : nil
         }
         return files.first { SubtitleEpisodeMatcher.shared.matches(name: $0.lastPathComponent, episodeNumber: Int32(item.number), expectedSeason: nil) } ?? (files.count == 1 ? files.first : nil)

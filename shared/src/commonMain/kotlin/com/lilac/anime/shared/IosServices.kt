@@ -51,6 +51,9 @@ class IosServices {
     fun findSubtitles(provider: String, title: String, episode: Int, episodeKey: String, anilistId: Int, completion: (List<SubtitleAsset>?, String?) -> Unit) {
         scope.launch { call(completion) { discovery.search(provider, title, episode, episodeKey, anilistId) } }
     }
+    fun refreshSubtitles(provider: String, title: String, episode: Int, episodeKey: String, anilistId: Int, completion: (List<SubtitleAsset>?, String?) -> Unit) {
+        scope.launch { call(completion) { discovery.search(provider, title, episode, episodeKey, anilistId, fresh = true) } }
+    }
     fun translate(content: String, extension: String, config: TranslationConfig, progress: (Int, Int) -> Unit, partial: (String) -> Unit, completion: (String?, String?) -> Unit) {
         scope.launch { call(completion) {
             val lines = SubtitleTools.lines(content, extension)

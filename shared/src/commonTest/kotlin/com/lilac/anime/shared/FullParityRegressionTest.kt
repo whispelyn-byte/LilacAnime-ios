@@ -39,6 +39,9 @@ class FullParityRegressionTest {
         assertTrue(DesktopCommunity.links(CommunityPost("작품", "https://fixture.test/", "<a href='/13.ass'>13화</a>"), 1).links.isEmpty())
         assertEquals(13, DesktopCommunity.links(CommunityPost("작품 2기", "https://fixture.test/", "<a href='/13.ass'>13화</a>"), 1, listOf(12), true).episode)
         assertFalse(DesktopCommunity.episodes("12.5화").has(5))
+        assertTrue(DesktopCommunity.episodes("1, 3화 / 10–12화 / 12.5화자막 / EP. 14").has(12.5))
+        val decimal = DesktopCommunity.rank(listOf(CommunityPost("어떤 작품 12.5화 자막", "https://fixture.test/", "<a href='/12.5.ass'>자막</a>")), "어떤 작품", 12, emptyList(), 12.5).single()
+        assertEquals(12.5, decimal.episodeNumber)
     }
     @Test fun reanimeMetadataMatchesActualDesktopFunctionAcrossCatalogAndDetailParsers() {
         val fixtures = desktopOracle.list("reanime").filterIsInstance<JsonObject>()

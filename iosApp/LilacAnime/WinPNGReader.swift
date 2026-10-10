@@ -8,7 +8,7 @@ final class WinPNGReader: NSObject, WKNavigationDelegate {
     private let webView = WKWebView(frame: .zero)
     private var pending: CheckedContinuation<[[String: String]], Error>?
     private var timeout: Task<Void, Never>?
-    static func subtitle(_ url: URL, episode: Int, matched: Bool) async throws -> URL? {
+    static func subtitle(_ url: URL, episode: Double, matched: Bool) async throws -> URL? {
         let reader = WinPNGReader()
         let entries = try await reader.read(url).filter { $0["ass"]?.isEmpty == false || $0["raw"]?.isEmpty == false || $0["smi"]?.isEmpty == false }
         let extra = "non-?telop|\\bNC(?:OP|ED)\\b|tokuten|\\bSP\\d|\\bPV\\b|\\bCM\\b|menu|preview|trailer"

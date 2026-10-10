@@ -35,7 +35,8 @@ struct LilacAnimeApp: App {
                     EpisodePlayerView(item: presentation.item)
                         .environmentObject(library).environmentObject(downloads)
                 }
-                .sheet(item: $updater.changelog) { ChangelogSheet(release: $0) }
+                // Not over the player: the notes wait until playback is closed.
+                .sheet(item: Binding(get: { playback.presentation == nil ? updater.changelog : nil }, set: { updater.changelog = $0 })) { ChangelogSheet(release: $0) }
                 .tint(LilacStyle.accent)
                 .preferredColorScheme(UIShowcase.enabled || library.preferences.theme == "system" ? nil : (library.preferences.theme == "light" ? .light : .dark))
                 .task { SubtitleFiles.restoreFonts(); downloads.library = library; if !UIShowcase.enabled { DesktopUpdater.shared.automaticCheck() } }

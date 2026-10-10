@@ -38,6 +38,24 @@ final class MPVEngine: ObservableObject {
     private var preferences = AppPreferences()
     private var notifications: [NSObjectProtocol] = []
     private var remoteTargets: [(MPRemoteCommand, Any)] = []
+    /// Values mpv reports through property observation; the main thread never waits on the mpv core for them.
+    private var observed: [ObservedProperty: Double] = [:]
+    /// Settings already sent, so a repeated configure (a subtitle attached, a preference saved) does not make mpv
+    /// reconfigure the video output while it is starting.
+    private var configured: [String: String] = [:]
+    private var configuredSpeed: Double?
+    private var lastNowPlaying: (paused: Bool, duration: Int, speed: Double, at: Date)?
+    private enum ObservedProperty: UInt64, CaseIterable {
+        case position = 1, duration, pause, cache, volume, mute, speed, tracks
+        var name: String { ["time-pos", "duration", "pause", "paused-for-cache", "volume", "mute", "speed", "track-list"][Int(rawValue) - 1] }
+        var format: mpv_format {
+            switch self {
+            case .pause, .cache, .mute: return MPV_FORMAT_FLAG
+            case .tracks: return MPV_FORMAT_NODE
+            default: return MPV_FORMAT_DOUBLE
+            }
+        }
+    }
 
     func attach(_ layer: CAMetalLayer) {
         guard handle == nil else { return }
@@ -52,6 +70,8 @@ final class MPVEngine: ObservableObject {
         }
         let result = mpv_initialize(context)
         guard result >= 0 else { error = String(cString: mpv_error_string(result)); mpv_terminate_destroy(context); handle = nil; return }
+        configured = [:]; configuredSpeed = nil; observed = [:]
+        for property in ObservedProperty.allCases { mpv_observe_property(context, property.rawValue, property.name, property.format) }
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in self?.poll() }
         // The player's volume and mute stay as they were left (app.js playerVolume / playerMuted).
         if let saved = UserDefaults.standard.object(forKey: "player.volume") as? Double { volume = max(0, min(100, saved)); set("volume", String(volume)) }
@@ -68,19 +88,24 @@ final class MPVEngine: ObservableObject {
         let presentation = PlayerPresentation(settings)
         aspect = presentation.aspect; fit = presentation.fit.rawValue
         applyPresentation()
-        setSpeed(settings.speed)
-        set("sub-scale", (settings.subtitleSize / 100).description)
-        set("sub-delay", settings.subtitleOffset.description)
-        set("sub-font", settings.subtitleFont.isEmpty ? "sans-serif" : settings.subtitleFont)
-        set("sub-color", settings.subtitleColor); set("sub-border-color", settings.outlineColor)
-        set("sub-border-size", settings.outlineWidth.description)
-        set("sub-bold", settings.subtitleBold ? "yes" : "no")
-        set("sub-pos", (100 - settings.subtitlePadding).description)
-        set("sub-margin-x", "36")
-        set("sub-font-size", "36")
-        set("sub-ass", settings.assEffects ? "yes" : "no")
-        set("sub-ass-override", pendingSubtitle?.pathExtension.lowercased() == "ass" && settings.assEffects ? "no" : settings.vttStyle == false ? "strip" : "yes")
-        set("sub-fonts-dir", SubtitleFiles.fontDirectory.path)
+        if configuredSpeed != settings.speed { configuredSpeed = settings.speed; setSpeed(settings.speed) }
+        configure("sub-scale", (settings.subtitleSize / 100).description)
+        configure("sub-delay", settings.subtitleOffset.description)
+        configure("sub-font", settings.subtitleFont.isEmpty ? "sans-serif" : settings.subtitleFont)
+        configure("sub-color", settings.subtitleColor); configure("sub-border-color", settings.outlineColor)
+        configure("sub-border-size", settings.outlineWidth.description)
+        configure("sub-bold", settings.subtitleBold ? "yes" : "no")
+        configure("sub-pos", (100 - settings.subtitlePadding).description)
+        configure("sub-margin-x", "36")
+        configure("sub-font-size", "36")
+        configure("sub-ass", settings.assEffects ? "yes" : "no")
+        configure("sub-ass-override", assOverride)
+        configure("sub-fonts-dir", SubtitleFiles.fontDirectory.path)
+    }
+    private var assOverride: String { pendingSubtitle?.pathExtension.lowercased() == "ass" && preferences.assEffects ? "no" : preferences.vttStyle == false ? "strip" : "yes" }
+    private func configure(_ name: String, _ value: String) {
+        guard configured[name] != value else { return }
+        configured[name] = value; set(name, value)
     }
     func load(_ stream: ResolvedStream, resume: Double = 0) {
         finishSpaceHold()
@@ -103,7 +128,7 @@ final class MPVEngine: ObservableObject {
         applyPresentation()
     }
     var presentation: PlayerPresentation { PlayerPresentation(aspect: aspect, fit: PlayerFit(rawValue: fit) ?? .contain) }
-    private func applyPresentation() { for (name, value) in presentation.mpvOptions { set(name, value) } }
+    private func applyPresentation() { for (name, value) in presentation.mpvOptions.sorted(by: { $0.key < $1.key }) { configure(name, value) } }
     func setSpeed(_ value: Double) { speed = value; set("speed", value.description) }
     func beginSpaceHold() {
         guard spaceHold == nil else { return }
@@ -131,12 +156,19 @@ final class MPVEngine: ObservableObject {
     private(set) var seekRevision: UInt64 = 0
     func seek(_ seconds: Double) { seekRevision &+= 1; command(["seek", max(0, seconds).description, "absolute+exact"]) }
     func skip(_ delta: Double) { seek(position + delta) }
-    func subtitle(_ file: URL) { pendingSubtitle = file; configure(preferences); if fileLoaded { command(["sub-add", file.path, "select"]) } }
+    func subtitle(_ file: URL) { pendingSubtitle = file; configure("sub-ass-override", assOverride); if fileLoaded { command(["sub-add", file.path, "select"]) } }
     func reloadSubtitle() { command(["sub-reload"]) }
     func selectTrack(_ track: MediaTrack) { set(track.type == "audio" ? "aid" : "sid", track.id.description) }
     func toggleSubtitleVisibility() { subtitlesVisible.toggle(); set("sub-visibility", subtitlesVisible ? "yes" : "no") }
     func disableSubtitles() { set("sid", "no") }
-    func set(_ name: String, _ value: String) { if let handle { mpv_set_property_string(handle, name, value) } }
+    /// Asynchronous: mpv copies the value, and the main thread does not wait for the core (which may itself be waiting on
+    /// the main thread while the video output starts).
+    func set(_ name: String, _ value: String) {
+        guard let handle, let copy = strdup(value) else { return }
+        defer { free(copy) }
+        var pointer: UnsafeMutablePointer<CChar>? = copy
+        _ = withUnsafeMutablePointer(to: &pointer) { mpv_set_property_async(handle, 0, name, MPV_FORMAT_STRING, $0) }
+    }
     private func command(_ arguments: [String]) {
         guard let handle else { return }
         let allocated = arguments.map { strdup($0) }
@@ -145,27 +177,26 @@ final class MPVEngine: ObservableObject {
         let result = mpv_command_async(handle, 0, &values)
         if result < 0 { error = String(cString: mpv_error_string(result)) }
     }
-    private func double(_ property: String) -> Double {
-        guard let handle else { return 0 }
-        var value = 0.0
-        return mpv_get_property(handle, property, MPV_FORMAT_DOUBLE, &value) >= 0 && value.isFinite ? value : 0
-    }
-    private func flag(_ property: String) -> Bool {
-        guard let handle else { return false }
-        var value: Int32 = 0
-        mpv_get_property(handle, property, MPV_FORMAT_FLAG, &value)
-        return value != 0
-    }
     private func poll() {
         guard let handle else { return }
         while let event = mpv_wait_event(handle, 0), event.pointee.event_id != MPV_EVENT_NONE {
             switch event.pointee.event_id {
+            case MPV_EVENT_PROPERTY_CHANGE:
+                guard let property = ObservedProperty(rawValue: event.pointee.reply_userdata), let data = event.pointee.data else { break }
+                let change = data.assumingMemoryBound(to: mpv_event_property.self).pointee
+                guard let value = change.data else { observed[property] = 0; break }
+                switch change.format {
+                case MPV_FORMAT_DOUBLE: let number = value.assumingMemoryBound(to: Double.self).pointee; observed[property] = number.isFinite ? number : 0
+                case MPV_FORMAT_FLAG: observed[property] = value.assumingMemoryBound(to: Int32.self).pointee != 0 ? 1 : 0
+                case MPV_FORMAT_NODE: if property == .tracks { updateTracks(value.assumingMemoryBound(to: mpv_node.self).pointee) }
+                default: break
+                }
             case MPV_EVENT_FILE_LOADED:
                 fileLoaded = true
                 configure(preferences)
                 if resumePosition > 0 { seek(resumePosition); resumePosition = 0 }
                 if let pendingSubtitle { command(["sub-add", pendingSubtitle.path, "select"]) }
-                updateTracks(); play()
+                play()
             case MPV_EVENT_END_FILE:
                 finishSpaceHold()
                 fileLoaded = false
@@ -177,19 +208,26 @@ final class MPVEngine: ObservableObject {
             default: break
             }
         }
-        position = double("time-pos"); duration = double("duration")
-        paused = flag("pause"); buffering = flag("paused-for-cache"); volume = double("volume"); muted = flag("mute")
-        speed = double("speed"); if paused { finishSpaceHold() }
+        // Published only when they change: every assignment redraws the player controls.
+        let position = observed[.position] ?? 0, duration = observed[.duration] ?? 0
+        if self.position != position { self.position = position }
+        if self.duration != duration { self.duration = duration }
+        if let pause = observed[.pause], paused != (pause != 0) { paused = pause != 0 }
+        if buffering != ((observed[.cache] ?? 0) != 0) { buffering = (observed[.cache] ?? 0) != 0 }
+        if let volume = observed[.volume], self.volume != volume { self.volume = volume }
+        if let mute = observed[.mute], muted != (mute != 0) { muted = mute != 0 }
+        if let speed = observed[.speed], speed > 0, self.speed != speed { self.speed = speed }
+        if paused { finishSpaceHold() }
         if fileLoaded { onProgress?(position, duration) }
+        // The system extrapolates the elapsed time from the rate, so it is told again only when something changes.
+        let now = Date()
+        if let last = lastNowPlaying, last.paused == paused, last.duration == Int(duration), last.speed == speed, now.timeIntervalSince(last.at) < 5 { return }
+        lastNowPlaying = (paused, Int(duration), speed, now)
         MPNowPlayingInfoCenter.default().nowPlayingInfo = [MPNowPlayingInfoPropertyElapsedPlaybackTime: position,
-            MPMediaItemPropertyPlaybackDuration: duration, MPNowPlayingInfoPropertyPlaybackRate: paused ? 0 : double("speed")]
+            MPMediaItemPropertyPlaybackDuration: duration, MPNowPlayingInfoPropertyPlaybackRate: paused ? 0 : speed]
     }
-    private func updateTracks() {
-        guard let handle else { return }
-        var node = mpv_node()
-        guard mpv_get_property(handle, "track-list", MPV_FORMAT_NODE, &node) >= 0 else { return }
-        defer { mpv_free_node_contents(&node) }
-        guard node.format == MPV_FORMAT_NODE_ARRAY, let list = node.u.list, let values = list.pointee.values else { return }
+    private func updateTracks(_ node: mpv_node) {
+        guard node.format == MPV_FORMAT_NODE_ARRAY, let list = node.u.list, let values = list.pointee.values else { tracks = []; return }
         var result: [MediaTrack] = []
         for index in 0..<Int(list.pointee.num) {
             let entry = values[index]
@@ -240,6 +278,7 @@ final class MPVEngine: ObservableObject {
         remoteTargets.forEach { $0.0.removeTarget($0.1) }; remoteTargets = []
         if let handle { mpv_terminate_destroy(handle); self.handle = nil }
         mediaLayer = nil; pendingStream = nil; pendingSubtitle = nil; fileLoaded = false; position = 0; duration = 0
+        observed = [:]; configured = [:]; configuredSpeed = nil; lastNowPlaying = nil
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
 }

@@ -14,12 +14,14 @@ object DesktopCommunityFiles {
         val explicit = Regex("(?<![\\d.])((?:\\d+(?:\\.\\d+)?\\s*[,、&/]\\s*)*\\d+(?:\\.\\d+)?)\\s*(?:화|회|편)").findAll(remaining)
             .flatMap { it.groupValues[1].split(Regex("[,、&/]")).map(String::trim).map(String::toDouble) }.distinct().toList()
         if (explicit.size == 1) return Parsed(explicit.single(), null)
-        val bare = name.replace(Regex("\\[[^\\]]*[^\\d.\\]\\s][^\\]]*]"), " ").replace(Regex("\\((?:끝|완|完|end|fin)\\)", RegexOption.IGNORE_CASE), "").trim()
+        val bare = name.replace(Regex("\\[[^\\]]*]")) { tag -> if (Regex("^\\[\\s*\\d+(?:\\.\\d+)?(?:v\\d+)?\\s*]$", RegexOption.IGNORE_CASE).matches(tag.value)) tag.value else " " }
+            .replace(Regex("\\((?:끝|완|完|end|fin)\\)", RegexOption.IGNORE_CASE), "").trim()
+        if (Regex("\\b(?:no|vol|volume|part|cour|season|movie|level|lv)[\\s.]*\\d+$", RegexOption.IGNORE_CASE).containsMatchIn(bare)) return Parsed(null, null)
         val episode = Regex("(?:^|[\\s_.\\-\\[\\]()])(\\d+(?:\\.\\d+)?)(?:v\\d+)?[\\s\\])]*$", RegexOption.IGNORE_CASE).find(bare)?.groupValues?.get(1)?.toDoubleOrNull()
         return Parsed(episode, null)
     }
     fun select(names: List<String>, sizes: List<Long>, episode: Double, strict: Boolean, bundle: Boolean, season: Int): Int {
-        val extras = Regex("non-?telop|textless|\\bNC(?:OP|ED)\\b|tokuten|\\b(?:PV|CM)\\b|preview|trailer|논텔롭|예고편|특전", RegexOption.IGNORE_CASE)
+        val extras = Regex("non-?telop|textless|(?:^|[^a-z0-9])(?:NC(?:OP|ED)|PV|CM)(?=$|[^a-z0-9])|tokuten|preview|trailer|논텔롭|예고편|특전", RegexOption.IGNORE_CASE)
         val pool = names.indices.filter { !extras.containsMatchIn(names[it]) }.map { it to parse(names[it]) }.filter { season <= 0 || it.second.season == null || it.second.season == season }
         fun quality(index: Int): Int = (mapOf("ass" to 50, "ssa" to 40, "srt" to 30, "vtt" to 20, "smi" to 10)[names[index].substringAfterLast('.').lowercase()] ?: 0) +
             (Regex("(?:\\d|[ _.-])v(\\d+)(?=[ ._\\]\\-]|$)", RegexOption.IGNORE_CASE).find(names[index])?.groupValues?.get(1)?.toIntOrNull() ?: 0).coerceAtMost(9)

@@ -91,7 +91,11 @@ final class DesktopCatalog: ObservableObject {
         }.map(\.anime)
     }
     var known: Int { (catalogs[source] ?? []).filter { names[$0.id]?.korean.isEmpty == false || TitleCandidates.shared.isKorean(title: $0.title) }.count }
-    func needsRefresh(_ source: String) -> Bool { UserDefaults.standard.integer(forKey: "catalog-metadata-revision:" + source) < 2 }
+    func needsRefresh(_ source: String) -> Bool {
+        let defaults = UserDefaults.standard
+        return defaults.integer(forKey: "catalog-metadata-revision:" + source) < 2 ||
+            CatalogIndexMerge.needsRefresh(updated: defaults.object(forKey: "catalog-updated:" + source) as? Date)
+    }
     func start(_ source: String, refresh: Bool = false, titlesOnly: Bool = false) {
         stop(); self.source = source; running = true; error = nil
         let token = generation
@@ -118,7 +122,10 @@ final class DesktopCatalog: ObservableObject {
                 }
                 try Task.checkCancellation()
                 guard token == generation else { return }
-                if !seenPages.isEmpty { UserDefaults.standard.set(2, forKey: "catalog-metadata-revision:" + source) }
+                if !seenPages.isEmpty {
+                    UserDefaults.standard.set(2, forKey: "catalog-metadata-revision:" + source)
+                    UserDefaults.standard.set(Date(), forKey: "catalog-updated:" + source)
+                }
                 status = "Wikidata 한국어 제목 일괄 적용"
                 let bulk: String? = await withCheckedContinuation { continuation in
                     service.catalogKoreanIndex { value, _ in continuation.resume(returning: value) }
@@ -180,6 +187,10 @@ enum CatalogTitleRetry {
     static func delay(auth: Bool, retryAfter: Double) -> Double { max(auth ? 1800 : 60, retryAfter) }
 }
 enum CatalogIndexMerge {
+    static func needsRefresh(updated: Date?, now: Date = Date()) -> Bool {
+        guard let updated else { return true }
+        return now.timeIntervalSince(updated) >= 86400
+    }
     static func merge(_ existing: [SavedAnime], incoming: [SavedAnime]) -> [SavedAnime] {
         var values = existing
         var indices = Dictionary(existing.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { first, _ in first })

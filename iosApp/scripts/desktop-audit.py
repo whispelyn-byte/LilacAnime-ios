@@ -16,7 +16,7 @@ mapping = {
  'electron/anime-glossary.cjs': [shared+'AnimeGlossary.kt'],
  'electron/tmdb-client.cjs': [shared+'TmdbRequestGate.kt',shared+'TmdbTitleResolver.kt'],
  'electron/desktop-state.cjs': [ios+'LilacAnimeApp.swift',ios+'LibraryStore.swift'],
- 'electron/community-matching.cjs': [shared+'DesktopCommunity.kt',shared+'ported/SubtitleEpisodeMatcher.kt',ios+'DesktopSubtitlePreparer.swift'],
+ 'electron/community-matching.cjs': [shared+'DesktopCommunity.kt',shared+'DesktopCommunityFiles.kt',shared+'ported/SubtitleEpisodeMatcher.kt',ios+'DesktopSubtitlePreparer.swift'],
  'electron/download-transfer.cjs': [ios+'BackgroundDownloads.swift',ios+'DownloadStore.swift'],
  'electron/catalog-browser.cjs': [shared+'SourceRepository.kt',shared+'DesktopCatalogTaxonomy.kt'],
  'electron/catalog-updates.cjs': [shared+'DesktopCatalogUpdates.kt',shared+'SourceRepository.kt'],

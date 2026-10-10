@@ -68,7 +68,12 @@ const result = {
     {names:['Anime E12.5.ass','Anime E12.ass'],episode:12.5,strict:true},
     {names:['작품 1~12화.ass','작품 12화.srt'],episode:12,strict:true,bundle:true},
     {names:['Anime.ass','Anime E05.ass'],episode:6},
-    {names:['예고편.ass','작품.ass'],episode:1,strict:true}
+    {names:['예고편.ass','작품.ass'],episode:1,strict:true},
+    {names:['Kaiju No. 8.ass','Show E08.srt'],episode:8,strict:true},
+    {names:['Show Part 2.ass','Show E02.srt'],episode:2,strict:true},
+    {names:['[Show][01v2].ass','Show 01.srt'],episode:1,strict:true},
+    {names:['Show_01_NCOP.ass','Show 01.srt'],episode:1},
+    {names:['Show_01_PV.ass','Show 01.srt'],episode:1}
   ].map(input=>{const files=input.names.map((name,i)=>({file:name,name,size:100+i}));return {input,expected:require(path.join(desktop,'electron/community-matching.cjs')).selectCommunityFile(files,input)?.name??null}}) : []),
   reanime: [
     {anime_id:'sample', title:{english:'Sample',native:'原題'},average_score:87,popularity:99,season:'SPRING',season_year:2025,status:'Not yet released',started_on:'2025-04-12',subbed:0,dubbed:0},

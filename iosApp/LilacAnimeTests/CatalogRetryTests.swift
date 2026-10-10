@@ -31,6 +31,12 @@ final class CatalogRetryTests: XCTestCase {
         XCTAssertEqual(result.map(\.id), ["reanime:1", "reanime:2", "reanime:3"])
         XCTAssertEqual(result.map(\.title), ["new", "keep", "latest"])
     }
+    func testCatalogRefreshesDailyAndKeepsOldSnapshotUntilThen() {
+        let date = Date(timeIntervalSince1970: 1000)
+        XCTAssertTrue(CatalogIndexMerge.needsRefresh(updated: nil, now: date))
+        XCTAssertFalse(CatalogIndexMerge.needsRefresh(updated: date, now: date.addingTimeInterval(86400 - 1)))
+        XCTAssertTrue(CatalogIndexMerge.needsRefresh(updated: date, now: date.addingTimeInterval(86400)))
+    }
     func testLegacyTitleLookupCacheRefreshesOnceAndExpiresAfterSevenDays() throws {
         let suite = "TitleLookupCacheTests-" + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

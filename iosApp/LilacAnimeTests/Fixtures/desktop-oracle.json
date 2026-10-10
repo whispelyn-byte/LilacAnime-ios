@@ -132,6 +132,59 @@
         "strict": true
       },
       "expected": "작품.ass"
+    },
+    {
+      "input": {
+        "names": [
+          "Kaiju No. 8.ass",
+          "Show E08.srt"
+        ],
+        "episode": 8,
+        "strict": true
+      },
+      "expected": "Show E08.srt"
+    },
+    {
+      "input": {
+        "names": [
+          "Show Part 2.ass",
+          "Show E02.srt"
+        ],
+        "episode": 2,
+        "strict": true
+      },
+      "expected": "Show E02.srt"
+    },
+    {
+      "input": {
+        "names": [
+          "[Show][01v2].ass",
+          "Show 01.srt"
+        ],
+        "episode": 1,
+        "strict": true
+      },
+      "expected": "[Show][01v2].ass"
+    },
+    {
+      "input": {
+        "names": [
+          "Show_01_NCOP.ass",
+          "Show 01.srt"
+        ],
+        "episode": 1
+      },
+      "expected": "Show 01.srt"
+    },
+    {
+      "input": {
+        "names": [
+          "Show_01_PV.ass",
+          "Show 01.srt"
+        ],
+        "episode": 1
+      },
+      "expected": "Show 01.srt"
     }
   ],
   "reanime": [

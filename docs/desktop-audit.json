@@ -9,6 +9,7 @@
       "category": "runtime",
       "ios": [
         "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopCommunity.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopCommunityFiles.kt",
         "shared/src/commonMain/kotlin/com/lilac/anime/shared/ported/SubtitleEpisodeMatcher.kt",
         "iosApp/LilacAnime/DesktopSubtitlePreparer.swift"
       ]

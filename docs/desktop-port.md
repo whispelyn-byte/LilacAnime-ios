@@ -1,6 +1,6 @@
 # Desktop → iOS 이식 목록
 
-기준: [LilacAnime-desktop 0.5.9](https://github.com/whispelyn-byte/LilacAnime-desktop/tree/4550d61725a8b57e6e890e97bd0f25244a8cf164). 한국어 제목 검색 실패·30분 재시도, 자막 중앙 정렬과 길게 누르기 변경을 포함해 비교했습니다.
+최신 기준: [LilacAnime-desktop 0.5.10](https://github.com/whispelyn-byte/LilacAnime-desktop/tree/f38763949d9e8b3be2284bf97207a960bd642443). 한국어 제목 검색 실패·30분 재시도, 자막 중앙 정렬과 길게 누르기 변경을 포함해 비교했습니다. 리비전 8의 추가 수정과 검증 범위는 [테스터 제보 및 최신 대조](tester-fixes.md)에 기록합니다.
 데스크탑 preload의 콘텐츠·자막·번역·다운로드·업데이트 작업을 아래 네이티브 기능으로 대응했습니다. Electron 창을 iOS 안에서 실행하는 구조는 아닙니다.
 
 2026-10-09의 11개 수정과 TMDB 후속 변경에 이어, 2026-10-10에 전체 파일·API 목록을 다시 대조했습니다. 카탈로그 정렬·분류, 한국어 소스 상세 정보와 AniSkip ID 연결, 클라우드 요청·재시도·부분 결과, HLS 공유 리소스·진행률, 자막 인코딩과 모델 검증을 추가로 수정했습니다. 수정 내용·회귀 검증·남는 플랫폼 차이는 [코드 대조 결과](desktop-code-review.md)에 기록했습니다. 기능 대응 목록은 모든 기기/네트워크 조건의 동일성 판정이 아닙니다.

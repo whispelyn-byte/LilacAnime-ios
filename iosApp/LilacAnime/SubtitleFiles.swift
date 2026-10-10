@@ -82,9 +82,11 @@ enum SubtitleFiles {
     }
     static func text(_ file: URL) throws -> String {
         let data = try Data(contentsOf: file)
-        let encodings: [String.Encoding] = [.utf8,.utf16,.utf16LittleEndian,.utf16BigEndian,.japaneseEUC,.shiftJIS,
-            String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.EUC_KR.rawValue)))]
-        for encoding in encodings { if let value = String(data: data, encoding: encoding), !value.isEmpty { return value } }
+        if data.starts(with: [0xff, 0xfe]), let value = String(data: data.dropFirst(2), encoding: .utf16LittleEndian) { return value }
+        if data.starts(with: [0xfe, 0xff]), let value = String(data: data.dropFirst(2), encoding: .utf16BigEndian) { return value }
+        if let value = String(data: data, encoding: .utf8) { return value.hasPrefix("\u{FEFF}") ? String(value.dropFirst()) : value }
+        let korean = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.EUC_KR.rawValue)))
+        for encoding in [korean, .shiftJIS, .japaneseEUC] { if let value = String(data: data, encoding: encoding), !value.isEmpty { return value } }
         throw failure("자막 문자 인코딩을 읽을 수 없습니다.")
     }
     private static func normalize(_ file: URL) throws -> URL {

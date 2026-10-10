@@ -2,6 +2,16 @@ package com.lilac.anime.shared
 
 /** src/anime-metadata.js; unknown counts stay unknown, including an explicit zero. */
 object DesktopAnimeMetadata {
+    fun sortedCatalog(items: List<Anime>, sort: String, today: Int): List<Anime> {
+        val released = items.filter { sort != "year" || (((it.availableEpisodes ?: 0) > 0 || !it.status.contains("not yet", true)) && releaseDate(it) <= today) }
+        // Kotlin's stable sort retains source order when all desktop sort keys tie.
+        return when (sort) {
+            "popular" -> released.sortedByDescending { it.popularity }
+            "score" -> released.sortedWith(compareByDescending<Anime> { it.score }.thenByDescending { it.popularity })
+            "year" -> released.sortedWith(compareByDescending<Anime> { releaseDate(it) }.thenByDescending { it.popularity })
+            else -> released
+        }
+    }
     fun releaseDate(anime: Anime): Int {
         val date = Regex("^(\\d{4})-(\\d{2})(?:-(\\d{2}))?").find(anime.airedDate)
         if (date != null) return date.groupValues[1].toInt() * 10000 + date.groupValues[2].toInt() * 100 + (date.groupValues[3].toIntOrNull() ?: 1)

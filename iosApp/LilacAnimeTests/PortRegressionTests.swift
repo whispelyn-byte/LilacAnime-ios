@@ -3,6 +3,39 @@ import LilacShared
 @testable import LilacAnime
 
 final class PortRegressionTests: XCTestCase {
+    func testKoreanSubtitleDecodingDoesNotMistakeLegacyBytesForUTF16() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("fixture.srt")
+        try Data([0xbe, 0xc8, 0xb3, 0xe7]).write(to: file) // EUC-KR 안녕
+        XCTAssertEqual(try SubtitleFiles.text(file), "안녕")
+        try (Data([0xff, 0xfe]) + "안녕".data(using: .utf16LittleEndian)!).write(to: file)
+        XCTAssertEqual(try SubtitleFiles.text(file), "안녕")
+        try Data("\u{FEFF}안녕".utf8).write(to: file)
+        XCTAssertEqual(try SubtitleFiles.text(file), "안녕")
+    }
+    func testDownloadedModelCannotAcceptHTMLDisguisedAsGGUF() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: file) }
+        try Data("<html>not a model, despite its download filename</html>".utf8).write(to: file)
+        XCTAssertThrowsError(try LocalModelFiles.validate(file, requireExtension: false))
+        try (Data([71,71,85,70,3]) + Data(repeating: 0, count: 19)).write(to: file)
+        XCTAssertNoThrow(try LocalModelFiles.validate(file, requireExtension: false))
+        XCTAssertThrowsError(try LocalModelFiles.validate(file))
+    }
+    func testPartialTranslationKeepsUntranslatedLinesRetryableAndCountsUniqueDialogue() {
+        let outcome = TranslationOutcome(lines: ["一行", "一行", "二行", "123", "中文"], kept: ["一行": "첫 줄", "123": "123", "中文": ""])
+        XCTAssertEqual(outcome.translated, 1); XCTAssertEqual(outcome.failed, 1)
+        XCTAssertEqual(TranslationOutcome(lines: ["一行"], kept: [:]).translated, 0)
+        XCTAssertEqual(TranslationOutcome(lines: ["一行"], kept: ["一行": "첫 줄"]).failed, 0)
+    }
+    func testMiruroForcedEnglishTrackDoesNotOutrankSubServer() {
+        let url = URL(string: "https://fixture.test/index.m3u8")!
+        let forced = ResolvedStream(label: "SOFT - anikoto one", url: url, referer: "", headers: [:], subtitles: [RemoteSubtitle(label: "English Signs", url: url, language: "en")])
+        let sub = ResolvedStream(label: "SUB - anikoto two", url: url, referer: "", headers: [:])
+        XCTAssertEqual(DesktopStreamPolicy.ordered([forced, sub], preferRaw: false, preferred: nil, workingProvider: nil).first?.label, sub.label)
+    }
     func testExplicitLocalTranslationCannotSelectCloudBeforeOrAfterFailure() {
         var preferences = AppPreferences(); preferences.translationProvider = "local"
         XCTAssertNil(preferences.translationPreferences(localOnly: true, models: [], hasKey: { _ in true }))
@@ -52,6 +85,8 @@ final class PortRegressionTests: XCTestCase {
         XCTAssertNil(store.entries[0].localFile); XCTAssertFalse(FileManager.default.fileExists(atPath: staged.path))
         XCTAssertFalse(DownloadIdentity.accepts(id + "|" + part + "|" + UUID().uuidString, attempt: attempt))
         XCTAssertNotNil(BackgroundDownloadDelegate.destination(description))
+        store.progress(description, written: 90, expected: 100)
+        XCTAssertNil(store.byteProgress[id])
     }
     @MainActor func testSavingTwentyFirstBackgroundSubtitleKeepsNewOne() throws {
         let item = item()

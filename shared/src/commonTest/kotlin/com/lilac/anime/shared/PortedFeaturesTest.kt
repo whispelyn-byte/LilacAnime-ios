@@ -90,7 +90,7 @@ class PortedFeaturesTest {
             val json = headersOf(HttpHeaders.ContentType, "application/json")
             if (request.url.encodedPath.endsWith("/models")) return@MockEngine respond("""{"models":[{"name":"models/gemini-2.5-flash","supportedGenerationMethods":["generateContent"]},{"name":"models/gemini-2.0-flash","supportedGenerationMethods":["generateContent"]},{"name":"models/gemini-2.5-pro","supportedGenerationMethods":["generateContent"]}]}""", HttpStatusCode.OK, json)
             called += request.url.encodedPath
-            if (request.url.encodedPath.contains("2.5-flash")) respond("""{"error":{"message":"quota exhausted"}}""", HttpStatusCode.TooManyRequests, json)
+            if (request.url.encodedPath.contains("2.5-flash")) respond("""{"error":{"message":"quota exhausted","details":[{"violations":[{"quotaId":"GenerateRequestsPerDay"}]}]}}""", HttpStatusCode.TooManyRequests, json)
             else respond("""{"candidates":[{"content":{"parts":[{"text":"[{\"i\":0,\"t\":\"안녕\"}]"}]}}]}""", HttpStatusCode.OK, json)
         }
         val translator = CloudTranslator(HttpClient(engine) { expectSuccess = true })

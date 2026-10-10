@@ -21,6 +21,7 @@ enum CloudSubtitleScheduler {
             func pending(rush: Bool) -> [Int] {
                 let reserved = Set(active.values.flatMap { $0 }.map { lines[$0] })
                 var translated = cached()
+                for (line, attempts) in missingAttempts where attempts >= 2 { translated[line] = "" }
                 if !rush { for line in reserved { translated[line] = "" } }
                 let limit = rush || first ? 40 : batchLines
                 let candidates = TranslationPriority.indices(starts: cues.map(\.startSeconds), ends: cues.map(\.endSeconds),
@@ -42,7 +43,7 @@ enum CloudSubtitleScheduler {
             }
             func tick() { group.addTask { try await Task.sleep(nanoseconds: 250_000_000); return .tick } }
             tick()
-            while lines.contains(where: { cached()[$0] == nil }) {
+            while lines.contains(where: { cached()[$0] == nil && missingAttempts[$0, default: 0] < 2 }) {
                 try Task.checkCancellation()
                 while active.count < parallel {
                     let next = pending(rush: false); if next.isEmpty { break }; launch(next)
@@ -66,17 +67,18 @@ enum CloudSubtitleScheduler {
                     }
                     let existing = cached()
                     var additions: [String: String] = [:]
-                    var repeatedMissing = false
                     for (index, value) in output.enumerated() where existing[lines[indices[index]]] == nil {
                         let line = lines[indices[index]]
-                        if value.isEmpty { missingAttempts[line, default: 0] += 1; repeatedMissing = repeatedMissing || missingAttempts[line, default: 0] >= 2 }
+                        if value.isEmpty { missingAttempts[line, default: 0] += 1 }
                         else { additions[line] = value }
                     }
                     try save(additions)
-                    if repeatedMissing { group.cancelAll(); service.cancel(); throw SubtitleFiles.failure("API 응답에서 일부 자막 번역이 누락되었습니다.") }
                 }
             }
             group.cancelAll(); service.cancel()
+            if missingAttempts.contains(where: { $0.value >= 2 && cached()[$0.key] == nil }) {
+                throw SubtitleFiles.failure("API 응답에서 일부 자막 번역이 누락되었습니다.")
+            }
         }
     }
 }

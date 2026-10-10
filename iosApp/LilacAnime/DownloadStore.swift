@@ -103,6 +103,7 @@ final class DownloadStore: ObservableObject {
     @Published var byteProgress: [String: Double] = [:]
     @Published var transferRate: [String: Double] = [:]
     private var samples: [String: (Date, Int64)] = [:]
+    private var rates: [String: Double] = [:]
     private let subtitlePreparer = DesktopSubtitlePreparer()
     @Published var error: String?
     @Published private(set) var pendingResolution = 0
@@ -202,6 +203,7 @@ final class DownloadStore: ObservableObject {
     private func start(_ id: String) {
         guard !busy(id), let entry = entries.first(where: { $0.id == id }), entry.localFile == nil else { return }
         let attempt = UUID().uuidString
+        resetProgress(id)
         update(id) { $0.status = "준비 중"; $0.error = nil; $0.attemptID = attempt }
         tasks[id] = Task {
             let background = UIApplication.shared.beginBackgroundTask(withName: "LilacManifestPlan") { [weak self] in Task { @MainActor in self?.cancel(id) } }
@@ -243,7 +245,8 @@ final class DownloadStore: ObservableObject {
                     parts[index].done = FileManager.default.fileExists(atPath: folder.appendingPathComponent(parts[index].name).path)
                 }
                 try Task.checkCancellation()
-                update(id) { $0.planIdentity = identity; $0.rootFile = root; $0.parts = parts; $0.completed = parts.filter(\.done).count; $0.total = parts.count; $0.status = "다운로드 중" }
+                let bytes = parts.filter(\.done).reduce(Int64(0)) { $0 + Int64((try? folder.appendingPathComponent($1.name).resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
+                update(id) { $0.planIdentity = identity; $0.rootFile = root; $0.parts = parts; $0.completed = parts.filter(\.done).count; $0.total = parts.count; $0.bytes = bytes; $0.status = "다운로드 중" }
                 if parts.allSatisfy(\.done) { update(id) { $0.localFile = root; $0.status = "완료"; $0.retries = 0 }; prepareCompletedDownloads(); analyzeCompletedDownloads(); return }
                 pump()
             } catch is CancellationError { update(id) { $0.status = "중단됨" } }
@@ -315,7 +318,12 @@ final class DownloadStore: ObservableObject {
         if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled { update(id) { $0.status = "중단됨" } }
         else { failed(id, error: error) }
     }
-    func backgroundCompleted(_ description: String) { backgroundTasks.removeValue(forKey: description); pump() }
+    func backgroundCompleted(_ description: String) {
+        backgroundTasks.removeValue(forKey: description); samples[description] = nil; rates[description] = nil
+        let id = description.components(separatedBy: "|")[0]
+        transferRate[id] = rates.filter { $0.key.hasPrefix(id + "|") }.values.reduce(0, +)
+        pump()
+    }
     private func pump() {
         guard !restoring else { return }
         var active = Set(backgroundTasks.keys.map { $0.components(separatedBy: "|")[0] })
@@ -342,11 +350,18 @@ final class DownloadStore: ObservableObject {
     }
     func progress(_ description: String, written: Int64, expected: Int64) {
         let id = description.components(separatedBy: "|")[0]
+        guard let entry = entries.first(where: { $0.id == id }), entry.status == "다운로드 중",
+              DownloadIdentity.accepts(description, attempt: entry.attemptID) else { return }
         byteProgress[id] = expected > 0 ? Double(written) / Double(expected) : 0
         if let sample = samples[description], Date().timeIntervalSince(sample.0) >= 1 {
-            transferRate[id] = Double(max(0, written - sample.1)) / Date().timeIntervalSince(sample.0)
+            rates[description] = Double(max(0, written - sample.1)) / Date().timeIntervalSince(sample.0)
+            transferRate[id] = rates.filter { $0.key.hasPrefix(id + "|") }.values.reduce(0, +)
             samples[description] = (Date(), written)
         } else if samples[description] == nil { samples[description] = (Date(), written) }
+    }
+    private func resetProgress(_ id: String) {
+        samples = samples.filter { !$0.key.hasPrefix(id + "|") }; rates = rates.filter { !$0.key.hasPrefix(id + "|") }
+        byteProgress[id] = nil; transferRate[id] = nil
     }
     func pauseAll() { analysisTask?.cancel(); subtitleTask?.cancel(); preparationTask?.cancel(); downloadTranslator.cancel(); stopResolving(); for entry in entries where entry.localFile == nil { cancel(entry.id) } }
     func resumeAll() { enqueue(entries.filter { $0.localFile == nil }.map(\.playback), quality: library?.preferences.quality ?? "Auto") }

@@ -25,11 +25,11 @@ data class PlaybackTrack(val label: String, val url: String, val referer: String
 class SourceRepository(private val client: HttpClient = newSharedClient()) {
     private val linkkf = LinkkfRepository(client)
     private val desktop = DesktopSourceRepository(client)
-    private val filterCache = mutableMapOf<String, SourceFilters>()
+    private val filterCache = mutableMapOf<String, Pair<Long, SourceFilters>>()
     private val updateCache = mutableMapOf<String, Pair<Long, List<Anime>>>()
     suspend fun browse(source: String, query: String = "", page: Int = 1, filter: BrowseFilter = BrowseFilter()): List<Anime> {
         require(page > 0)
-        if (filter.sort == "updated" && source in DesktopCatalogUpdates.supported) {
+        if (filter.sort == "updated" && source in listOf("reanime", "miruro", "ohli24")) {
             val raw = updates(source, page)
             return DesktopCatalogUpdates.filter(raw, filter).filter { query.isBlank() || listOf(it.title, it.romaji, it.english, it.native).any { title -> title.contains(query, true) } }
         }
@@ -98,7 +98,7 @@ class SourceRepository(private val client: HttpClient = newSharedClient()) {
             }
         }
     }
-    suspend fun filters(source: String): SourceFilters = filterCache[source] ?: when (source) {
+    suspend fun filters(source: String): SourceFilters = filterCache[source]?.takeIf { Clock.System.now().toEpochMilliseconds() - it.first < 600000 }?.second ?: when (source) {
         "reanime" -> facets().let { SourceFilters(it.genres, it.years, it.formats, it.statuses, listOf("WINTER", "SPRING", "SUMMER", "FALL"), it.studios, supportsYear = true, supportsSeason = true, sorts = listOf("popular", "year", "updated", "score")) }
         "linkkf" -> linkkf.filters().let { it.copy(supportsYear = it.years.isNotEmpty(), note = "연도는 Linkkf 분류를 따릅니다. 별도의 분기 정보는 제공하지 않습니다.") }
         "animenosub" -> DesktopCatalogTaxonomy.animenosub(getText("https://animenosub.to/anime/"))
@@ -106,7 +106,7 @@ class SourceRepository(private val client: HttpClient = newSharedClient()) {
         "linkani" -> SourceFilters(formats = listOf("TV", "Movie"), supportsYear = true, sorts = listOf("default", "updated"), note = "링크애니는 작품 형태·연도로 모아 볼 수 있습니다. 장르·분기 정보는 제공하지 않습니다.")
         "ohli24" -> SourceFilters(formats = listOf("TV", "Movie"), sorts = listOf("default", "updated"), note = "애니24는 TV 애니·극장판으로 모아 볼 수 있습니다. 연도·분기 정보는 제공하지 않습니다.")
         else -> SourceFilters()
-    }.also { filterCache[source] = it }
+    }.also { filterCache[source] = Clock.System.now().toEpochMilliseconds() to it }
     suspend fun catalog(source: String, page: Int, filter: BrowseFilter, query: String = ""): SourceCatalogPage {
         if (filter.sort == "updated" && source in listOf("reanime", "miruro")) {
             val all = DesktopCatalogUpdates.filter(updateSnapshot(source), filter).filter { query.isBlank() || listOf(it.title, it.romaji, it.english, it.native).any { title -> title.contains(query, true) } }

@@ -7,6 +7,12 @@ import io.ktor.client.engine.mock.*
 import io.ktor.http.*
 
 class DesktopPortTest {
+    @Test fun miruroScoreStatusAndAnimationStudiosMatchDesktopScale() {
+        val raw = Json.parseToJsonElement("""{"id":"show","average_score":87,"status":"NOT_YET_RELEASED","studios":[{"name":"Publisher"},{"name":"Animator","is_animation_studio":true}]}""").jsonObject
+        val item = DesktopSourceParser.miruroAnime(raw)
+        assertEquals(8.7, item.score); assertEquals("Not yet released", item.status)
+        assertEquals(listOf("Animator"), item.studios)
+    }
     @Test fun glossaryPrefersCustomNamesAndLongestPhrase() {
         val hints = TranslationTerminology.hints("先生、よろしくお願いいたします。", "先生=스승님")
         assertTrue(hints.contains("先生 = 스승님"))

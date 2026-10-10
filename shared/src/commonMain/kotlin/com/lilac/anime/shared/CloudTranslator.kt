@@ -14,7 +14,7 @@ import kotlin.time.Duration.Companion.seconds
 data class TranslationConfig(val provider: String, val key: String, val model: String = "", val region: String = "international", val terminology: String = "")
 class CloudTranslator(private val client: HttpClient = HttpClient {
     expectSuccess = true
-    install(HttpTimeout) { requestTimeoutMillis = 150_000; connectTimeoutMillis = 20_000 }
+    install(HttpTimeout) { requestTimeoutMillis = 180_000; connectTimeoutMillis = 20_000 }
 }) {
     private val cache = mutableMapOf<String, List<String>>()
     private val modelLists = mutableMapOf<String, List<String>>()
@@ -27,12 +27,13 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
             "gemini" -> "https://generativelanguage.googleapis.com/v1beta/models"
             "openai" -> "https://api.openai.com/v1/models"
             "qwen" -> "https://" + (if (config.region == "china") "dashscope.aliyuncs.com" else "dashscope-intl.aliyuncs.com") + "/compatible-mode/v1/models"
-            "deepl" -> "https://" + (if (config.key.endsWith(":fx")) "api-free.deepl.com" else "api.deepl.com") + "/v2/usage"
+            "deepl" -> "https://" + (if (config.key.endsWith(":fx", true)) "api-free.deepl.com" else "api.deepl.com") + "/v2/usage"
             else -> error("지원하지 않는 번역 공급자입니다.")
         }
         val names = mutableListOf<String>(); val tokens = mutableSetOf<String>(); var token = ""
         do {
             val root = JSONObject(client.get(endpoint) {
+                timeout { requestTimeoutMillis = 20_000 }
                 if (config.provider == "gemini") {
                     header("x-goog-api-key", config.key); parameter("pageSize", "1000")
                     if (token.isNotEmpty()) parameter("pageToken", token)
@@ -55,7 +56,7 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
             catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
         val preferred = config.model.removePrefix("models/").ifBlank { CloudModelRules.default(config.provider, available) }
         val chain = CloudModelRules.chain(config.provider, preferred, available)
-        return chain.filter { spent[config.provider + ":" + config.region + ":" + config.key.hashCode() + ":" + it]?.hasPassedNow() != false }.ifEmpty { error("번역 모델 사용량이 소진되었습니다. 다른 API나 로컬 AI로 전환하세요.") }
+        return chain.filter { spent[config.provider + ":" + config.region + ":" + config.key.hashCode() + ":" + it]?.hasPassedNow() != false }.ifEmpty { listOf(preferred) }
     }
     suspend fun translate(lines: List<String>, config: TranslationConfig): List<String> {
         if (lines.isEmpty()) return emptyList()
@@ -145,6 +146,7 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
                         }
                     }
                 }
+                if (text.isEmpty()) continue
                 workingShapes[shapeKey] = shape
                 return CloudTranslationText.parseDesktop(text, lines)
             } catch (error: ClientRequestException) {
@@ -154,35 +156,65 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
         error("OpenAI 번역에 실패했습니다.")
     }
     private suspend fun gemini(lines: List<String>, config: TranslationConfig): List<String> {
-        val models = if (config.model.isNotBlank()) listOf(config.model.removePrefix("models/")) else {
-            val root = JSONObject(client.get("https://generativelanguage.googleapis.com/v1beta/models") { header("x-goog-api-key", config.key) }.bodyAsText())
-            val array = root.optJSONArray("models") ?: error("Gemini 모델 목록이 없습니다.")
-            (0 until array.length()).mapNotNull { i -> array.optJSONObject(i)?.takeIf {
-                it.optJSONArray("supportedGenerationMethods")?.toString()?.contains("generateContent") == true
-            }?.optString("name")?.removePrefix("models/") }.sortedBy { if (it.contains("flash")) 0 else 1 }
-        }
-        for (model in models) {
-            try {
-                val body = JSONObject().put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", instruction(config)))))
-                    .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", CloudTranslationText.jsonInput(lines, false))))))
-                    .put("generationConfig", JSONObject().put("responseMimeType", "application/json").put("temperature", 0.3))
-                val root = post("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent", body, apiKey = config.key)
-                val parts = root.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts") ?: error("Gemini 번역 응답이 없습니다.")
-                val text = (0 until parts.length()).mapNotNull { parts.optJSONObject(it)?.takeIf { part -> !part.optBoolean("thought") }?.optString("text") }.joinToString("")
-                return CloudTranslationText.parseDesktop(text, lines)
-            } catch (error: ClientRequestException) {
-                if (error.response.status.value !in listOf(400, 404) || model == models.last()) throw error
+        val model = config.model.ifBlank { "gemini-flash-latest" }
+        val shapeKey = "gemini:" + model
+        val thinking = if (model.startsWith("gemini-2.5")) JSONObject().put("thinkingBudget", if (model.contains("pro")) 128 else 0)
+            else JSONObject().put("thinkingLevel", "low")
+        val schema = JSONObject().put("type", "ARRAY").put("items", JSONObject().put("type", "OBJECT")
+            .put("properties", JSONObject().put("i", JSONObject().put("type", "INTEGER")).put("t", JSONObject().put("type", "STRING")))
+            .put("required", JSONArray().put("i").put("t")))
+        var failure: Exception = IllegalStateException("Gemini 번역에 실패했습니다.")
+        for (shape in (workingShapes[shapeKey] ?: 0)..2) {
+            val generation = JSONObject().put("responseMimeType", "application/json")
+            if (shape < 2) generation.put("responseSchema", schema).put("temperature", 0.3)
+            if (shape == 0) generation.put("thinkingConfig", thinking)
+            for (attempt in 0..3) {
+                try {
+                    val body = JSONObject().put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", instruction(config)))))
+                        .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", CloudTranslationText.jsonInput(lines, false))))))
+                        .put("generationConfig", generation)
+                    val root = JSONObject(client.post("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent") {
+                        contentType(ContentType.Application.Json); header("x-goog-api-key", config.key); setBody(body.toString())
+                    }.bodyAsText())
+                    val parts = root.optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")
+                    val text = if (parts == null) "" else (0 until parts.length()).mapNotNull {
+                        parts.optJSONObject(it)?.takeIf { part -> !part.optBoolean("thought") }?.optString("text")
+                    }.joinToString("")
+                    if (text.isNotEmpty()) {
+                        workingShapes[shapeKey] = shape
+                        return CloudTranslationText.parseDesktop(text, lines)
+                    }
+                    failure = IllegalStateException("Gemini가 빈 응답을 보냈습니다.")
+                    break
+                } catch (e: CancellationException) { throw e }
+                catch (e: ResponseException) {
+                    failure = e
+                    val status = e.response.status.value
+                    val message = e.response.bodyAsText()
+                    if (status in listOf(401, 403, 404) || message.contains("api key", true)) throw e
+                    if (status == 429) {
+                        val wait = GeminiRetryPolicy.waitSeconds(message, attempt) ?: throw e
+                        if (attempt == 3) throw e
+                        delay(((wait + 1) * 1000).toLong()); continue
+                    }
+                    if (status >= 500) { if (attempt > 0) throw e; delay(2500); continue }
+                    break // A simpler shape can be accepted after a 400.
+                } catch (e: HttpRequestTimeoutException) {
+                    failure = e
+                    if (attempt > 0) throw e
+                    delay(2500)
+                }
             }
         }
-        error("사용 가능한 Gemini 모델이 없습니다.")
+        throw failure
     }
     private suspend fun deepl(lines: List<String>, config: TranslationConfig): List<String> {
-        val host = if (config.key.endsWith(":fx")) "api-free.deepl.com" else "api.deepl.com"
+        val host = if (config.key.endsWith(":fx", true)) "api-free.deepl.com" else "api.deepl.com"
         val body = JSONObject().put("text", JSONArray().apply { lines.forEach { put(it) } }).put("target_lang", "KO").put("preserve_formatting", true)
         config.terminology.lineSequence().firstOrNull { it.startsWith("Anime:") }?.let { body.put("context", "Anime subtitles:" + it.removePrefix("Anime:")) }
         val root = post("https://$host/v2/translate", body, "DeepL-Auth-Key " + config.key)
         val values = root.optJSONArray("translations") ?: error("DeepL 결과가 없습니다.")
-        return (0 until values.length()).map { values.optJSONObject(it)?.optString("text").orEmpty() }
+        return (0 until values.length()).map { values.optJSONObject(it)?.optString("text").orEmpty().trim() }
     }
     private suspend fun qwen(lines: List<String>, config: TranslationConfig): List<String> {
         val host = if (config.region == "china") "dashscope.aliyuncs.com" else "dashscope-intl.aliyuncs.com"
@@ -196,8 +228,10 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
         if (shape < 2) body.put("response_format", JSONObject().put("type", "json_object"))
         if (shape == 0) body.put("enable_thinking", false)
         val root = post("https://$host/compatible-mode/v1/chat/completions", body, "Bearer " + config.key)
+        val text = root.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content").orEmpty()
+        if (text.isEmpty()) continue
         workingShapes[shapeKey] = shape
-        return CloudTranslationText.parseDesktop(root.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content").orEmpty(), lines)
+        return CloudTranslationText.parseDesktop(text, lines)
         } catch (error: ClientRequestException) { if (error.response.status != HttpStatusCode.BadRequest || shape == 2) throw error }
         error("Qwen 번역에 실패했습니다.")
     }

@@ -6,6 +6,25 @@ import io.ktor.client.engine.mock.*
 import io.ktor.http.*
 
 class DesktopCatalogFiltersTest {
+    @Test fun updatedAnimenosubAndLinkaniFilterBeforePagination() = runTest {
+        val requests = mutableListOf<String>()
+        val client = HttpClient(MockEngine { request ->
+            requests += request.url.toString()
+            if (request.url.host == "animenosub.to") {
+                assertEquals("update", request.url.parameters["order"])
+                assertEquals("fantasy", request.url.parameters["genre[0]"])
+                assertEquals("TV", request.url.parameters["type"])
+                assertEquals("2", request.url.parameters["page"])
+            } else assertEquals("/list/2/year/2026/page/2/", request.url.encodedPath)
+            respond("<html></html>", headers = headersOf(HttpHeaders.ContentType, "text/html"))
+        })
+        val repository = SourceRepository(client)
+        try {
+            repository.catalog("animenosub", 2, BrowseFilter(genres = listOf("fantasy"), format = "TV", sort = "updated"))
+            repository.catalog("linkani", 2, BrowseFilter(year = "2026", sort = "updated"))
+            assertEquals(2, requests.size)
+        } finally { repository.close() }
+    }
     @Test fun taxonomyKeepsSourceIdsAndAvailableYears() {
         val facets = DesktopCatalogTaxonomy.animenosub("""
             <input name="genre[]" value="slice-of-life"><input name="genre[]" value="fantasy">

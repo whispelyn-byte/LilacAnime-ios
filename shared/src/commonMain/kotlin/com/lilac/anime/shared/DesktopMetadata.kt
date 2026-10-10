@@ -12,6 +12,8 @@ data class AnimeCharacter(val name: String, val native: String, val first: Strin
 data class DesktopMetadata(val korean: String, val english: String, val overview: String, val aliases: List<String>, val characters: List<AnimeCharacter>, val anilistId: Int, val malId: Int, val titleLookupFailure: String = "", val titleFailureCode: String = "", val titleRetryAfterMs: Long = 0)
 internal expect fun normalizeDesktopTitle(value: String): String
 object DesktopTitleRules {
+    fun compareKey(title: String): String = normalizeDesktopTitle(title).lowercase().replace("…", "...")
+        .replace(Regex("[\\s:：'’\"“”!！?？.,·・\\-–—~〜()（）]"), "")
     fun explicitSeason(title: String): Int? = Regex("(?:season|시즌)\\s*(\\d+)|(\\d+)\\s*기(?![가-힣])|(\\d+)(?:st|nd|rd|th)(?:\\s*season)?\\b|[가-힣](\\d)(?=\\s|$)", RegexOption.IGNORE_CASE)
         .find(normalizeDesktopTitle(title))?.groupValues?.drop(1)?.firstOrNull(String::isNotBlank)?.toIntOrNull()
     fun season(title: String): Int {

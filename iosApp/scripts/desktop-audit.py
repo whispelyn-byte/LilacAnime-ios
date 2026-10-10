@@ -14,6 +14,7 @@ shared = 'shared/src/commonMain/kotlin/com/lilac/anime/shared/'
 ios = 'iosApp/LilacAnime/'
 mapping = {
  'electron/anime-glossary.cjs': [shared+'AnimeGlossary.kt'],
+ 'electron/tmdb-client.cjs': [shared+'TmdbRequestGate.kt',shared+'TmdbTitleResolver.kt'],
  'electron/catalog-browser.cjs': [shared+'SourceRepository.kt',shared+'DesktopCatalogTaxonomy.kt'],
  'electron/catalog-updates.cjs': [shared+'DesktopCatalogUpdates.kt',shared+'SourceRepository.kt'],
  'electron/download-manager.cjs': [ios+'DownloadStore.swift',ios+'DownloadTransfer.swift',ios+'DesktopDownloads.swift'],

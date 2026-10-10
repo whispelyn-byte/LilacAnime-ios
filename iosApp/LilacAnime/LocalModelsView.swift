@@ -16,12 +16,12 @@ enum LocalModelFiles {
         }
         return destination
     }
-    static func validate(_ url: URL) throws {
+    static func validate(_ url: URL, requireExtension: Bool = true) throws {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         let header = try handle.read(upToCount: 24) ?? Data()
         guard header.count == 24, header.prefix(4) == Data("GGUF".utf8), (1...3).contains(header[4]) else { throw SubtitleFiles.failure("GGUF 헤더가 올바르지 않습니다.") }
-        guard url.pathExtension.lowercased() == "gguf" else { throw SubtitleFiles.failure("GGUF 모델을 선택하세요.") }
+        guard !requireExtension || url.pathExtension.lowercased() == "gguf" else { throw SubtitleFiles.failure("GGUF 모델을 선택하세요.") }
     }
 
 }
@@ -139,10 +139,12 @@ struct LocalModelsView: View {
                     Task {
                         do {
                             let (temporary, response) = try await URLSession.shared.download(from: url)
+                            defer { try? FileManager.default.removeItem(at: temporary) }
                             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw SubtitleFiles.failure("모델 다운로드 실패") }
                             try FileManager.default.createDirectory(at: LocalModelFiles.directory, withIntermediateDirectories: true)
                             let name = response.suggestedFilename ?? url.lastPathComponent
                             guard name.lowercased().hasSuffix(".gguf") else { throw SubtitleFiles.failure("응답 파일이 GGUF가 아닙니다.") }
+                            try LocalModelFiles.validate(temporary, requireExtension: false)
                             let destination = LocalModelFiles.directory.appendingPathComponent(URL(fileURLWithPath: name).lastPathComponent)
                             try FileManager.default.moveItem(at: temporary, to: destination)
                             library.preferences.selectedGGUF = destination.lastPathComponent; refresh()

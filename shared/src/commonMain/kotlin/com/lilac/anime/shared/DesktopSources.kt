@@ -3,6 +3,7 @@ package com.lilac.anime.shared
 import com.fleeksoft.ksoup.Ksoup
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.plugins.expectSuccess
 import io.ktor.client.request.*
 import io.ktor.http.*
 import kotlinx.serialization.json.*
@@ -45,14 +46,14 @@ object DesktopSourceParser {
     fun miruroAnime(root: JsonObject): Anime {
         val titles = root.obj("title")
         val ids = root.obj("external_ids")
-        return Anime(id = root.text("id"), source = "miruro", score = root.text("average_score").toDoubleOrNull() ?: root.text("score").toDoubleOrNull() ?: 0.0, popularity = root.number("popularity") ?: 0,
+        return Anime(id = root.text("id"), source = "miruro", score = (root.text("average_score").toDoubleOrNull() ?: 0.0) / 10, popularity = root.number("popularity") ?: 0,
             title = titles.text("english").ifBlank { titles.text("romaji").ifBlank { titles.text("native") } },
             english = titles.text("english"), romaji = titles.text("romaji"), native = titles.text("native"),
             poster = root.text("cover_url"), year = root.text("season_year"), format = root.text("format"),
-            season = root.text("season"), totalEpisodes = root.number("episode_count"), availableEpisodes = root.obj("episode_counts").values.mapNotNull { (it as? JsonPrimitive)?.intOrNull }.maxOrNull(),
+            season = root.text("season"), status = root.text("status").lowercase().replace('_', ' ').replaceFirstChar { it.uppercase() }, totalEpisodes = root.number("episode_count"), availableEpisodes = root.obj("episode_counts").values.mapNotNull { (it as? JsonPrimitive)?.intOrNull }.maxOrNull(),
             description = Ksoup.parse(root.text("description")).text(),
             genres = root.list("genres").mapNotNull { (it as? JsonPrimitive)?.contentOrNull },
-            studios = root.list("studios").mapNotNull { (it as? JsonObject)?.text("name") }.filter(String::isNotBlank),
+            studios = root.list("studios").filterIsInstance<JsonObject>().let { all -> all.filter { it.text("is_animation_studio") == "true" }.ifEmpty { all.take(2) } }.map { it.text("name") }.filter(String::isNotBlank),
             airedDate = listOf(root.text("started_on"), root.text("ended_on")).filter(String::isNotBlank).joinToString(" ~ "),
             anilistId = (ids.list("anilist").firstOrNull() as? JsonPrimitive)?.content?.toIntOrNull(),
             malId = (ids.list("mal").firstOrNull() as? JsonPrimitive)?.content?.toIntOrNull(),
@@ -90,9 +91,15 @@ object DesktopSourceParser {
             val picture = card.selectFirst("[data-original]")?.absUrl("data-original").orEmpty().ifBlank { image?.absUrl("src").orEmpty() }
                 .ifBlank { Regex("url\\(\\s*['\"]?([^'\")]+)").find(card.selectFirst("[style*=background-image]")?.attr("style").orEmpty())?.groupValues?.get(1)?.let { (if (it.startsWith("//")) "https:" + it else if (it.startsWith("http")) it else base + "/" + it.trimStart('/')) }.orEmpty() }
             val desc = card.selectFirst(".vod-item-desc")?.text().orEmpty()
+            val counts = Regex("(\\d+)\\s*/\\s*(\\d+)").find(desc)
             Anime(id = id, title = title, poster = picture, source = source, detailUrl = href,
                 format = if (title.contains("극장판") || desc.contains("Movie", true)) "MOVIE" else "TV",
-                year = Regex("(19|20)\\d{2}").find(desc)?.value.orEmpty())
+                year = Regex("(19|20)\\d{2}").find(desc)?.value.orEmpty(),
+                score = card.selectFirst(".vod-item-score")?.text()?.toDoubleOrNull() ?: 0.0,
+                availableEpisodes = if (source == "linkani") counts?.groupValues?.get(1)?.toIntOrNull() else Regex("\\d+").find(card.selectFirst(".show-item-eps")?.text().orEmpty())?.value?.toIntOrNull(),
+                totalEpisodes = counts?.groupValues?.get(2)?.toIntOrNull()?.takeIf { it > 0 },
+                status = card.selectFirst(".cat-tag")?.text().orEmpty(),
+                genres = card.select(".top-list-body-genre a").map { it.text() }.filter(String::isNotBlank))
         }.distinctBy { it.id }
     }
     fun koreanDetail(html: String, summary: Anime, source: String): SourceDetail {
@@ -113,10 +120,12 @@ object DesktopSourceParser {
                 if (url.isBlank()) return@mapIndexedNotNull null
                 val label = link.text().replace(link.selectFirst(".eps-date")?.text().orEmpty(), "").trim()
                 val number = Regex("\\d+").find(label)?.value?.toIntOrNull() ?: (position + 1)
-                Episode(id = url, number = number, title = label.ifBlank { number.toString() + "화" }, videoUrl = url)
+                Episode(id = url, number = number, title = label.ifBlank { number.toString() + "화" }, videoUrl = url,
+                    airedDate = link.selectFirst(".eps-date")?.text()?.takeIf { Regex("^\\d{4}-\\d{2}-\\d{2}$").matches(it) }.orEmpty())
             }.distinctBy { it.id }.sortedBy { it.number }
             if (episodes.isNotEmpty()) servers += EpisodeServer(index + 1, tabs.getOrNull(index).orEmpty().ifBlank { if (source == "linkani") "링크애니" else "애니24" }, episodes)
         }
+        if (source == "ohli24" && servers.isEmpty()) servers += EpisodeServer(1, "애니24", listOf(Episode(summary.detailUrl, 1, "1화", videoUrl = summary.detailUrl)))
         val title = doc.selectFirst(if (source == "linkani") ".detail-info-title" else "meta[property=og:title]")?.let { if (it.tagName() == "meta") it.attr("content").replace(Regex("\\s*자막\\s*다시보기\\s*$"), "") else it.text() }.orEmpty().ifBlank { summary.title }
         val image = doc.selectFirst(if (source == "linkani") ".detail-img img" else ".article-box-img img")
         val poster = image?.absUrl("data-original").orEmpty().ifBlank { image?.absUrl("src").orEmpty() }.ifBlank { doc.selectFirst("meta[property=og:image]")?.attr("content").orEmpty() }.ifBlank { summary.poster }
@@ -125,7 +134,12 @@ object DesktopSourceParser {
         val native = fields["원제"].orEmpty().ifBlank { Regex("원제\\s*[:：]\\s*(.+?)$").find(doc.selectFirst(".box.tv")?.text().orEmpty())?.groupValues?.get(1).orEmpty() }
         val anime = summary.copy(title = title, poster = poster, source = source, description = description,
             native = native, year = year.ifBlank { summary.year }, airedDate = fields["방영일"].orEmpty(),
-            genres = fields["장르"].orEmpty().split(Regex("[,/·]")).map(String::trim).filter(String::isNotBlank),
+            genres = if (source == "linkani") doc.select(".detail-info-desc li").firstOrNull { it.selectFirst("span")?.text()?.contains("장르") == true }?.select("a")?.map { it.text() }.orEmpty()
+                else fields["장르"].orEmpty().split(Regex("[,/·]")).map(String::trim).filter(String::isNotBlank),
+            studios = if (source == "linkani") doc.select(".detail-info-desc li").firstOrNull { it.selectFirst("span")?.text()?.contains("제작사") == true }?.select("a")?.map { it.text() }.orEmpty() else summary.studios,
+            score = doc.selectFirst(".ewave-star")?.attr("score")?.toDoubleOrNull() ?: summary.score,
+            totalEpisodes = Regex("\\d+").find(fields["총화수"].orEmpty())?.value?.toIntOrNull() ?: summary.totalEpisodes,
+            availableEpisodes = servers.flatMap { it.episodes }.maxOfOrNull { it.number },
             episodes = servers.firstOrNull()?.episodes.orEmpty(),
             anilistId = Regex("anilist-(\\d+)\\.").find(poster)?.groupValues?.get(1)?.toIntOrNull() ?: summary.anilistId)
         return SourceDetail(anime, servers)
@@ -168,6 +182,35 @@ data class DesktopPlaybackStream(val label: String, val url: String, val referer
 data class DesktopPlaybackServer(val label: String, val kind: String, val url: String)
 
 internal class DesktopSourceRepository(private val client: HttpClient) {
+    private val nativeIDs = mutableMapOf<String, Pair<Int?, Int?>?>()
+    internal suspend fun lookupNativeIDs(native: String, year: String): Pair<Int?, Int?>? {
+        if (native.isBlank() || Regex("[가-힣]").containsMatchIn(native)) return null
+        val key = "$native|$year"
+        if (nativeIDs.containsKey(key)) return nativeIDs[key]
+        return try {
+            suspend fun ask() = client.post("https://graphql.anilist.co") {
+                expectSuccess = false
+                contentType(ContentType.Application.Json)
+                setBody(buildJsonObject {
+                    put("query", "query(\$search:String){Page(perPage:10){media(search:\$search,type:ANIME){id idMal seasonYear startDate{year} title{native}}}}")
+                    put("variables", buildJsonObject { put("search", native) })
+                }.toString())
+            }
+            var response = ask()
+            if (response.status.value == 429) {
+                delay(((response.headers[HttpHeaders.RetryAfter]?.toDoubleOrNull()?.takeIf { it > 0 } ?: 5.0).coerceAtMost(15.0) * 1000).toLong())
+                response = ask()
+            }
+            check(response.status.isSuccess()) { "AniList HTTP ${response.status.value}" }
+            val rows = Json.parseToJsonElement(response.body<String>()).jsonObject.obj("data").obj("Page").list("media").filterIsInstance<JsonObject>()
+            fun same(row: JsonObject) = DesktopTitleRules.compareKey(row.obj("title").text("native")) == DesktopTitleRules.compareKey(native)
+            fun inYear(row: JsonObject) = year.toIntOrNull()?.takeIf { it > 0 }?.let { it == (row.number("seasonYear") ?: row.obj("startDate").number("year")) } == true
+            val row = rows.firstOrNull { same(it) && inYear(it) } ?: rows.firstOrNull(::same) ?: rows.firstOrNull(::inYear)
+            val result = row?.let { it.number("id") to it.number("idMal") }
+            nativeIDs[key] = result
+            result
+        } catch (error: CancellationException) { throw error } catch (_: Exception) { null }
+    }
     suspend fun serverPages(source: String, url: String, number: Int, anilist: Int): List<DesktopPlaybackServer> {
         if (source == "animenosub") return DesktopSourceParser.animenosubServers(text(url), url)
         if (source != "reanime") return emptyList()
@@ -214,7 +257,7 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
                 values += root.list("data").filterIsInstance<JsonObject>().filter { raw -> filter.sort != "year" ||
                     (raw.text("status") != "NOT_YET_RELEASED" && (raw.number("season_year") ?: 0) in 1..currentCatalogDate().take(4).toInt()) }
                 val next = root.text("next_cursor").ifBlank { root.obj("pagination").text("next_cursor") }
-                if (next.isBlank()) { pages.remove(page + 1); return values.map(DesktopSourceParser::miruroAnime) }
+                if (root.text("has_more") != "true" || next.isBlank() || next == params["cursor"]) { pages.remove(page + 1); return values.map(DesktopSourceParser::miruroAnime) }
                 pages[page + 1] = next; params["cursor"] = next
                 if (values.size >= 15) return values.map(DesktopSourceParser::miruroAnime)
             }
@@ -233,7 +276,11 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
         return DesktopSourceParser.koreanList(text(base + if (query.isBlank()) path else "/view/" + suffix, params), source)
     }
     suspend fun detail(summary: Anime, source: String): SourceDetail {
-        if (source != "miruro") return DesktopSourceParser.koreanDetail(text(summary.detailUrl), summary, source)
+        if (source != "miruro") {
+            val detail = DesktopSourceParser.koreanDetail(text(summary.detailUrl), summary, source)
+            val ids = if (detail.anime.anilistId == null) lookupNativeIDs(detail.anime.native, detail.anime.year) else null
+            return if (ids == null) detail else detail.copy(anime = detail.anime.copy(anilistId = ids.first, malId = ids.second))
+        }
         val root = miruro("anime/" + summary.id)
         val anime = DesktopSourceParser.miruroAnime(root)
         val rows = miruro("anime/" + summary.id + "/episodes", mapOf("limit" to "10000")).list("data")

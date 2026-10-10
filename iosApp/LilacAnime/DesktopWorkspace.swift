@@ -22,26 +22,18 @@ struct DesktopFullCatalog: View {
         if applied.active { return remote.filters?.sorts ?? ["default"] }
         switch library.preferences.source { case "linkkf": return ["default", "year"]; case "linkani": return ["default", "updated"]; case "ohli24": return ["default", "updated"]; default: return ["popular", "year", "updated", "score"] }
     }
-    private var remoteSource: Bool { applied.active || sort == "updated" || ["miruro", "animenosub", "linkani"].contains(library.preferences.source) }
+    private var remoteSource: Bool { (applied.active && !(library.preferences.source == "reanime" && sort == "year")) || sort == "updated" || ["miruro", "animenosub", "linkani"].contains(library.preferences.source) }
     private var values: [SavedAnime] {
         let wanted = DesktopTitleRules.shared.key(title: query)
         let items = UIShowcase.enabled ? UIShowcase.items.map { SavedAnime($0, source: library.preferences.source) } : remoteSource ? remote.items.map { SavedAnime($0, source: library.preferences.source) } : (catalog.catalogs[library.preferences.source] ?? [])
         let result = items.filter { item in
-            (!UIShowcase.enabled || ((applied.format.isEmpty || item.anime.format.caseInsensitiveCompare(applied.format) == .orderedSame) && (applied.year.isEmpty || item.anime.year == applied.year) && (applied.genre.isEmpty || item.anime.genres.contains(applied.genre)))) &&
+            (!(UIShowcase.enabled || !remoteSource) || ((applied.format.isEmpty || item.anime.format.caseInsensitiveCompare(applied.format) == .orderedSame) && (applied.year.isEmpty || item.anime.year == applied.year) && (applied.genre.isEmpty || item.anime.genres.contains(applied.genre)) && (applied.season.isEmpty || item.anime.season.caseInsensitiveCompare(applied.season) == .orderedSame))) &&
             (remoteSource || wanted.isEmpty || ([item.title, catalog.record(item)?.korean ?? "", catalog.record(item)?.english ?? ""] + (catalog.record(item)?.aliases ?? [])).contains { DesktopTitleRules.shared.key(title: $0).contains(wanted) })
         }
         if sort == "default" || remoteSource { return result }
-        return result.sorted { a, b in
-            switch sort {
-            case "year":
-                let left = DesktopAnimeMetadata.shared.releaseDate(anime: a.anime), right = DesktopAnimeMetadata.shared.releaseDate(anime: b.anime)
-                if left != right { return left > right }
-            case "score": if a.anime.score != b.anime.score { return a.anime.score > b.anime.score }
-            case "popular": if a.anime.popularity != b.anime.popularity { return a.anime.popularity > b.anime.popularity }
-            default: break
-            }
-            return catalog.title(a.anime, source: a.source, language: library.preferences.titleLanguage).localizedStandardCompare(catalog.title(b.anime, source: b.source, language: library.preferences.titleLanguage)) == .orderedAscending
-        }
+        let date = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+        let today = (date.year ?? 0) * 10000 + (date.month ?? 0) * 100 + (date.day ?? 0)
+        return DesktopAnimeMetadata.shared.sortedCatalog(items: result.map(\.anime), sort: sort, today: Int32(today)).map { SavedAnime($0, source: library.preferences.source) }
     }
     var body: some View {
         NavigationStack {

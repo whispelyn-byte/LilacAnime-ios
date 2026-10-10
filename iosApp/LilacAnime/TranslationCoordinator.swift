@@ -29,10 +29,11 @@ final class TranslationCoordinator: ObservableObject {
                 let lines = SubtitleTools.shared.lines(content: content, extension: ext)
                 let cues = SubtitleTools.shared.cues(content: content, extension: ext)
                 guard !lines.isEmpty else { throw SubtitleFiles.failure("번역할 자막이 없습니다.") }
-                let credential = SecureKeys.load(preferences.translationProvider)
                 let settings: [String: Any] = [
-                    "desktopPrompt": "prompt-3/local-5/bilingual-1", "localOnly": localOnly,
+                    "desktopPrompt": "prompt-3/local-5/bilingual-1/requests-2", "localOnly": localOnly,
                     "provider": preferences.translationProvider, "model": preferences.translationModel,
+                    "models": preferences.translationModels ?? [:], "cloudFallback": preferences.cloudFallback ?? true,
+                    "credentials": ["gemini", "openai", "qwen", "deepl"].map { SubtitleFiles.key(SecureKeys.load($0)) },
                     "region": preferences.qwenRegion, "local": preferences.selectedGGUF,
                     "context": preferences.contextSize, "maxTokens": preferences.maxTokens,
                     "temperature": preferences.temperature, "topP": preferences.topP, "topK": preferences.topK,
@@ -41,7 +42,7 @@ final class TranslationCoordinator: ObservableObject {
                     "glossary": (preferences.translationGlossary ?? "") + AnimeGlossary.shared.characterTerms(characters: characters) + characters.map { $0.name + $0.gender }.joined(), "fallback": preferences.translationFallback ?? true
                 ]
                 let configuration = try JSONSerialization.data(withJSONObject: settings, options: [.sortedKeys])
-                let cacheID = SubtitleFiles.key(content + String(decoding: configuration, as: UTF8.self) + SubtitleFiles.key(credential))
+                let cacheID = SubtitleFiles.key(content + String(decoding: configuration, as: UTF8.self))
                 try FileManager.default.createDirectory(at: SubtitleFiles.translations, withIntermediateDirectories: true)
                 let resultFile = SubtitleFiles.translations.appendingPathComponent(cacheID + "." + ext)
                 let partialFile = SubtitleFiles.translations.appendingPathComponent(cacheID + ".lines.json")
@@ -78,6 +79,7 @@ final class TranslationCoordinator: ObservableObject {
                 var localKind: String?
                 var attemptedLocal: Set<String> = []
                 var localFailure: Error?
+                var terminalFailure: Error?
                 while lines.contains(where: { kept[$0] == nil }) {
                     try Task.checkCancellation()
                     guard token == generation else { return }
@@ -170,21 +172,37 @@ final class TranslationCoordinator: ObservableObject {
                                   let next = TranslationFallbackPolicy.cloudAfterLocal(localOnly: localOnly, enabled: preferences.translationFallback != false, tried: triedProviders, hasKey: { !SecureKeys.load($0).isEmpty }) {
                             status = "로컬 AI 번역 실패 · " + next + "로 이어서 번역합니다."
                             provider = next; triedProviders.insert(next)
-                        } else { throw error }
+                        } else { terminalFailure = error; break }
                     }
                 }
                 try Task.checkCancellation()
                 guard token == generation else { return }
+                let outcome = TranslationOutcome(lines: lines, kept: kept)
+                guard outcome.translated > 0 else { throw terminalFailure ?? SubtitleFiles.failure("번역 결과를 받지 못했습니다.") }
                 let output = SubtitleTools.shared.replace(content: content, extension: ext, lines: lines.map { kept[$0] ?? $0 })
-                try output.write(to: resultFile, atomically: true, encoding: .utf8)
-                try? FileManager.default.removeItem(at: partialFile)
-                completion(resultFile); progress = 1; running = false
+                // A partial result is usable, but must never masquerade as a finished cache hit.
+                let destination = outcome.failed == 0 ? resultFile : SubtitleFiles.translations.appendingPathComponent(cacheID + "-partial-" + token.uuidString + "." + ext)
+                try output.write(to: destination, atomically: true, encoding: .utf8)
+                try SubtitleFiles.associateFonts(SubtitleFiles.fonts(for: file), with: destination)
+                if outcome.failed == 0 { try? FileManager.default.removeItem(at: partialFile) }
+                completion(destination); progress = 1; running = false
+                if outcome.failed > 0 { status = "\(outcome.failed)줄은 번역하지 못해 원문으로 남겼습니다." }
             } catch is CancellationError { if token == generation { running = false } }
             catch { if token == generation { self.error = error.localizedDescription; running = false } }
         }
     }
     func cancel() { if running { local.cancel(requestID: generation); service.cancel() }; generation = UUID(); task?.cancel(); task = nil; running = false }
     func shutdown() { cancel(); workingFiles.forEach { try? FileManager.default.removeItem(at: $0) }; workingFiles.removeAll(); Task { await local.unload() } }
+}
+
+struct TranslationOutcome {
+    let translated: Int
+    let failed: Int
+    init(lines: [String], kept: [String: String]) {
+        let unique = Set(lines.filter { $0.rangeOfCharacter(from: .letters) != nil && kept[$0] != "" })
+        translated = unique.filter { kept[$0] != nil }.count
+        failed = unique.count - translated
+    }
 }
 
 enum TranslationPriority {

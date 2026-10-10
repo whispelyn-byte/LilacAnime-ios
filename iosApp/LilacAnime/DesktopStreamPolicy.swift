@@ -7,7 +7,9 @@ enum DesktopStreamPolicy {
             let kind = stream.label.components(separatedBy: " - ").first?.lowercased() ?? ""
             let provider = stream.label.components(separatedBy: " - ").dropFirst().joined(separator: " - ").components(separatedBy: " ").first ?? ""
             let clean = ["raw", "soft"].contains(kind)
-            let english = kind == "soft" && stream.subtitles.contains { $0.language.lowercased().hasPrefix("en") || $0.label.localizedCaseInsensitiveContains("english") }
+            let english = kind == "soft" && stream.subtitles.contains {
+                $0.language.lowercased().hasPrefix("en") && $0.label.range(of: "forced|sign", options: [.regularExpression, .caseInsensitive]) == nil
+            }
             let korean = kind == "soft" && stream.subtitles.contains(where: DesktopSubtitlePolicy.isKorean)
             let kindRank: Double = korean ? 0.5 : preferRaw ? (clean ? 1 : kind == "sub" ? 2 : 3) : (english ? 1 : kind == "sub" ? 2 : clean ? 3 : 4)
             return (stream.label == preferred ? 0 : kindRank * 100) + (provider == workingProvider ? 0 : 10) + Double(providers.firstIndex(of: provider) ?? providers.count)

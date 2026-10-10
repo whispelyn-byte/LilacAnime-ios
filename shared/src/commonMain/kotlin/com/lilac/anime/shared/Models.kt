@@ -23,6 +23,7 @@ data class Anime(
     val availableEpisodes: Int? = null,
     val totalEpisodes: Int? = null,
     val format: String = "",
+    val status: String = "",
     val studios: List<String> = emptyList(),
     val source: String = "",
     val romaji: String = "",

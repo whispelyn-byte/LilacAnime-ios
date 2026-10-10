@@ -107,7 +107,9 @@ actor HLSPlanBuilder {
             if childManifests.contains(resource) || resource.pathExtension.lowercased() == "m3u8" {
                 _ = try await playlist(resource, depth: depth + 1)
             } else {
-                let file = filename(resource, namespace: DownloadIdentity.resource(url) + "#" + String(index) + "#"); files[resource] = file
+                // Shared keys/init segments can occur in both video and audio playlists.
+                // Keep the first name so a later playlist cannot orphan the first one's reference.
+                let file = files[resource] ?? filename(resource, namespace: DownloadIdentity.resource(url) + "#" + String(index) + "#"); files[resource] = file
                 identity.append(DownloadIdentity.resource(resource))
                 parts[resource] = DownloadPart(url: resource, name: file)
             }

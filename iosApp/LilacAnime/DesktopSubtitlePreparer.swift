@@ -78,7 +78,7 @@ final class DesktopSubtitlePreparer {
             return searches.task(key) { [weak self] () -> (URL, String)? in
                 guard let self else { return nil }
                 var tried = Set<String>()
-                for round in 0..<(provider == "anissia" ? 1 : 2) {
+                for round in 0..<2 {
                     let assets = await self.find(provider, item: item, context: context, fresh: round > 0)
                     var postKeys: [String] = []
                     let downloads = assets.filter { $0.source != "post" }
@@ -97,7 +97,8 @@ final class DesktopSubtitlePreparer {
                     if provider == "anissia" {
                         for asset in assets where asset.source == "post" {
                             if Task.isCancelled { return nil }
-                            if let url = URL(string: asset.url), let file = try? await WinPNGReader.subtitle(url, episode: Double(item.displayNumber) ?? Double(item.number), matched: true) { return (file, provider) }
+                            guard CommunityAttachmentAttempt.claim(post: asset.url, links: ["WinPNG"], tried: &tried) else { continue }
+                            if let url = URL(string: asset.url), let file = try? await WinPNGReader.subtitle(url, episode: asset.matchedEpisode?.doubleValue ?? Double(item.displayNumber) ?? Double(item.number), matched: true) { return (file, provider) }
                         }
                     }
                 }

@@ -28,15 +28,15 @@ class SubtitleDiscovery(private val repository: SourceRepository = SourceReposit
         val offsets = if (provider == "jimaku") emptyList() else offsets(anilistId, title)
         return when (provider) {
             "jimaku" -> jimaku(anilistId, title, episode)
-            "anissia" -> AnissiaDiscovery(repository).search(title, episode, episodeKey, offsets = offsets)
+            "anissia" -> AnissiaDiscovery(repository, ::communityPosts).search(title, episode, episodeKey, offsets = offsets, fresh = fresh)
             else -> blog(provider, title, episode, episodeKey, offsets, fresh)
         }
     }
     suspend fun makers(title: String) = AnissiaDiscovery(repository).makers(title)
     suspend fun makerSubtitles(title: String, episode: Int, episodeKey: String, website: String, anilistId: Int) =
-        AnissiaDiscovery(repository).search(title, episode, episodeKey, website, offsets(anilistId, title))
+        AnissiaDiscovery(repository, ::communityPosts).search(title, episode, episodeKey, website, offsets(anilistId, title))
     internal suspend fun communityPosts(provider: String, force: Boolean = false): List<CommunityPost> {
-        val base = if (provider == "kairan") "https://kairan03.blogspot.com" else "https://csora556.blogspot.com"
+        val base = if (provider.startsWith("https://")) provider else if (provider == "kairan") "https://kairan03.blogspot.com" else "https://csora556.blogspot.com"
         val cached = blogs[provider] ?: runCatching { readCommunityCache(provider)?.let { Json.decodeFromString<CommunityCache>(it) } }.getOrNull()
         val now = clock()
         if (cached != null && cached.posts.isNotEmpty() && (now - cached.time < (if (force) 600000 else 86400000) || now < (retryAt[provider] ?: 0))) { blogs[provider] = cached; return cached.posts }

@@ -10,6 +10,39 @@ import kotlinx.serialization.json.Json
 import kotlin.test.*
 
 class CommunityIndexTest {
+    @Test fun anissiaLinkedDifferentSeasonNeverBecomesAttachmentOrImageFallback() = runTest {
+        val repository = SourceRepository(HttpClient(MockEngine { request ->
+            val body = when {
+                request.url.encodedPath.contains("/anime/list/") -> """{"data":{"content":[{"animeNo":1,"subject":"장송의 프리렌 2기"}]}}"""
+                request.url.encodedPath.contains("/anime/caption/") -> """{"data":[{"name":"제작자","website":"https://example.tistory.com/1"}]}"""
+                request.url.encodedPath == "/1" -> """<title>장송의 프리렌 1기 1화</title><a href="https://fixture.test/wrong.ass">자막</a>"""
+                else -> ""
+            }
+            respond(body, headers = headersOf(HttpHeaders.ContentType, "application/json"))
+        }))
+        try { assertTrue(AnissiaDiscovery(repository).search("장송의 프리렌 2기", 1, "1").isEmpty()) }
+        finally { repository.close() }
+    }
+    @Test fun anissiaKeepsMultipleMakerPostsAndNicknameEpisodeLabels() = runTest {
+        val repository = SourceRepository(HttpClient(MockEngine { request ->
+            val body = when {
+                request.url.encodedPath.contains("/anime/list/") -> """{"data":{"content":[{"animeNo":1,"subject":"장송의 프리렌"}]}}"""
+                request.url.encodedPath.contains("/anime/caption/") -> """{"data":[{"name":"제작자","website":"https://example.blogspot.com/"}]}"""
+                else -> ""
+            }
+            respond(body, headers = headersOf(HttpHeaders.ContentType, "application/json"))
+        }))
+        try {
+            val found = AnissiaDiscovery(repository) { _, _ -> listOf(
+                CommunityPost("장송의 프리렌 1화", "https://example.blogspot.com/broken", "<a href='https://fixture.test/broken.ass'>자막</a>"),
+                CommunityPost("장송의 프리렌 1화", "https://example.blogspot.com/good", "<a href='https://fixture.test/good.ass'>자막</a>"))
+            }.search("장송의 프리렌", 1, "1")
+            assertEquals(listOf("https://fixture.test/broken.ass", "https://fixture.test/good.ass"), found.filter { it.source == "anissia" }.map { it.url })
+            assertEquals(2, found.count { it.source == "post" })
+            assertEquals("츠레카노", AnissiaTitleRules.nickname("츠레카노 12화 자막 (完)", "계모의 데려온 딸이 전 여친이었다"))
+            assertEquals("계모의 데려온 딸이 전 여친이었다 12화", AnissiaTitleRules.rename("츠레카노 12", "츠레카노", "계모의 데려온 딸이 전 여친이었다"))
+        } finally { repository.close() }
+    }
     private fun feed(start: Int, count: Int, total: Int): String =
         """{"feed":{"openSearch${'$'}totalResults":{"${'$'}t":"$total"},"entry":[""" +
             (start until start + count).joinToString(",") { n ->

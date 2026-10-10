@@ -29,6 +29,8 @@ final class EpisodePlayerModel: ObservableObject {
     @Published var makers: [SubtitleMaker] = []
     @Published var prefetchStatus: String?
     @Published var searching = false
+    @Published private(set) var subtitleResultsProvider = ""
+    @Published private(set) var subtitleSearchError: String?
     @Published var searchTitle = ""
     @Published var subtitleOffset = 0.0
     private let titleLookup = TitleLookup()
@@ -55,8 +57,11 @@ final class EpisodePlayerModel: ObservableObject {
     private var generation = UUID()
     private var subtitleRequest = UUID()
     private var subtitleSearchRequest = UUID()
+    private var subtitleSearchCache: [String: [SubtitleAsset]] = [:]
+    private let subtitleLookup: ((String, @escaping ([SubtitleAsset]?, String?) -> Void) -> Void)?
     private var observers: Set<AnyCancellable> = []
-    init(item: PlaybackItem) {
+    init(item: PlaybackItem, subtitleLookup: ((String, @escaping ([SubtitleAsset]?, String?) -> Void) -> Void)? = nil) {
+        self.subtitleLookup = subtitleLookup
         self.item = item; previous = item.preceding; searchTitle = item.anime.title
         resolver.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observers)
         translation.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observers)
@@ -136,6 +141,7 @@ final class EpisodePlayerModel: ObservableObject {
         save(library: library); engine.pause(); proxy?.stop(); proxy = nil; stopPrefetch(); automaticTask?.cancel(); translation.cancel(); cast.stop()
         cancelSubtitleBackground(); preparer.cancel()
         generation = UUID(); titleLookup.cancel(); searchTitle = item.anime.title; self.item = item; active = nil; subtitle = nil; sourceSubtitle = nil; assets = []; subtitleFiles = []; chapters = []; selectedProvider = ""; skipEntered = nil
+        subtitleSearchRequest = UUID(); subtitleSearchCache = [:]; subtitleResultsProvider = ""; subtitleSearchError = nil; searching = false; makers = []
         loadedSkip = false; lastSave = 0; lastSkipped = ""; systemPlayback = false
         begin(library: library)
     }
@@ -182,10 +188,10 @@ final class EpisodePlayerModel: ObservableObject {
     func stopCast() { cast.stop() }
     func search(_ provider: String) {
         searchProvider = provider
-        subtitleSearchRequest = UUID()
-        let request = subtitleSearchRequest
+        let key = provider == "jimaku" ? provider : provider + ":" + searchTitle
+        let request = beginSubtitleSearch(key: key, provider: provider)
         let token = generation
-        searching = true; error = nil; assets = []; makers = []
+        makers = []
         if provider != "jimaku", searchTitle == item.anime.title, !TitleCandidates.shared.isKorean(title: searchTitle) {
             Task {
                 let anime = item.anime.anime
@@ -194,16 +200,32 @@ final class EpisodePlayerModel: ObservableObject {
                 if let korean { resolved = korean }
                 else { let found = await titleLookup.resolve(searchTitle, aliases: [anime.native, anime.romaji, anime.english]); resolved = found ?? searchTitle }
                 guard token == generation, request == subtitleSearchRequest else { return }
-                searchTitle = resolved; performSubtitleSearch(provider, token: token, request: request)
+                searchTitle = resolved; performSubtitleSearch(provider, key: key, token: token, request: request)
             }
-        } else { performSubtitleSearch(provider, token: token, request: request) }
+        } else { performSubtitleSearch(provider, key: key, token: token, request: request) }
     }
-    private func performSubtitleSearch(_ provider: String, token: UUID, request: UUID) {
+    private func beginSubtitleSearch(key: String, provider: String) -> UUID {
+        subtitleSearchRequest = UUID(); searching = true; subtitleSearchError = nil
+        subtitleResultsProvider = provider; assets = subtitleSearchCache[key] ?? []
+        return subtitleSearchRequest
+    }
+    private func finishSubtitleSearch(_ values: [SubtitleAsset]?, failure: String?, key: String, token: UUID, request: UUID) {
+        guard token == generation, request == subtitleSearchRequest else { return }
+        searching = false; subtitleSearchError = failure
+        // A failed refresh must not erase a successful list. A successful empty
+        // response still clears it, so removed files do not persist forever.
+        guard failure == nil else { return }
+        var seen = Set<String>()
+        assets = (values ?? []).filter { seen.insert($0.source + ":" + $0.url).inserted }
+        subtitleSearchCache[key] = assets
+    }
+    private func performSubtitleSearch(_ provider: String, key: String, token: UUID, request: UUID) {
+        let completion: ([SubtitleAsset]?, String?) -> Void = { [weak self] assets, error in
+            self?.finishSubtitleSearch(assets, failure: error, key: key, token: token, request: request)
+        }
+        if let subtitleLookup { subtitleLookup(provider, completion); return }
         service.findSubtitles(provider: provider, title: searchTitle, episode: Int32(item.number), episodeKey: item.displayNumber,
-            anilistId: item.anime.anime.anilistId?.int32Value ?? Int32(DesktopCatalog.shared.record(item.anime)?.anilist ?? 0)) { [weak self] assets, error in
-                guard token == self?.generation, request == self?.subtitleSearchRequest else { return }
-                self?.assets = assets ?? []; self?.error = error; self?.searching = false
-            }
+            anilistId: item.anime.anime.anilistId?.int32Value ?? Int32(DesktopCatalog.shared.record(item.anime)?.anilist ?? 0), completion: completion)
     }
     func importSubtitle(_ url: URL, library: LibraryStore, headers: [String: String] = [:], translate: Bool = true, provider: String? = nil, asset: SubtitleAsset? = nil) {
         subtitleRequest = UUID()
@@ -342,21 +364,19 @@ final class EpisodePlayerModel: ObservableObject {
     func loadMakers() {
         subtitleSearchRequest = UUID()
         let request = subtitleSearchRequest
-        searching = true; error = nil; assets = []; makers = []
+        searching = true; subtitleSearchError = nil; assets = []; makers = []; subtitleResultsProvider = "anissia"
         let token = generation
         service.subtitleMakers(title: searchTitle) { [weak self] values, failure in
             guard token == self?.generation, request == self?.subtitleSearchRequest else { return }
-            self?.makers = values ?? []; self?.error = failure; self?.searching = false
+            self?.makers = values ?? []; self?.subtitleSearchError = failure; self?.searching = false
         }
     }
     func searchMaker(_ maker: SubtitleMaker) {
-        subtitleSearchRequest = UUID()
-        let request = subtitleSearchRequest
-        searching = true; error = nil; assets = []
+        let key = "maker:" + maker.website + ":" + searchTitle
+        let request = beginSubtitleSearch(key: key, provider: "anissia")
         let token = generation
         service.makerSubtitles(title: searchTitle, episode: Int32(item.number), episodeKey: item.displayNumber, website: maker.website, anilistId: item.anime.anime.anilistId?.int32Value ?? Int32(DesktopCatalog.shared.record(item.anime)?.anilist ?? 0)) { [weak self] values, failure in
-            guard token == self?.generation, request == self?.subtitleSearchRequest else { return }
-            self?.assets = values ?? []; self?.error = failure; self?.searching = false
+            self?.finishSubtitleSearch(values, failure: failure, key: key, token: token, request: request)
         }
     }
     private func stopPrefetch() {
@@ -581,7 +601,7 @@ struct EpisodePlayerView: View {
             Toggle("자막 표시", isOn: Binding(get: { model.engine.subtitlesVisible }, set: { _ in model.engine.toggleSubtitleVisibility() }))
             if let subtitle = model.subtitle { Text(SubtitleNames.label(subtitle.lastPathComponent)).font(.caption).foregroundStyle(.white.opacity(0.65)) }
             if model.searching { ProgressView("자막을 찾는 중") }
-            if let error = model.error { Text(error).font(.caption).foregroundStyle(.red) }
+            if let error = model.subtitleSearchError ?? model.error { Text(error).font(.caption).foregroundStyle(.red) }
         }
         PlayerSettingsGroup("자막 가져올 곳") {
             PlayerChoiceGrid(options: [("auto", "자동"), ("kairan", "Kairan"), ("csora", "Csora"), ("anissia", "Anissia"), ("jimaku", "Jimaku"), ("manual", "직접 선택")], selection: Binding(get: { library.preferences.subtitleProvider ?? "auto" }, set: { library.preferences.subtitleProvider = $0 }), identifier: "player-subtitle-source")
@@ -672,7 +692,11 @@ struct EpisodePlayerView: View {
                             Button("+0.1초") { model.shiftSubtitle(0.1, library: library) }
                         }
                         TextField("한국어 검색 제목", text: $model.searchTitle)
-                        HStack { ForEach(["kairan","csora","anissia","jimaku"], id: \.self) { provider in Button(provider) { model.search(provider) } } }
+                        HStack { ForEach(["kairan","csora","anissia","jimaku"], id: \.self) { provider in
+                            Button(provider == "jimaku" ? "Jimaku" : provider) { model.search(provider) }
+                                .buttonStyle(.bordered).tint(model.subtitleResultsProvider == provider ? .accentColor : .gray)
+                                .accessibilityIdentifier("subtitle-search-" + provider)
+                        } }
                         Button("Anissia 자막 제작자 목록") { model.loadMakers() }
                         ForEach(Array(model.makers.enumerated()), id: \.offset) { _, maker in
                             Button(maker.name + " · " + maker.status) { model.searchMaker(maker) }
@@ -694,14 +718,21 @@ struct EpisodePlayerView: View {
                                 }
                             }
                         }
-                        if model.searching { ProgressView("자막 검색 중…") }
-                        ForEach(Array(model.assets.enumerated()), id: \.offset) { _, asset in
+                        Section(model.subtitleResultsProvider == "jimaku" ? "Jimaku 자막" : "검색 결과") {
+                        if model.searching { ProgressView(model.subtitleResultsProvider == "jimaku" ? "Jimaku에서 찾는 중…" : "자막 검색 중…") }
+                        ForEach(model.assets, id: \.subtitleResultID) { asset in
                             if asset.source == "post", let url = URL(string: asset.url) { Link(SubtitleNames.label(asset.name, fallback: "원본 자막 게시물"), destination: url) }
                             else { Button(SubtitleNames.label(asset.name, url: asset.url)) { if let url = URL(string: asset.url) { model.importSubtitle(url, library: library, provider: asset.source, asset: asset); subtitleSheet = false } } }
+                        }
+                        if let error = model.subtitleSearchError { Text(error).foregroundStyle(.red) }
+                        else if !model.searching && !model.subtitleResultsProvider.isEmpty && model.assets.isEmpty && model.makers.isEmpty { Text("검색된 자막이 없습니다.").foregroundStyle(.secondary) }
                         }
                         if let error = model.error { Text(error).foregroundStyle(.red) }
                     }
     }
+}
+private extension SubtitleAsset {
+    var subtitleResultID: String { source + ":" + url }
 }
 struct PlayerControls: View {
     @EnvironmentObject private var library: LibraryStore

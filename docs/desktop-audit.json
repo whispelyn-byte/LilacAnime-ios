@@ -4,7 +4,7 @@
   "files": [
     {
       "desktop": "electron/community-matching.cjs",
-      "sha256": "df66f6cd30807ee07eaf73027cf78543cf6321c569c72410bdd7abbe303aa1a0",
+      "sha256": "7f80b5b4f067bb3b309f99bc5cd22537b2a73f709bf4a4828596d34efe40a208",
       "uncommitted": true,
       "category": "runtime",
       "ios": [
@@ -45,7 +45,7 @@
     },
     {
       "desktop": "tests/community-matching.test.cjs",
-      "sha256": "6cb9bf50b8c842a36f8d6996bc1c7230d2fefd85c1f50403a981a7827fb07be5",
+      "sha256": "ed6bbceda2c44712df149f2dbc6f2e53d970718956ed92baa296e856c8a228e4",
       "uncommitted": true,
       "category": "validation",
       "ios": [
@@ -56,7 +56,7 @@
     },
     {
       "desktop": "tests/community-search.test.cjs",
-      "sha256": "fcc148e9f28b3cab73fc6b665b0b3344d76a832dbd6a0e2d243bcd3fd099e31e",
+      "sha256": "6b604fcd7fd18bbc81e19eb905801039ef505b97df5d54383f15de4aef844c75",
       "uncommitted": true,
       "category": "validation",
       "ios": [
@@ -194,7 +194,7 @@
     },
     {
       "desktop": "electron/main.cjs",
-      "sha256": "006c0da5849b05f28fca235edfaeca2c5de59d65f4ccdc63b0df08a9e7e83806",
+      "sha256": "92f75611568beea849d875b5e4205d521d0e198e6fb48f0cf3a534045a821c8c",
       "uncommitted": true,
       "category": "runtime",
       "ios": [

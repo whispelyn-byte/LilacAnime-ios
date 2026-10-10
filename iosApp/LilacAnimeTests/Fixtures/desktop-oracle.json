@@ -417,7 +417,9 @@
           "https://fixture.test/3.ass",
           "https://drive.google.com/file/d/fonts/view"
         ],
-        "episode": 3
+        "episode": 3,
+        "strict": false,
+        "bundle": false
       }
     },
     {

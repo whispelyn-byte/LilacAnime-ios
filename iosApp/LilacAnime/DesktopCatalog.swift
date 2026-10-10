@@ -11,9 +11,9 @@ struct CatalogName: Codable {
     var anilist: Int; var mal: Int; var updated: Date; var credential: String
     var titleLookupRevision: Int? = nil
     var castPrepared: Bool? = nil
-    func isFresh(credential: String, cast: Bool, now: Date = Date()) -> Bool {
+    func isFresh(credential: String, cast: Bool, bulk: Bool = false, now: Date = Date()) -> Bool {
         self.credential == credential && (!korean.isEmpty || titleLookupRevision == 1) &&
-            now.timeIntervalSince(updated) < 30 * 86400 && (!cast || castPrepared == true || !self.cast.isEmpty)
+            now.timeIntervalSince(updated) < (bulk ? 30 : 7) * 86400 && (!cast || castPrepared == true || !self.cast.isEmpty)
     }
 }
 @MainActor
@@ -50,7 +50,7 @@ final class DesktopCatalog: ObservableObject {
     func enrich(_ anime: Anime, source: String, cast: Bool = false, force: Bool = false, bulk: Bool = false) async -> Bool {
         let key = source + ":" + anime.id
         let credential = SubtitleFiles.key(SecureKeys.load("tmdb"))
-        if !force, let name = names[key], name.isFresh(credential: credential, cast: cast) { return true }
+        if !force, let name = names[key], name.isFresh(credential: credential, cast: cast, bulk: bulk) { return true }
         if let pending = lookups[key] {
             let success = await pending.value
             if !success || !cast || names[key]?.castPrepared == true || !(names[key]?.cast.isEmpty ?? true) { return success }
@@ -91,6 +91,7 @@ final class DesktopCatalog: ObservableObject {
         }.map(\.anime)
     }
     var known: Int { (catalogs[source] ?? []).filter { names[$0.id]?.korean.isEmpty == false || TitleCandidates.shared.isKorean(title: $0.title) }.count }
+    func needsRefresh(_ source: String) -> Bool { UserDefaults.standard.integer(forKey: "catalog-metadata-revision:" + source) < 2 }
     func start(_ source: String, refresh: Bool = false, titlesOnly: Bool = false) {
         stop(); self.source = source; running = true; error = nil
         let token = generation
@@ -98,7 +99,6 @@ final class DesktopCatalog: ObservableObject {
             defer { if token == generation { running = false } }
             do {
                 var gathered = refresh ? [] : catalogs[source] ?? []
-                var known = Set(gathered.map(\.id))
                 var page: Int32 = 1
                 var seenPages: Set<String> = []
                 while !titlesOnly, !Task.isCancelled, token == generation {
@@ -111,12 +111,14 @@ final class DesktopCatalog: ObservableObject {
                     try Task.checkCancellation()
                     guard token == generation else { return }
                     guard !result.isEmpty, seenPages.insert(result.map(\.id).joined(separator: "|")).inserted else { break }
-                    let fresh = result.map { SavedAnime($0, source: source) }.filter { known.insert($0.id).inserted }
-                    gathered += fresh; catalogs[source] = gathered
+                    gathered = CatalogIndexMerge.merge(gathered, incoming: result.map { SavedAnime($0, source: source) }); catalogs[source] = gathered
                     try persist(gathered, name: source + ".json")
                     page += 1
                     try await Task.sleep(nanoseconds: 400_000_000)
                 }
+                try Task.checkCancellation()
+                guard token == generation else { return }
+                if !seenPages.isEmpty { UserDefaults.standard.set(2, forKey: "catalog-metadata-revision:" + source) }
                 status = "Wikidata 한국어 제목 일괄 적용"
                 let bulk: String? = await withCheckedContinuation { continuation in
                     service.catalogKoreanIndex { value, _ in continuation.resume(returning: value) }
@@ -176,6 +178,17 @@ final class DesktopCatalog: ObservableObject {
 }
 enum CatalogTitleRetry {
     static func delay(auth: Bool, retryAfter: Double) -> Double { max(auth ? 1800 : 60, retryAfter) }
+}
+enum CatalogIndexMerge {
+    static func merge(_ existing: [SavedAnime], incoming: [SavedAnime]) -> [SavedAnime] {
+        var values = existing
+        var indices = Dictionary(existing.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { first, _ in first })
+        for item in incoming {
+            if let index = indices[item.id] { values[index] = item }
+            else { indices[item.id] = values.count; values.append(item) }
+        }
+        return values
+    }
 }
 struct AnimeDisplayTitle: View {
     let anime: Anime; var source: String? = nil

@@ -34,7 +34,7 @@ struct DesktopWorkspace: View {
             }
             .task(id: library.preferences.source) {
                 if !UIShowcase.enabled && !DesktopCatalog.shared.running &&
-                    (DesktopCatalog.shared.catalogs[library.preferences.source] ?? []).isEmpty {
+                    ((DesktopCatalog.shared.catalogs[library.preferences.source] ?? []).isEmpty || DesktopCatalog.shared.needsRefresh(library.preferences.source)) {
                     DesktopCatalog.shared.start(library.preferences.source)
                 }
             }

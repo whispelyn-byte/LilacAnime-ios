@@ -65,7 +65,7 @@ struct DesktopFullCatalog: View {
                     remote.source = library.preferences.source; remote.loadFilters()
                     let remembered = UserDefaults.standard.string(forKey: "allSort:" + library.preferences.source) ?? ""
                     sort = sorts.contains(remembered) ? remembered : sorts[0]; reloadRemote()
-                    if !UIShowcase.enabled && (catalog.catalogs[library.preferences.source] ?? []).isEmpty { catalog.start(library.preferences.source) }
+                    if !UIShowcase.enabled && ((catalog.catalogs[library.preferences.source] ?? []).isEmpty || catalog.needsRefresh(library.preferences.source)) { catalog.start(library.preferences.source) }
                 }
         }
     }

@@ -203,7 +203,7 @@ final class EpisodePlayerModel: ObservableObject {
                 self?.assets = assets ?? []; self?.error = error; self?.searching = false
             }
     }
-    func importSubtitle(_ url: URL, library: LibraryStore, headers: [String: String] = [:], translate: Bool = true, provider: String? = nil) {
+    func importSubtitle(_ url: URL, library: LibraryStore, headers: [String: String] = [:], translate: Bool = true, provider: String? = nil, asset: SubtitleAsset? = nil) {
         subtitleRequest = UUID()
         let request = subtitleRequest
         let token = generation
@@ -212,7 +212,7 @@ final class EpisodePlayerModel: ObservableObject {
                 let files = try await SubtitleFiles.prepare(url, headers: headers)
                 guard token == generation, request == subtitleRequest else { return }
                 subtitleFiles = files
-                if let first = preferredSubtitle(subtitleFiles) { selectSubtitle(first, library: library, translate: translate, provider: provider ?? (url.isFileURL ? "user" : searchProvider)) }
+                if let first = preferredSubtitle(subtitleFiles, asset: asset) { selectSubtitle(first, library: library, translate: translate, provider: provider ?? (url.isFileURL ? "user" : searchProvider)) }
             } catch { if token == generation, request == subtitleRequest { self.error = error.localizedDescription } }
         }
     }
@@ -234,8 +234,12 @@ final class EpisodePlayerModel: ObservableObject {
         if automatic && saved?.translated != true && !SubtitleFiles.isKorean(url) && !["kairan", "csora", "anissia", "user"].contains(selectedProvider) { offerKorean(library: library) }
         prefetchNext(library: library, token: generation)
     }
-    private func preferredSubtitle(_ files: [URL]) -> URL? {
-        files.first { SubtitleEpisodeMatcher.shared.matches(name: $0.lastPathComponent, episodeNumber: Int32(item.number), expectedSeason: nil) } ?? (files.count == 1 ? files.first : nil)
+    private func preferredSubtitle(_ files: [URL], asset: SubtitleAsset? = nil) -> URL? {
+        if let asset, ["kairan", "csora", "anissia"].contains(asset.source) {
+            let index = DesktopCommunityFiles.shared.select(names: files.map(\.lastPathComponent), sizes: files.map { KotlinLong(value: Int64((try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)) }, episode: Double(asset.episode?.intValue ?? item.number), strict: asset.strict, bundle: asset.bundle, season: DesktopTitleRules.shared.season(title: item.anime.title))
+            return index >= 0 && Int(index) < files.count ? files[Int(index)] : nil
+        }
+        return files.first { SubtitleEpisodeMatcher.shared.matches(name: $0.lastPathComponent, episodeNumber: Int32(item.number), expectedSeason: nil) } ?? (files.count == 1 ? files.first : nil)
     }
     private func automaticSubtitle(_ stream: ResolvedStream, library: LibraryStore, token: UUID) {
         subtitleRequest = UUID()
@@ -604,7 +608,7 @@ struct EpisodePlayerView: View {
             PlayerSettingsGroup("검색한 자막") {
                 ForEach(Array(model.assets.enumerated()), id: \.offset) { _, asset in
                     if asset.source == "post", let url = URL(string: asset.url) { Link(asset.name, destination: url) }
-                    else { Button(asset.name) { if let url = URL(string: asset.url) { model.importSubtitle(url, library: library) } } }
+                    else { Button(asset.name) { if let url = URL(string: asset.url) { model.importSubtitle(url, library: library, provider: asset.source, asset: asset) } } }
                 }
             }
         }
@@ -673,7 +677,7 @@ struct EpisodePlayerView: View {
                         if model.searching { ProgressView() }
                         ForEach(Array(model.assets.enumerated()), id: \.offset) { _, asset in
                             if asset.source == "post", let url = URL(string: asset.url) { Link(asset.name, destination: url) }
-                            else { Button(asset.name) { if let url = URL(string: asset.url) { model.importSubtitle(url, library: library); subtitleSheet = false } } }
+                            else { Button(asset.name) { if let url = URL(string: asset.url) { model.importSubtitle(url, library: library, provider: asset.source, asset: asset); subtitleSheet = false } } }
                         }
                         if let error = model.error { Text(error).foregroundStyle(.red) }
                     }

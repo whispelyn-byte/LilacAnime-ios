@@ -13,6 +13,9 @@ final class PlaybackTests: XCTestCase {
             XCTAssertFalse(app.buttons["workspace-menu-close"].exists)
         }
         XCTAssertTrue(app.buttons["전체 작품 둘러보기"].waitForExistence(timeout: 5))
+        menu.tap()
+        let close = app.buttons["workspace-menu-close"]
+        if close.exists { close.tap(); XCTAssertFalse(close.exists); XCTAssertTrue(menu.isHittable) }
     }
     func testLocalModelsBackAndWorkspaceNavigation() {
         let app = XCUIApplication(); app.launchArguments = ["--ui-preview", "workspace"]; app.launch()

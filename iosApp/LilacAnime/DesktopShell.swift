@@ -141,6 +141,7 @@ struct DesktopSavedView: View {
                 }
             }
         }.onAppear { if navigation.showDownloads { tab = 1; navigation.showDownloads = false } }
+            .onChange(of: navigation.showDownloads) { if $0 { tab = 1; navigation.showDownloads = false } }
     }
 }
 

@@ -9,7 +9,7 @@ enum CloudSubtitleScheduler {
     }
     static func translate(lines: [String], cues: [SubtitleCue], provider: String, config: TranslationConfig,
                           service: IosServices, position: @escaping () -> Double, seekRevision: @escaping () -> UInt64 = { 0 }, cached: @escaping () -> [String: String],
-                          request: (([String]) async throws -> [String])? = nil,
+                          request: (@MainActor ([String]) async throws -> [String])? = nil,
                           save: @escaping ([String: String]) throws -> Void) async throws {
         try await withThrowingTaskGroup(of: Event.self) { group in
             var active: [UUID: [Int]] = [:]

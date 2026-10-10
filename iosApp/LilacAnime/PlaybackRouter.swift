@@ -23,7 +23,7 @@ final class DesktopNavigation: ObservableObject {
     @Published var section = "home"
     @Published var query = ""
     @Published var listMode = "browse"
-    var showDownloads = false
+    @Published var showDownloads = false
     func search(_ value: String) { query = value; listMode = "browse"; section = "search" }
     func browse(_ mode: String) { query = ""; listMode = mode; section = "search" }
 }

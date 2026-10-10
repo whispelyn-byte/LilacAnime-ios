@@ -16,10 +16,10 @@ final class TesterRegressionTests: XCTestCase {
         let checked = expectation(description: "download media is muted")
         LilacCallAsyncJavaScript(resolver.webView, "const video = document.getElementById('fixture'); video.muted = false; video.volume = 1; video.dispatchEvent(new Event('play', {bubbles:true})); return [video.muted, video.volume, innerWidth];") { value, error in
             XCTAssertNil(error)
-            let values = value as? [NSNumber]
-            XCTAssertEqual(values?.first?.boolValue, true)
-            XCTAssertEqual(values?[1].doubleValue, 0)
-            XCTAssertGreaterThan(values?.last?.doubleValue ?? 0, 0)
+            guard let values = value as? [NSNumber], values.count == 3 else { XCTFail("Missing WebKit fixture result"); checked.fulfill(); return }
+            XCTAssertTrue(values[0].boolValue)
+            XCTAssertEqual(values[1].doubleValue, 0)
+            XCTAssertGreaterThan(values[2].doubleValue, 0)
             checked.fulfill()
         }
         await fulfillment(of: [checked], timeout: 10)

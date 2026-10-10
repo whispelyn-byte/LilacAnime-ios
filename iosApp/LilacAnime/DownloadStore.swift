@@ -182,7 +182,8 @@ final class DownloadStore: ObservableObject {
         error = nil
         resolutionTask = Task {
             defer {
-                resolver.cancel(); resolver.webView.loadHTMLString("", baseURL: nil); resolutionTask = nil; pendingResolution = resolutionQueue.count; resolvingTitle = ""
+                resolver.cancel(); resolver.webView.configuration.userContentController.removeAllUserScripts()
+                resolver.webView.loadHTMLString("", baseURL: nil); resolutionTask = nil; pendingResolution = resolutionQueue.count; resolvingTitle = ""
                 // An enqueue immediately after pause/cancel must survive the old worker's cleanup.
                 if !resolutionQueue.isEmpty { enqueue([], quality: quality) }
             }

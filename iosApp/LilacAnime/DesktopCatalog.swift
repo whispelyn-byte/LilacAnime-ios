@@ -90,6 +90,19 @@ final class DesktopCatalog: ObservableObject {
                 .contains { DesktopTitleRules.shared.key(title: $0).contains(wanted) }
         }.map(\.anime)
     }
+    /// The other-language names already known for titles containing the query (main.cjs lookupTitleVariants), so a
+    /// Korean search reaches English-only sites and an English one the Korean names.
+    func variants(_ query: String) -> [String] {
+        let key = DesktopTitleRules.shared.key(title: query)
+        guard !key.isEmpty else { return [] }
+        let korean = TitleCandidates.shared.isKorean(title: query)
+        var found: [String] = []
+        for name in names.values {
+            let from = korean ? name.korean : name.english, to = korean ? name.english : name.korean
+            if !from.isEmpty, !to.isEmpty, !found.contains(to), DesktopTitleRules.shared.key(title: from).contains(key) { found.append(to) }
+        }
+        return found
+    }
     var known: Int { (catalogs[source] ?? []).filter { names[$0.id]?.korean.isEmpty == false || TitleCandidates.shared.isKorean(title: $0.title) }.count }
     func needsRefresh(_ source: String) -> Bool {
         let defaults = UserDefaults.standard

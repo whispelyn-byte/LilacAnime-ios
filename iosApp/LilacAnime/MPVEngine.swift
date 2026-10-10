@@ -53,6 +53,9 @@ final class MPVEngine: ObservableObject {
         let result = mpv_initialize(context)
         guard result >= 0 else { error = String(cString: mpv_error_string(result)); mpv_terminate_destroy(context); handle = nil; return }
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in self?.poll() }
+        // The player's volume and mute stay as they were left (app.js playerVolume / playerMuted).
+        if let saved = UserDefaults.standard.object(forKey: "player.volume") as? Double { volume = max(0, min(100, saved)); set("volume", String(volume)) }
+        muted = UserDefaults.standard.bool(forKey: "player.muted"); set("mute", muted ? "yes" : "no")
         setupAudio()
         if let pendingStream {
             let subtitle = pendingSubtitle
@@ -88,8 +91,8 @@ final class MPVEngine: ObservableObject {
         set("referrer", stream.referer)
         command(["loadfile", stream.url.isFileURL ? stream.url.path : stream.url.absoluteString, "replace"])
     }
-    func setVolume(_ value: Double) { volume = max(0, min(100, value)); set("volume", String(volume)) }
-    func toggleMute() { muted.toggle(); set("mute", muted ? "yes" : "no") }
+    func setVolume(_ value: Double) { volume = max(0, min(100, value)); set("volume", String(volume)); UserDefaults.standard.set(volume, forKey: "player.volume") }
+    func toggleMute() { muted.toggle(); set("mute", muted ? "yes" : "no"); UserDefaults.standard.set(muted, forKey: "player.muted") }
     func setFit(_ value: String) {
         preferences.selectPlayerFit(PlayerFit(rawValue: value) ?? .contain)
         let presentation = PlayerPresentation(preferences); aspect = presentation.aspect; fit = presentation.fit.rawValue

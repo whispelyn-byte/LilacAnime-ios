@@ -105,6 +105,11 @@ enum SubtitleFiles {
         let descriptors = CTFontManagerCreateFontDescriptorsFromURL(target as CFURL) as? [CTFontDescriptor]
         return descriptors?.first.flatMap { CTFontDescriptorCopyAttribute($0, kCTFontFamilyNameAttribute) as? String } ?? target.deletingPathExtension().lastPathComponent
     }
+    /// A font file's family name, as the subtitle font setting uses it.
+    static func familyName(_ url: URL) -> String {
+        (CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor])?.first
+            .flatMap { CTFontDescriptorCopyAttribute($0, kCTFontFamilyNameAttribute) as? String } ?? url.deletingPathExtension().lastPathComponent
+    }
     static func restoreFonts() {
         for file in (try? FileManager.default.contentsOfDirectory(at: fontDirectory, includingPropertiesForKeys: nil)) ?? [] {
             CTFontManagerRegisterFontsForURL(file as CFURL, .process, nil)

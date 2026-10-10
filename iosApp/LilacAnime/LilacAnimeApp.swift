@@ -6,6 +6,7 @@ struct LilacAnimeApp: App {
     @StateObject private var downloads = DownloadStore.shared
     @StateObject private var playback = PlaybackRouter()
     @StateObject private var navigation = DesktopNavigation()
+    @StateObject private var updater = DesktopUpdater.shared
     @Environment(\.scenePhase) private var scenePhase
     var body: some Scene {
         WindowGroup {
@@ -34,6 +35,7 @@ struct LilacAnimeApp: App {
                     EpisodePlayerView(item: presentation.item)
                         .environmentObject(library).environmentObject(downloads)
                 }
+                .sheet(item: $updater.changelog) { ChangelogSheet(release: $0) }
                 .tint(LilacStyle.accent)
                 .preferredColorScheme(UIShowcase.enabled || library.preferences.theme == "system" ? nil : (library.preferences.theme == "light" ? .light : .dark))
                 .task { SubtitleFiles.restoreFonts(); downloads.library = library; if !UIShowcase.enabled { DesktopUpdater.shared.automaticCheck() } }

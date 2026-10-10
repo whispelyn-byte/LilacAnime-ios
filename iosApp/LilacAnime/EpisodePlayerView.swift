@@ -45,6 +45,7 @@ final class EpisodePlayerModel: ObservableObject {
     private var chipTask: Task<Void, Never>?
     private var chipRequest = UUID()
     private var koreanFiles: [URL: Bool] = [:]
+    private var refreshedSeries: Set<String> = []
     private let titleLookup = TitleLookup()
     @Published var chapters: [OfflineChapter] = []
     @Published var systemPlayback = false
@@ -139,11 +140,32 @@ final class EpisodePlayerModel: ObservableObject {
             }
         }
         chapters = OfflineAnalyzer.chapters(animeID: item.anime.id, episodeID: item.episodeID)
+        refreshSeries(token: token)
         resolutionTask?.cancel()
         resolutionTask = Task {
             preferRaw = await preparer.preferRaw(item, preferences: library.preferences)
             guard token == generation, !Task.isCancelled else { return }
             resolver.resolve(item, preferRaw: preferRaw, preferred: library.preferences.preferredServers?[item.anime.source] ?? library.preferences.preferredStream)
+        }
+    }
+    /// An episode opened from the watch history carries the list saved back then; like app.js playHistoryItem the series
+    /// is asked again, so episodes that came out since are next.
+    private func refreshSeries(token: UUID) {
+        guard item.next.isEmpty, item.directURL == nil, item.anime.source != "local",
+              refreshedSeries.insert(item.anime.id + "#" + item.episodeID).inserted else { return }
+        let opening = item
+        service.detail(summary: opening.anime.anime, sourceKey: opening.anime.source) { [weak self] detail, _ in
+            Task { @MainActor in
+                guard let self, token == self.generation, let detail else { return }
+                let server = detail.servers.first { $0.episodes.contains { $0.id == opening.episodeID } } ?? detail.servers.first { $0.episodes.contains { Int($0.number) == opening.number } }
+                guard let episodes = server?.episodes,
+                      let index = episodes.firstIndex(where: { $0.id == opening.episodeID }) ?? episodes.firstIndex(where: { Int($0.number) == opening.number }) else { return }
+                let saved = SavedAnime(AnimeSnapshot.shared.withEpisodes(anime: detail.anime, episodes: episodes), source: opening.anime.source)
+                guard saved.id == opening.anime.id, self.item.next.isEmpty else { return }
+                let next = episodes.dropFirst(index + 1).map { PlaybackItem(anime: saved, episode: $0) }
+                if !next.isEmpty { self.item.next = next }
+                if self.previous.isEmpty { self.previous = episodes.prefix(index).map { PlaybackItem(anime: saved, episode: $0) } }
+            }
         }
     }
     func selectResolved(_ streams: [ResolvedStream], library: LibraryStore) {
@@ -645,6 +667,7 @@ struct EpisodePlayerView: View {
                     chapter: model.chapters.first(where: { model.engine.position >= $0.start && model.engine.position < $0.end }),
                     skipChapter: { if let chapter = model.chapters.first(where: { model.engine.position >= $0.start && model.engine.position < $0.end }) { model.engine.seek(chapter.end) } },
                     adjustSubtitle: { model.shiftSubtitle($0, library: library) },
+                    subtitleOffset: model.subtitleOffset,
                     keyboardEnabled: !settings && !subtitleSheet && !importer)
             } else {
                 VStack { HStack { Button { dismiss() } label: { Image(systemName: "arrow.left") }; Spacer(); Button { settings = true } label: { Image(systemName: "gearshape") } }.font(.title3).padding(20).background(.black.opacity(0.65)); Spacer() }.foregroundStyle(.white)
@@ -937,7 +960,23 @@ struct EpisodePlayerView: View {
                 TextField("글꼴", text: $library.preferences.subtitleFont)
                 Button("글꼴 파일 선택") { importingFont = true; settings = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { importer = true } }
                 Text("파일 앱에서 TTF · OTF · TTC 글꼴을 가져옵니다.").font(.caption).foregroundStyle(.white.opacity(0.5))
+                discoveredFonts
             }
+        }
+    }
+    /// player.js renderDiscoveredFonts: the fonts that came with the subtitle on screen, to use as the subtitle font.
+    @ViewBuilder private var discoveredFonts: some View {
+        let families = (model.subtitle.map { SubtitleFiles.fonts(for: $0) } ?? []).reduce(into: [(String, URL)]()) { list, file in
+            let family = SubtitleFiles.familyName(file)
+            if !list.contains(where: { $0.0 == family }) { list.append((family, file)) }
+        }
+        if !families.isEmpty {
+            Text("이 자막에 들어 있는 글꼴").font(.caption.bold()).foregroundStyle(.white.opacity(0.65))
+            PlayerChoiceGrid(options: [("", "기본")] + families.map { ($0.0, $0.0) }, selection: Binding(get: { library.preferences.subtitleFont }, set: { family in
+                if family.isEmpty { library.preferences.subtitleFont = "" }
+                else if let file = families.first(where: { $0.0 == family })?.1 { library.preferences.subtitleFont = (try? SubtitleFiles.importFont(file)) ?? family }
+                model.applyPreferences(library)
+            }), identifier: "player-subtitle-fonts")
         }
     }
     private var subtitleList: some View {
@@ -1018,6 +1057,7 @@ struct PlayerControls: View {
     let chapter: OfflineChapter?
     let skipChapter: () -> Void
     let adjustSubtitle: (Double) -> Void
+    var subtitleOffset = 0.0
     let keyboardEnabled: Bool
     @GestureState private var holdingSpeed = false
     @State private var dragging = false
@@ -1094,10 +1134,10 @@ struct PlayerControls: View {
                     Button("") { engine.toggleMute() }.keyboardShortcut("m", modifiers: [])
                     Button("", action: back).keyboardShortcut(.escape, modifiers: [])
                     Group {
-                        Button("") { engine.toggleSubtitleVisibility() }.keyboardShortcut("c", modifiers: [])
+                        Button("") { engine.toggleSubtitleVisibility(); flash(engine.subtitlesVisible ? "자막을 켰어요" : "자막을 껐어요") }.keyboardShortcut("c", modifiers: [])
                         Button("") { shiftSubtitle(-0.5) }.keyboardShortcut("z", modifiers: [])
                         Button("") { shiftSubtitle(0.5) }.keyboardShortcut("x", modifiers: [])
-                        Button("") { if chapter != nil { skipChapter() } }.keyboardShortcut("s", modifiers: [])
+                        Button("") { if chapter != nil { skipChapter() } else { flash("지금은 건너뛸 OP/ED 구간이 아니에요") } }.keyboardShortcut("s", modifiers: [])
                         Button("") { changeSpeed(-0.25) }.keyboardShortcut("[", modifiers: [])
                         Button("") { changeSpeed(0.25) }.keyboardShortcut("]", modifiers: [])
                         Button("") { if canNext { next() } }.keyboardShortcut(.pageDown, modifiers: [])
@@ -1119,10 +1159,20 @@ struct PlayerControls: View {
     }
     private func shiftSubtitle(_ delta: Double) {
         adjustSubtitle(delta)
+        let next = subtitleOffset + delta
+        flash("자막 싱크 " + (next > 0 ? "+" : "") + String(format: "%.1f", next) + "초 (" + (next < -0.001 ? "자막이 빨리 나옴" : next > 0.001 ? "자막이 늦게 나옴" : "원래대로") + ")")
     }
+    /// [ / ] step through the player's speeds (player.js SPEED_OPTIONS), not by a fixed amount.
     private func changeSpeed(_ delta: Double) {
-        library.preferences.speed = max(0.1, min(4, library.preferences.speed + delta))
+        let speeds = [0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 3, 4]
+        let at = speeds.firstIndex { abs($0 - library.preferences.speed) < 0.001 } ?? speeds.firstIndex(of: 1)!
+        library.preferences.speed = speeds[max(0, min(speeds.count - 1, at + (delta > 0 ? 1 : -1)))]
         engine.finishSpaceHold(); engine.setSpeed(library.preferences.speed)
+        flash("재생 속도 " + String(format: "%.2f", library.preferences.speed) + "x")
+    }
+    private func flash(_ text: String) {
+        feedback = text
+        Task { try? await Task.sleep(nanoseconds: 1_400_000_000); if feedback == text { feedback = "" } }
     }
     private func tapZone(_ delta: Double) -> some View {
         Color.clear.contentShape(Rectangle()).onTapGesture(count: 2) {
@@ -1145,7 +1195,10 @@ struct PlayerControls: View {
         Button { action(); touch() } label: { icon(name).opacity(enabled ? 1 : 0.3) }.disabled(!enabled).accessibilityLabel(label)
     }
     private func touch() { interaction = UUID() }
-    private func clock(_ seconds: Double) -> String { let value = seconds.isFinite ? max(0, Int(seconds)) : 0; return String(format: "%d:%02d", value / 60, value % 60) }
+    private func clock(_ seconds: Double) -> String {
+        let value = seconds.isFinite ? max(0, Int(seconds)) : 0
+        return value >= 3600 ? String(format: "%d:%02d:%02d", value / 3600, value % 3600 / 60, value % 60) : String(format: "%02d:%02d", value / 60, value % 60)
+    }
 }
 struct EngineError: View {
     @ObservedObject var engine: MPVEngine

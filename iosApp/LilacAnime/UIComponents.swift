@@ -39,6 +39,13 @@ struct AnimePosterCard: View {
                             .background(.ultraThinMaterial, in: Capsule()).padding(8)
                     }
                 }
+                .overlay(alignment: .topTrailing) {
+                    // The source's score on the poster (app.js card: ★ 8.5).
+                    if anime.score > 0 {
+                        Text("★ " + String(format: "%g", (anime.score * 100).rounded() / 100)).font(.caption2.bold()).padding(.horizontal, 8).padding(.vertical, 5)
+                            .background(.ultraThinMaterial, in: Capsule()).padding(8)
+                    }
+                }
             AnimeDisplayTitle(anime: anime).font(.subheadline.weight(.semibold)).lineLimit(2)
                 .frame(maxWidth: .infinity, minHeight: 38, alignment: .topLeading)
             Text([anime.year, anime.genres.first ?? ""].filter { !$0.isEmpty }.joined(separator: " · "))

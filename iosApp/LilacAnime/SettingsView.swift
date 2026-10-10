@@ -72,10 +72,12 @@ struct SettingsView: View {
                     Button("사용자 글꼴 가져오기") { importFont = true }
                     TextField("글자 색 (#RRGGBB)", text: $store.preferences.subtitleColor)
                     TextField("테두리 색 (#RRGGBB)", text: $store.preferences.outlineColor)
-                    Slider(value: $store.preferences.outlineWidth, in: 0...6, step: 0.5)
+                    Text("테두리 두께 \(store.preferences.outlineWidth, specifier: "%.1f")px")
+                    Slider(value: $store.preferences.outlineWidth, in: 0...6, step: 0.5).accessibilityLabel("테두리 두께")
                     Toggle("굵은 글씨", isOn: $store.preferences.subtitleBold)
                     Toggle("ASS 효과", isOn: $store.preferences.assEffects)
-                    Slider(value: $store.preferences.subtitlePadding, in: 0...40)
+                    Text("자막 높이 \(Int(store.preferences.subtitlePadding))%")
+                    Slider(value: $store.preferences.subtitlePadding, in: 0...40).accessibilityLabel("자막 높이")
                     Stepper("싱크 \(store.preferences.subtitleOffset, specifier: "%.1f")초", value: $store.preferences.subtitleOffset, step: 0.1)
                     SubtitleSyncInput(value: store.preferences.subtitleOffset) { store.preferences.subtitleOffset = $0 }
                     NavigationLink("저장 자막·캐시 관리") { SubtitleStorageView() }
@@ -117,7 +119,7 @@ struct SettingsView: View {
                     Text("이름·용어 표기 (원문=한국어)").font(.subheadline)
                     TextEditor(text: Binding(get: { store.preferences.translationGlossary ?? "" }, set: { store.preferences.translationGlossary = $0 })).frame(minHeight: 70)
                     Picker("공급자", selection: $store.preferences.translationProvider) {
-                        ForEach(["local", "gemini", "openai", "deepl", "qwen"], id: \.self) { Text($0) }
+                        ForEach(["local", "gemini", "openai", "deepl", "qwen"], id: \.self) { Text(SubtitleLabels.engine($0)).tag($0) }
                     }
                     TextField("클라우드 모델 ID (빈칸: 기본값)", text: $store.preferences.translationModel).textInputAutocapitalization(.never)
                     if store.preferences.translationProvider != "local" {
@@ -155,8 +157,10 @@ struct SettingsView: View {
                     Slider(value: $store.preferences.temperature, in: 0...2, step: 0.05)
                     Text("Temperature \(store.preferences.temperature, specifier: "%.2f")")
                     Slider(value: $store.preferences.topP, in: 0.05...1, step: 0.05)
+                    Text("Top P \(store.preferences.topP, specifier: "%.2f")")
                     Stepper("Top K \(store.preferences.topK)", value: $store.preferences.topK, in: 1...200)
                     Slider(value: $store.preferences.repetitionPenalty, in: 1...2, step: 0.05)
+                    Text("반복 억제 \(store.preferences.repetitionPenalty, specifier: "%.2f")")
                     Stepper("앞 문맥 \(store.preferences.contextCues)개", value: $store.preferences.contextCues, in: 0...20)
                     Stepper("미리 번역 \(store.preferences.prefetchAhead)개", value: $store.preferences.prefetchAhead, in: 0...40)
                     Picker("Thinking", selection: $store.preferences.thinking) { ForEach(["auto", "on", "off"], id: \.self) { Text($0) } }

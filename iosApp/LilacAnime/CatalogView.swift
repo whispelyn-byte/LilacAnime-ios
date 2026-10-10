@@ -19,6 +19,7 @@ final class CatalogModel: ObservableObject {
     @Published var filters: SourceFilters?
     @Published var filterError: String?
     @Published var filtersLoading = false
+    @Published var searchNote: String?
     private let filterService = IosServices()
     func loadFilters() {
         filters = nil; filterError = nil; filtersLoading = true; let requestedSource = source
@@ -67,30 +68,59 @@ final class CatalogModel: ObservableObject {
                 self.canLoadMore = !result.isEmpty && ["browse", "top", "season", "pv", "movie", "adult"].contains(self.mode); self.page += 1
             }
         }
+        // app.js doSearch: the first page shows at once, then the query is searched again under its other-language titles.
+        let typed = query.trimmingCharacters(in: .whitespacesAndNewlines), first = page == 1
         let searched: ([Anime]?, String?) -> Void = { [weak self] values, failure in
             guard let self, token == self.generation else { return }
-            guard (values ?? []).isEmpty, TitleCandidates.shared.isKorean(title: self.query), !SecureKeys.load("tmdb").isEmpty else { callback(values, failure); return }
-            self.service.titleVariants(query: self.query, credential: SecureKeys.load("tmdb")) { variants, _ in
-                guard token == self.generation else { return }
-                let candidates = (variants ?? []).filter { !TitleCandidates.shared.isKorean(title: $0) }
-                guard !candidates.isEmpty else { callback(values, failure); return }
-                var combined: [Anime] = []; var remaining = candidates.count
-                for variant in candidates {
-                    self.service.browse(sourceKey: self.source, query: variant, page: self.page,
-                        filter: AnimeSnapshot.shared.fullFilter(genre: self.genre, year: self.year, season: self.season, format: self.format, status: self.status, studio: self.studio)) { result, _ in
-                        guard token == self.generation else { return }
-                        combined += result ?? []; remaining -= 1
-                        if remaining == 0 { callback(combined, combined.isEmpty ? failure : nil) }
-                    }
-                }
-            }
+            callback(values, failure)
+            guard first, !typed.isEmpty, self.mode == "browse", [self.genre, self.year, self.format, self.status, self.season, self.studio].allSatisfy(\.isEmpty) else { return }
+            if self.items.isEmpty { self.searchNote = "다른 언어 제목으로 찾는 중..." }
+            Task { await self.searchVariants(typed, token: token) }
         }
+        searchNote = nil
         if mode == "top" { service.browse(sourceKey: source, query: "", page: page, filter: AnimeSnapshot.shared.sortedFilter(genre: "", year: "", season: "", format: "", status: "", studio: "", sort: "popular"), completion: callback) }
         else if mode == "schedule" { service.sourceSchedule(sourceKey: source, day: Int32((Calendar.current.component(.weekday, from: Date()) + 5) % 7), completion: callback) }
+        // Animenosub's and Miruro's own searches are English only: a Korean query returns their newest posts instead.
+        else if Self.englishOnly(source, query: typed) { searched([], nil) }
         else {
             service.browse(sourceKey: source, query: query, page: page,
                 filter: AnimeSnapshot.shared.sortedFilter(genre: genre, year: year, season: season, format: format, status: status, studio: studio, sort: sort), completion: searched)
         }
+    }
+    static func englishOnly(_ source: String, query: String) -> Bool { ["animenosub", "miruro"].contains(source) && TitleCandidates.shared.isKorean(title: query) }
+    /// The query's other-language titles (the names already known, then TMDB), searched six at a time; new results are added.
+    private func searchVariants(_ query: String, token: UUID) async {
+        var variants = DesktopCatalog.shared.variants(query)
+        let credential = SecureKeys.load("tmdb"), korean = TitleCandidates.shared.isKorean(title: query)
+        if !credential.isEmpty {
+            let remote: [String] = await withCheckedContinuation { continuation in
+                service.titleVariants(query: query, credential: credential) { values, _ in continuation.resume(returning: values ?? []) }
+            }
+            for value in remote where TitleCandidates.shared.isKorean(title: value) != korean && !variants.contains(value) { variants.append(value) }
+        }
+        let key = DesktopTitleRules.shared.key(title: query)
+        let usable = Array(variants.filter { DesktopTitleRules.shared.key(title: $0) != key && !Self.englishOnly(source, query: $0) }.prefix(30))
+        guard token == generation else { return }
+        guard !usable.isEmpty else { searchNote = nil; return }
+        var added = 0
+        for start in stride(from: 0, to: usable.count, by: 6) {
+            let chunk = Array(usable[start..<min(usable.count, start + 6)])
+            var lists = Array(repeating: [Anime](), count: chunk.count)
+            await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+                var remaining = chunk.count
+                for (index, text) in chunk.enumerated() {
+                    service.browse(sourceKey: source, query: text, page: 1, filter: AnimeSnapshot.shared.fullFilter(genre: "", year: "", season: "", format: "", status: "", studio: "")) { values, _ in
+                        lists[index] = values ?? []; remaining -= 1
+                        if remaining == 0 { done.resume() }
+                    }
+                }
+            }
+            guard token == generation else { return }
+            var known = Set(items.map(\.id))
+            let fresh = lists.flatMap { $0 }.filter { known.insert($0.id).inserted }
+            items += fresh; added += fresh.count
+        }
+        searchNote = added > 0 ? "다른 언어 제목 " + (usable.count > 3 ? usable.prefix(3).joined(separator: ", ") + " 외 \(usable.count - 3)개" : usable.joined(separator: ", ")) + " 포함" : nil
     }
     deinit { service.close(); filterService.close() }
 }
@@ -120,6 +150,7 @@ struct CatalogView: View {
                         }.padding(16).background(LilacStyle.card, in: RoundedRectangle(cornerRadius: 16))
                     }
                     if let error = model.error { Text(error).foregroundStyle(.red); Button("다시 시도") { model.load() } }
+                    if let note = model.searchNote { Text(note).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading) }
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 145))], spacing: 18) {
                         ForEach(model.items, id: \.id) { anime in
                             NavigationLink { DetailView(summary: anime, source: model.source) } label: {

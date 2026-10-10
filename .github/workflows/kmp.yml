@@ -64,8 +64,6 @@ jobs:
           path: iosApp/Native/Frameworks
           key: ${{ steps.native-cache.outputs.cache-primary-key }}
       - run: sh iosApp/scripts/verify.sh
-      - name: Build Intel iPhone Simulator app
-        run: sh iosApp/scripts/build-intel-simulator.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:

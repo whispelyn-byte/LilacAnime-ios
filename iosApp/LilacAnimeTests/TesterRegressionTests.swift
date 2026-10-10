@@ -1,8 +1,30 @@
 import XCTest
 import LilacShared
+import WebKit
 @testable import LilacAnime
 
 final class TesterRegressionTests: XCTestCase {
+    @MainActor func testDownloadPageCannotPlayAudibleMedia() async {
+        let resolver = PlaybackResolver(); resolver.silent = true
+        resolver.webView.frame = CGRect(x: 0, y: 0, width: 960, height: 640)
+        let loaded = expectation(description: "download page loaded")
+        let delegate = DownloadFixtureNavigation { loaded.fulfill() }
+        resolver.webView.navigationDelegate = delegate
+        resolver.webView.loadHTMLString("<html><head><meta name='viewport' content='width=device-width'></head><body><video id='fixture'></video></body></html>", baseURL: URL(string: "https://fixture.test"))
+        await fulfillment(of: [loaded], timeout: 10)
+        withExtendedLifetime(delegate) {}
+        let checked = expectation(description: "download media is muted")
+        LilacCallAsyncJavaScript(resolver.webView, "const video = document.getElementById('fixture'); video.muted = false; video.volume = 1; video.dispatchEvent(new Event('play', {bubbles:true})); return [video.muted, video.volume, innerWidth];") { value, error in
+            XCTAssertNil(error)
+            let values = value as? [NSNumber]
+            XCTAssertEqual(values?.first?.boolValue, true)
+            XCTAssertEqual(values?[1].doubleValue, 0)
+            XCTAssertGreaterThan(values?.last?.doubleValue ?? 0, 0)
+            checked.fulfill()
+        }
+        await fulfillment(of: [checked], timeout: 10)
+        resolver.shutdown()
+    }
     @MainActor func testDownloadTapQueuesOnceAndReportsDuplicate() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -69,4 +91,10 @@ final class TesterRegressionTests: XCTestCase {
         XCTAssertNotNil(Bundle.main.url(forResource: "AppIcon60x60@2x", withExtension: "png"))
         XCTAssertNotNil(Bundle.main.infoDictionary?["CFBundleIcons~ipad"])
     }
+}
+
+@MainActor private final class DownloadFixtureNavigation: NSObject, WKNavigationDelegate {
+    let finished: () -> Void
+    init(_ finished: @escaping () -> Void) { self.finished = finished }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { finished() }
 }

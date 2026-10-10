@@ -46,6 +46,7 @@ final class EpisodePlayerModel: ObservableObject {
     private var chipRequest = UUID()
     private var koreanFiles: [URL: Bool] = [:]
     private var refreshedSeries: Set<String> = []
+    private var pendingFraction: Double?
     private let titleLookup = TitleLookup()
     @Published var chapters: [OfflineChapter] = []
     @Published var systemPlayback = false
@@ -99,6 +100,7 @@ final class EpisodePlayerModel: ObservableObject {
         active = nil; loadedSkip = false; systemPlayback = false
         let token = generation
         subtitleOffset = library.subtitleChoice(animeID: item.anime.id, episodeID: item.episodeID)?.offset ?? library.preferences.subtitleOffset
+        pendingFraction = library.resume(item.anime, episodeID: item.episodeID) > 0 ? nil : library.resumeFraction(item.anime, episodeID: item.episodeID)
         if library.preferences.subtitleProvider == "manual", let choice = library.subtitleChoice(animeID: item.anime.id, episodeID: item.episodeID), let relative = choice.relativeFile {
             let file = SubtitleFiles.root.appendingPathComponent(relative).standardizedFileURL
             if file.path.hasPrefix(SubtitleFiles.root.path + "/"), FileManager.default.fileExists(atPath: file.path) {
@@ -116,6 +118,11 @@ final class EpisodePlayerModel: ObservableObject {
         }
         engine.onProgress = { [weak self, weak library] position, duration in
             guard let self, let library, token == self.generation else { return }
+            // Watched elsewhere (기기 동기화 gives only the percentage): resumed once the length is known.
+            if let fraction = self.pendingFraction, duration > 0 {
+                self.pendingFraction = nil
+                if fraction > 0 && fraction < 0.95 && position < 5 { self.engine.seek(duration * fraction); return }
+            }
             if position - self.lastSave >= 5 || position < self.lastSave {
                 self.lastSave = position; self.save(library: library)
             }
@@ -222,6 +229,12 @@ final class EpisodePlayerModel: ObservableObject {
         }
     }
     func applyPreferences(_ library: LibraryStore) { configure(library) }
+    /// 애니24's own subtitle file can be found after the stream: the playing stream takes it and it is put on.
+    func siteSubtitlesArrived(_ tracks: [RemoteSubtitle], library: LibraryStore) {
+        guard item.anime.source == "ohli24", var stream = active, stream.subtitles.isEmpty, !tracks.isEmpty else { return }
+        stream.subtitles = tracks; stream.burnedKorean = false; active = stream
+        if subtitle == nil { automaticSubtitle(stream, library: library, token: generation) }
+    }
     private func configure(_ library: LibraryStore) {
         var settings = library.preferences
         settings.subtitleOffset = subtitleOffset
@@ -704,6 +717,7 @@ struct EpisodePlayerView: View {
             .onChange(of: model.resolver.streams) { streams in
                 model.selectResolved(streams, library: library); showWeb = false
             }
+            .onChange(of: model.resolver.subtitles) { model.siteSubtitlesArrived($0, library: library) }
             .fileImporter(isPresented: $importer, allowedContentTypes: [.data, .text]) { result in
                 defer { importingFont = false }
                 do {

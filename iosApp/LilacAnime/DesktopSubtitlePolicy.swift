@@ -36,7 +36,8 @@ enum DesktopSubtitlePolicy {
         return saved.first { source($0.provider) == preferred && !$0.translated }
     }
     static func burnedKorean(source: String, stream: ResolvedStream? = nil) -> Bool {
-        if source == "ohli24" { return true }
+        // 애니24: in the picture, except a raw video whose player puts the Korean subtitle over it from a file.
+        if source == "ohli24" { return !(stream?.subtitles.contains(where: isKorean) ?? false) }
         if let value = stream?.burnedKorean { return value }
         return source == "linkani" && !(stream?.subtitles.contains(where: isKorean) ?? false)
     }

@@ -30,6 +30,6 @@ enum OhliPlayback {
         return frame.scheme == selected.scheme && frame.host == selected.host && frame.path == selected.path
     }
     static func accepts(kind: String, frame: URL?, selected: URL?) -> Bool {
-        ["ohliVariant", "ohliMedia"].contains(kind) && isPlayerFrame(frame, selected: selected)
+        ["ohliVariant", "ohliMedia", "ohliCaption"].contains(kind) && isPlayerFrame(frame, selected: selected)
     }
 }

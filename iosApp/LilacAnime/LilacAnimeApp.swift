@@ -39,8 +39,8 @@ struct LilacAnimeApp: App {
                 .sheet(item: Binding(get: { playback.presentation == nil ? updater.changelog : nil }, set: { updater.changelog = $0 })) { ChangelogSheet(release: $0) }
                 .tint(LilacStyle.accent)
                 .preferredColorScheme(UIShowcase.enabled || library.preferences.theme == "system" ? nil : (library.preferences.theme == "light" ? .light : .dark))
-                .task { SubtitleFiles.restoreFonts(); downloads.library = library; if !UIShowcase.enabled { DesktopUpdater.shared.automaticCheck() } }
-                .onChange(of: scenePhase) { phase in if phase == .active && !UIShowcase.enabled { DesktopUpdater.shared.automaticCheck() } }
+                .task { SubtitleFiles.restoreFonts(); downloads.library = library; if !UIShowcase.enabled { DesktopUpdater.shared.automaticCheck(); DeviceSync.shared.start(library: library) } }
+                .onChange(of: scenePhase) { phase in if phase == .active && !UIShowcase.enabled { DesktopUpdater.shared.automaticCheck(); DeviceSync.shared.becameActive() } }
         }
     }
 }

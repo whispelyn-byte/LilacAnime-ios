@@ -167,6 +167,18 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
             }
             return
         }
+        // ani.ohli24.com: the episode's player is named in its page data; it is opened directly (desktop resolveOhliEpisode).
+        if item.anime.source == "ohli24" && item.watchURL.host == "ani.ohli24.com" {
+            desktop.ohliPlayer(url: item.watchURL.absoluteString) { [weak self] value, failure in
+                Task { @MainActor in
+                    guard let self, token == self.generation else { return }
+                    guard let value, let player = URL(string: value) else { self.loading = false; self.error = failure ?? "이 회차의 영상 플레이어를 찾지 못했습니다."; return }
+                    self.ohliPlayer = player
+                    self.loadPage(player, seconds: 45)
+                }
+            }
+            return
+        }
         loadPage(item.watchURL, seconds: 45)
     }
     func selectServer(_ server: DesktopPlaybackServer) {
@@ -230,16 +242,18 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
                message.frameInfo.request.url?.host == currentItem?.watchURL.host {
                 ohliPlayer = url
                 for candidate in pendingOhli where OhliPlayback.accepts(kind: candidate.kind, frame: candidate.frame, selected: url) {
+                    if candidate.kind == "ohliCaption" { addOhliCaption(candidate.url, referer: candidate.frame?.absoluteString ?? ""); continue }
                     verifyOhli(candidate.url, hls: candidate.kind == "ohliVariant", manifest: candidate.manifest)
                 }
                 pendingOhli.removeAll()
                 return
             }
             let kind = body["kind"] ?? ""
-            if ohliPlayer == nil, ["ohliVariant", "ohliMedia"].contains(kind), pendingOhli.count < 32 {
+            if ohliPlayer == nil, ["ohliVariant", "ohliMedia", "ohliCaption"].contains(kind), pendingOhli.count < 32 {
                 pendingOhli.append((url, message.frameInfo.request.url, kind, body["manifest"])); return
             }
             guard OhliPlayback.accepts(kind: kind, frame: message.frameInfo.request.url, selected: ohliPlayer) else { return }
+            if kind == "ohliCaption" { addOhliCaption(url, referer: message.frameInfo.request.url?.absoluteString ?? ""); return }
             verifyOhli(url, hls: body["kind"] == "ohliVariant", manifest: body["manifest"])
             return
         }
@@ -250,11 +264,20 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
             capture(value, referer: body["referer"] ?? message.frameInfo.request.url?.absoluteString ?? "", key: body["pk"])
         }
     }
+    /// The player's own Korean subtitle file, given to every stream of the episode (it is not in the picture then).
+    private func addOhliCaption(_ url: URL, referer: String) {
+        guard !subtitles.contains(where: { $0.url == url }) else { return }
+        var headers = ["User-Agent": agent]
+        if !referer.isEmpty { headers["Referer"] = referer }
+        let track = RemoteSubtitle(label: "애니24 한국어 자막", url: url, language: "ko", headers: headers)
+        subtitles.append(track)
+        for index in streams.indices { streams[index].subtitles.append(track); streams[index].burnedKorean = false }
+    }
     private func verifyOhli(_ url: URL, hls: Bool, manifest: String?) {
         guard candidateTasks[url] == nil, !streams.contains(where: { $0.url == url }) else { return }
         if hls {
             guard let manifest, manifest.utf8.count <= 4_000_000, OhliPlayback.isEpisodePlaylist(manifest) else { return }
-            streams.append(ResolvedStream(label: "HLS", url: url, referer: "", headers: ["User-Agent": agent], hlsManifest: manifest))
+            streams.append(ResolvedStream(label: "HLS", url: url, referer: "", headers: ["User-Agent": agent], subtitles: subtitles, hlsManifest: manifest, burnedKorean: subtitles.isEmpty ? nil : false))
             loading = false; error = nil; timeout?.cancel()
             return
         }
@@ -268,7 +291,7 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
             let referer = hls ? "" : ohliPlayer?.absoluteString ?? ""
             var headers = ["User-Agent": agent]
             if !referer.isEmpty { headers["Referer"] = referer }
-            let stream = ResolvedStream(label: hls ? "HLS" : "MP4", url: url, referer: referer, headers: headers)
+            var stream = ResolvedStream(label: hls ? "HLS" : "MP4", url: url, referer: referer, headers: headers)
             do {
                 do {
                     let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": stream.headers])
@@ -276,6 +299,7 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
                     guard duration.isFinite, duration > 30 else { return }
                 }
                 guard generation == token, !Task.isCancelled, streams.isEmpty else { return }
+                if !subtitles.isEmpty { stream.subtitles = subtitles; stream.burnedKorean = false }
                 streams.append(stream); loading = false; error = nil; timeout?.cancel()
             } catch { /* An advertising or unavailable candidate must not end episode discovery. */ }
         }

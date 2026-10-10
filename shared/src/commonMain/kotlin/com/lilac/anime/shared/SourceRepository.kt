@@ -27,6 +27,7 @@ class SourceRepository(private val client: HttpClient = newSharedClient()) {
     private val desktop = DesktopSourceRepository(client)
     private val filterCache = mutableMapOf<String, Pair<Long, SourceFilters>>()
     private val updateCache = mutableMapOf<String, Pair<Long, List<Anime>>>()
+    suspend fun ohliPlayer(url: String): String = desktop.ohliPlayer(url)
     suspend fun browse(source: String, query: String = "", page: Int = 1, filter: BrowseFilter = BrowseFilter()): List<Anime> {
         require(page > 0)
         if (filter.sort == "updated" && source in listOf("reanime", "miruro", "ohli24")) {
@@ -124,7 +125,7 @@ class SourceRepository(private val client: HttpClient = newSharedClient()) {
         updateCache[key]?.takeIf { now - it.first < 300000 }?.let { return it.second }
         val items = when (source) {
             "animenosub" -> AnimenosubParser.parseAnimeList(Ksoup.parse(getText("https://animenosub.to/anime/", mapOf("order" to "update", "page" to page.toString())), "https://animenosub.to/"))
-            "ohli24" -> if (page == 1) DesktopSourceParser.koreanList(getText("https://www.ohli24.net/ing"), source) else emptyList()
+            "ohli24" -> if (page == 1) desktop.ohliAiring() else emptyList()
             else -> DesktopSourceParser.koreanList(getText("https://linkani.tv/list/2/" + if (page > 1) "page/$page/" else ""), source)
         }
         updateCache[key] = now to items

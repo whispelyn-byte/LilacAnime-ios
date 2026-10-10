@@ -32,6 +32,7 @@ class IosServices {
     fun desktopStreams(sourceKey: String, animeId: String, number: Int, url: String, completion: (List<DesktopPlaybackStream>?, String?) -> Unit) {
         scope.launch { call(completion) { source.desktopStreams(sourceKey, animeId, number, url) } }
     }
+    fun ohliPlayer(url: String, completion: (String?, String?) -> Unit) { scope.launch { call(completion) { source.ohliPlayer(url) } } }
     fun desktopServers(sourceKey: String, url: String, number: Int, anilist: Int, completion: (List<DesktopPlaybackServer>?, String?) -> Unit) {
         scope.launch { call(completion) { source.desktopServers(sourceKey, url, number, anilist) } }
     }

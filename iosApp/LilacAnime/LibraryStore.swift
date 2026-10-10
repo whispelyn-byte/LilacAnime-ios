@@ -9,6 +9,8 @@ struct SavedAnime: Codable, Identifiable {
     var poster: String
     var source: String
     var snapshot: String
+    /// When it went into 내 목록 (기기 동기화 orders and compares by it); nil for items saved before.
+    var savedAt: Date? = nil
     init(_ anime: Anime, source: String) {
         id = source + ":" + anime.id; title = anime.title; poster = anime.poster
         self.source = source; snapshot = AnimeSnapshot.shared.encode(anime: anime)
@@ -26,6 +28,8 @@ struct WatchEntry: Codable, Identifiable {
     var position: Double
     var duration: Double
     var updatedAt: Date
+    /// How far it was watched (0–100) when only that is known: an entry from the desktop app through 기기 동기화.
+    var progressPercent: Double? = nil
 }
 struct SubtitleChoice: Codable { var relativeFile: String?; var offset: Double }
 struct AppPreferences: Codable, Equatable {
@@ -120,9 +124,9 @@ final class LibraryStore: ObservableObject {
     func clearSubtitleFiles() { for key in subtitleChoices.keys { subtitleChoices[key]?.relativeFile = nil }; persist() }
     func contains(_ anime: Anime, source: String) -> Bool { favorites.contains { $0.id == source + ":" + anime.id } }
     func toggle(_ anime: Anime, source: String) {
-        let saved = SavedAnime(anime, source: source)
+        var saved = SavedAnime(anime, source: source)
         if favorites.contains(where: { $0.id == saved.id }) { favorites.removeAll { $0.id == saved.id } }
-        else { favorites.append(saved) }
+        else { saved.savedAt = Date(); favorites.append(saved) }
         persist()
     }
     func progress(anime: SavedAnime, episodeID: String, title: String, number: Int, watchURL: String,
@@ -136,6 +140,14 @@ final class LibraryStore: ObservableObject {
     }
     func resume(_ anime: SavedAnime, episodeID: String) -> Double {
         history.first { $0.anime.id == anime.id && $0.episodeID == episodeID }.map { $0.duration > 0 && $0.position / $0.duration > 0.95 ? 0 : $0.position } ?? 0
+    }
+    /// An entry from another device that knows only the percentage watched.
+    func resumeFraction(_ anime: SavedAnime, episodeID: String) -> Double? {
+        history.first { $0.anime.id == anime.id && $0.episodeID == episodeID }.flatMap { $0.duration <= 0 && $0.position <= 0 ? $0.progressPercent.map { $0 / 100 } : nil }
+    }
+    /// 기기 동기화 writes both lists at once.
+    func replaceFromSync(favorites: [SavedAnime], history: [WatchEntry]) {
+        self.favorites = favorites; self.history = Array(history.prefix(500)); persist()
     }
     func deleteHistory(_ offsets: IndexSet) { history.remove(atOffsets: offsets); persist() }
     func clearHistory() { history.removeAll(); persist() }

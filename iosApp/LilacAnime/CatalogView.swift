@@ -356,7 +356,7 @@ struct DetailView: View {
                         PlaybackButton(item: item) {
                             HStack(spacing: 14) {
                                 Text(episodeName(episode))
-                                    .font(.headline).frame(width: 44, height: 44)
+                                    .font(.headline).lineLimit(2).minimumScaleFactor(0.5).multilineTextAlignment(.center).frame(width: 44, height: 44)
                                     .background(LilacStyle.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 12)).foregroundStyle(LilacStyle.accent)
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(episode.title.isEmpty || episode.title == "Episode \(episode.number)" ? episodeName(episode) + "화" : episode.title).font(.subheadline.weight(.semibold)).lineLimit(2)

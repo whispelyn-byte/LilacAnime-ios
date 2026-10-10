@@ -67,11 +67,12 @@ class DesktopCatalogFiltersTest {
     }
     @Test fun emptyFormatMatchDoesNotEndSourcePagination() = runTest {
         val client = HttpClient(MockEngine {
-            respond("""<div class="show-item"><a class="show-item-img-link" href="/123/show.html"><img src="poster.jpg"></a><div class="show-item-title">TV 작품</div></div>""", headers = headersOf(HttpHeaders.ContentType, "text/html"))
+            // ani.ohli24.com's airing board (page data JSON) with only a movie on it.
+            respond("""<script data-page="app" type="application/json">{"props":{"items":[{"slug":"극장판 작품","title":"극장판 작품","category":"극장판","thumbnail":"p.jpg"}]}}</script>""", headers = headersOf(HttpHeaders.ContentType, "text/html"))
         })
         val repository = SourceRepository(client)
         try {
-            val page = repository.catalog("ohli24", 1, BrowseFilter(format = "Movie"))
+            val page = repository.catalog("ohli24", 1, BrowseFilter(format = "TV"))
             assertTrue(page.items.isEmpty()); assertTrue(page.hasMore); assertTrue(page.signature.isNotEmpty())
             val facets = repository.filters("ohli24")
             assertFalse(facets.supportsYear); assertFalse(facets.supportsSeason); assertTrue(facets.genres.isEmpty())

@@ -84,7 +84,17 @@
     new PerformanceObserver(list => list.getEntries().forEach(entry => requestPlaylist(entry.name))).observe({entryTypes:['resource']});
     performance.getEntriesByType('resource').forEach(entry => requestPlaylist(entry.name));
   } catch {}
+  // A raw video ("[Ohys-Raws] …") gets its Korean subtitle from a file: a captions track of the player's playlist.
+  const captions = () => {
+    try {
+      const item = window.jwplayer?.()?.getPlaylist?.()?.[0] || {};
+      [...(item.tracks || []), ...(item.sources || []).flatMap(source => source.tracks || [])]
+        .filter(track => /^(captions|subtitles)$/i.test(track.kind || '') && track.file)
+        .forEach(track => { const url = absolute(track.file); if (/^https?:\/\//.test(url) && !seen.has(url)) { seen.add(url); send({url, kind: 'ohliCaption', label: String(track.label || ''), referer: location.href, manifest: ''}); } });
+    } catch {}
+  };
   const scan = () => {
+    captions();
     if (complete) {
       try { window.jwplayer?.()?.pause?.(); } catch {}
       document.querySelectorAll('video').forEach(video => { try { video.pause(); } catch {} });

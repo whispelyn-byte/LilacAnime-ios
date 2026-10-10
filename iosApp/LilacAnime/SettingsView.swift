@@ -39,6 +39,9 @@ struct SettingsView: View {
 
                     Picker("테마", selection: $store.preferences.theme) { Text("시스템").tag("system"); Text("밝게").tag("light"); Text("어둡게").tag("dark") }
                 }
+                Section("기기 동기화") {
+                    NavigationLink("기기 동기화 · 데스크탑과 내 목록·시청 기록 맞추기") { DeviceSyncView() }
+                }
                 }
                 if category == "playback" {
                 Section("재생") {

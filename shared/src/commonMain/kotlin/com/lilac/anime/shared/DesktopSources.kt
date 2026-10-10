@@ -102,6 +102,109 @@ object DesktopSourceParser {
                 genres = card.select(".top-list-body-genre a").map { it.text() }.filter(String::isNotBlank))
         }.distinctBy { it.id }
     }
+    // --- 애니24 (ani.ohli24.com), as desktop main.cjs reads it -------------------------------------------------------
+    // A Laravel + Inertia app: each page carries what it shows as JSON (<script data-page="app">). Boards: /방영중 (every
+    // airing show on one page), /완결 and /극장판 (24 a page, ?page=N, ?keyword=). A series is /c/<title> (its info rows,
+    // story and episodes, 100 a page); an episode is /e/<title N화>, its player in playing.body.url. It took the place of
+    // www.ohli24.net, a copy no longer kept up (episodes missing, dates off).
+    const val OHLI24_WEB = "https://ani.ohli24.com"
+    fun ohliProps(html: String): JsonObject {
+        val json = Regex("<script data-page=\"app\" type=\"application/json\">([\\s\\S]*?)</script>").find(html)?.groupValues?.get(1)
+            ?: throw IllegalStateException("애니24 페이지를 읽지 못했습니다.")
+        return Json.parseToJsonElement(json).jsonObject.obj("props")
+    }
+    fun ohliPath(vararg parts: String): String = OHLI24_WEB + "/" + parts.joinToString("/") { it.encodeURLPathPart() }
+    fun ohliInfo(item: JsonObject): Map<String, String> = item.obj("metadata").list("info_rows").mapNotNull { row ->
+        val pair = row as? JsonArray ?: return@mapNotNull null
+        val label = (pair.getOrNull(0) as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
+        label to (pair.getOrNull(1) as? JsonPrimitive)?.contentOrNull.orEmpty()
+    }.toMap()
+    /** "2025-10-29T10:14:25+09:00" / "2025-10-25T08:49:54.000000Z" -> the day in Korea. */
+    fun ohliDay(value: String): String {
+        val match = Regex("^(\\d{4})-(\\d{2})-(\\d{2})(?:[T ](\\d{2}):(\\d{2})(?::\\d{2})?(?:\\.\\d+)?(Z|[+-]\\d{2}:?\\d{2})?)?").find(value.trim()) ?: return ""
+        val (y, m, d, h, mi, zone) = match.destructured
+        if (h.isEmpty()) return "$y-$m-$d"
+        val offset = when {
+            zone.isEmpty() -> 540
+            zone == "Z" -> 0
+            else -> zone.filter(Char::isDigit).let { (if (zone.startsWith("-")) -1 else 1) * (it.take(2).toInt() * 60 + it.drop(2).toInt()) }
+        }
+        val minutes = h.toInt() * 60 + mi.toInt() - offset + 540
+        val days = civilDays(y.toInt(), m.toInt(), d.toInt()) + floorDivide(minutes.toLong(), 1440L)
+        return civilDate(days)
+    }
+    private fun floorDivide(a: Long, b: Long): Long = a / b - if (a % b != 0L && (a < 0) != (b < 0)) 1 else 0
+    private fun civilDays(year: Int, month: Int, day: Int): Long {
+        val y = (if (month <= 2) year - 1 else year).toLong()
+        val era = floorDivide(y, 400L)
+        val yoe = y - era * 400
+        val doy = (153 * (month + (if (month > 2) -3 else 9)) + 2) / 5 + day - 1
+        val doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
+        return era * 146097 + doe - 719468
+    }
+    private fun civilDate(days: Long): String {
+        val z = days + 719468
+        val era = floorDivide(z, 146097L)
+        val doe = z - era * 146097
+        val yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365
+        val doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
+        val mp = (5 * doy + 2) / 153
+        val day = doy - (153 * mp + 2) / 5 + 1
+        val month = if (mp < 10) mp + 3 else mp - 9
+        val year = yoe + era * 400 + if (month <= 2) 1 else 0
+        return year.toString().padStart(4, '0') + "-" + month.toString().padStart(2, '0') + "-" + day.toString().padStart(2, '0')
+    }
+    /** A series as the app lists it, from a board's card (comics.data) or the airing list's shorter one. */
+    fun ohliAnime(item: JsonObject): Anime {
+        val slug = item.text("slug").ifBlank { item.text("title") }
+        val info = ohliInfo(item)
+        val count = item.number("episodes_count") ?: Regex("\\d+").find(item.text("eps"))?.value?.toIntOrNull()
+        val thumbnail = item.text("thumbnail")
+        return Anime(id = slug, title = item.text("title").ifBlank { slug }, source = "ohli24", detailUrl = ohliPath("c", slug),
+            native = item.text("original_title").ifBlank { info["원제"].orEmpty() },
+            poster = if (thumbnail.isBlank()) "" else "$OHLI24_WEB/storage/$thumbnail",
+            score = item.text("rating").toDoubleOrNull() ?: 0.0,
+            year = Regex("\\d{4}").find(info["방영일"].orEmpty().ifBlank { item.text("published_at") })?.value.orEmpty(),
+            format = if (item.text("category") == "극장판") "MOVIE" else "TV",
+            totalEpisodes = item.number("episode_total")?.takeIf { it > 0 }, availableEpisodes = count,
+            status = item.text("category").ifBlank { if (item.text("eps").isNotBlank()) "방영중" else "" },
+            description = DisplayText.plain(item.text("description")),
+            genres = item.text("tags_string").split(",").map(String::trim).filter(String::isNotBlank))
+    }
+    /** A series and every episode: numbered ones first by number, specials (OVA, SP) after them; a movie is its one 1화. */
+    fun ohliDetail(comic: JsonObject, rows: List<JsonObject>, summary: Anime): SourceDetail {
+        data class Row(val label: EpisodeLabel, val url: String, val order: Int, val date: String)
+        var items = rows.map { Row(episodeLabel(it.text("title")), ohliPath("e", it.text("slug")), it.number("sort") ?: 0, ohliDay(it.text("published_at"))) }
+            .sortedWith(compareBy<Row>({ it.label.special }, { it.label.number ?: 0.0 }, { it.order }))
+        if (comic.text("category") == "극장판" && items.size == 1) items = listOf(items[0].copy(label = EpisodeLabel("1", 1.0, false)))
+        val episodes = items.mapIndexed { index, row -> koreanEpisode(row.label, row.url, index, row.date) }.distinctBy { it.id }
+        val info = ohliInfo(comic)
+        val card = ohliAnime(JsonObject(comic + ("episodes_count" to JsonPrimitive(episodes.size))))
+        val anime = summary.copy(id = summary.id.ifBlank { card.id },
+            title = card.title, native = card.native.ifBlank { summary.native }, poster = card.poster.ifBlank { summary.poster },
+            description = card.description.ifBlank { summary.description },
+            genres = card.genres.ifEmpty { info["장르"].orEmpty().split(",").map(String::trim).filter(String::isNotBlank) },
+            year = card.year.ifBlank { summary.year }, airedDate = info["방영일"].orEmpty(), format = card.format, status = card.status,
+            detailUrl = card.detailUrl, totalEpisodes = card.totalEpisodes, source = "ohli24", episodes = episodes,
+            availableEpisodes = items.filter { !it.label.special }.mapNotNull { it.label.number?.takeIf { value -> value % 1.0 == 0.0 }?.toInt() }.maxOrNull())
+        return SourceDetail(anime, if (episodes.isEmpty()) emptyList() else listOf(EpisodeServer(1, "애니24", episodes)))
+    }
+    // An episode's label on the Korean sites (애니24, 링크애니): "12화", "9.5화", or a special ("OVA 1화", "SP 노벨 히로인즈",
+    // "특별편"). A special has no number of its own (read as one, "OVA 1화" was 1화 a second time): it keeps its label.
+    data class EpisodeLabel(val name: String, val number: Double?, val special: Boolean)
+    private val specialEpisode = Regex("^\\s*(?:OVA|OAD|ONA|SP|SPECIAL|스페셜|특별편?|번외편?|극장판)(?![a-z])", RegexOption.IGNORE_CASE)
+    fun episodeLabel(label: String): EpisodeLabel {
+        val text = label.trim()
+        if (specialEpisode.containsMatchIn(text)) return EpisodeLabel(text.replace(Regex("\\s*화\\s*$"), ""), null, true)
+        val number = (Regex("(\\d+(?:\\.\\d+)?)\\s*화").find(text)?.groupValues?.get(1) ?: Regex("\\d+(?:\\.\\d+)?").find(text)?.value)?.toDoubleOrNull()?.takeIf { it != 0.0 }
+        return EpisodeLabel(number?.let(::numberName) ?: text.ifBlank { "1" }, number, false)
+    }
+    private fun numberName(value: Double) = if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()
+    /** "12화", or a special's own label ("OVA 1", "SP 노벨 히로인즈"). */
+    fun episodeTitle(name: String) = if (Regex("\\d$").containsMatchIn(name)) name + "화" else name
+    private fun koreanEpisode(label: EpisodeLabel, url: String, index: Int, airedDate: String) =
+        Episode(id = url, number = label.number?.toInt() ?: if (label.special) 0 else index + 1, title = episodeTitle(label.name), videoUrl = url,
+            displayNumber = label.name, airedDate = airedDate)
     fun koreanDetail(html: String, summary: Anime, source: String): SourceDetail {
         val base = if (source == "linkani") "https://linkani.tv" else "https://www.ohli24.net"
         val doc = Ksoup.parse(html, summary.detailUrl.ifBlank { base })
@@ -115,14 +218,18 @@ object DesktopSourceParser {
         val groups = if (lists.isEmpty()) listOf(doc) else lists
         groups.forEachIndexed { index, list ->
             val links = list.select(if (source == "linkani") "a[href*=/watch/]" else ".eps-item a[href]")
-            val episodes = links.mapIndexedNotNull { position, link ->
+            // 9.5화 keeps its own number and an OVA its label, so neither is listed, played or saved as another episode.
+            val labelled = links.mapIndexedNotNull { position, link ->
                 val url = link.absUrl("href")
                 if (url.isBlank()) return@mapIndexedNotNull null
-                val label = link.text().replace(link.selectFirst(".eps-date")?.text().orEmpty(), "").trim()
-                val number = Regex("\\d+").find(label)?.value?.toIntOrNull() ?: (position + 1)
-                Episode(id = url, number = number, title = label.ifBlank { number.toString() + "화" }, videoUrl = url,
-                    airedDate = link.selectFirst(".eps-date")?.text()?.takeIf { Regex("^\\d{4}-\\d{2}-\\d{2}$").matches(it) }.orEmpty())
-            }.distinctBy { it.id }.sortedBy { it.number }
+                var label = episodeLabel(link.text().replace(link.selectFirst(".eps-date")?.text().orEmpty(), "").trim())
+                if (label.number == null && !label.special) {
+                    val fromUrl = Regex("/k(\\d+)/?$").find(url)?.groupValues?.get(1)?.toDoubleOrNull()
+                    label = if (fromUrl != null) EpisodeLabel(numberName(fromUrl), fromUrl, false) else EpisodeLabel((position + 1).toString(), (position + 1).toDouble(), false)
+                }
+                label to koreanEpisode(label, url, position, link.selectFirst(".eps-date")?.text()?.takeIf { Regex("^\\d{4}-\\d{2}-\\d{2}$").matches(it) }.orEmpty())
+            }.distinctBy { it.second.id }.sortedWith(compareBy<Pair<EpisodeLabel, Episode>>({ it.first.special }, { it.first.number ?: 0.0 }))
+            val episodes = labelled.map { it.second }
             if (episodes.isNotEmpty()) servers += EpisodeServer(index + 1, tabs.getOrNull(index).orEmpty().ifBlank { if (source == "linkani") "링크애니" else "애니24" }, episodes)
         }
         if (source == "ohli24" && servers.isEmpty()) servers += EpisodeServer(1, "애니24", listOf(Episode(summary.detailUrl, 1, "1화", videoUrl = summary.detailUrl)))
@@ -139,7 +246,7 @@ object DesktopSourceParser {
             studios = if (source == "linkani") doc.select(".detail-info-desc li").firstOrNull { it.selectFirst("span")?.text()?.contains("제작사") == true }?.select("a")?.map { it.text() }.orEmpty() else summary.studios,
             score = doc.selectFirst(".ewave-star")?.attr("score")?.toDoubleOrNull() ?: summary.score,
             totalEpisodes = Regex("\\d+").find(fields["총화수"].orEmpty())?.value?.toIntOrNull() ?: summary.totalEpisodes,
-            availableEpisodes = servers.flatMap { it.episodes }.maxOfOrNull { it.number },
+            availableEpisodes = servers.flatMap { it.episodes }.filter { it.displayNumber.toDoubleOrNull()?.let { value -> value % 1.0 == 0.0 } == true }.maxOfOrNull { it.number },
             episodes = servers.firstOrNull()?.episodes.orEmpty(),
             anilistId = Regex("anilist-(\\d+)\\.").find(poster)?.groupValues?.get(1)?.toIntOrNull() ?: summary.anilistId)
         return SourceDetail(anime, servers)
@@ -264,10 +371,10 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
             return values.map(DesktopSourceParser::miruroAnime)
         }
         if (source == "ohli24") {
-            if (query.isNotBlank() && page > 1) return emptyList()
-            val url = if (query.isNotBlank()) "https://www.ohli24.net/search/keyword-" + query.encodeURLPathPart() + ".html"
-                else if (page == 1) "https://www.ohli24.net/" else "https://www.ohli24.net/finished/" + (page - 1) + "-1.html"
-            return DesktopSourceParser.koreanList(text(url), source)
+            // The airing shows first, then the finished ones a page at a time; movies from their own board.
+            if (query.isNotBlank()) return if (page > 1) emptyList() else ohliSearch(query)
+            if (filter.format.equals("Movie", true)) return ohliBoard("극장판", page).first
+            return if (page <= 1) ohliAiring() else ohliBoard("완결", page - 1).first
         }
         val base = "https://linkani.tv"
         val suffix = if (page > 1) "page/" + page + "/" else ""
@@ -275,7 +382,51 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
         val params = if (query.isBlank()) emptyMap() else mapOf("wd" to query)
         return DesktopSourceParser.koreanList(text(base + if (query.isBlank()) path else "/view/" + suffix, params), source)
     }
+    suspend fun ohliAiring(): List<Anime> =
+        DesktopSourceParser.ohliProps(text(DesktopSourceParser.ohliPath("방영중"))).list("items").filterIsInstance<JsonObject>().map(DesktopSourceParser::ohliAnime)
+    private suspend fun ohliBoard(board: String, page: Int, keyword: String = ""): Pair<List<Anime>, Boolean> {
+        val comics = DesktopSourceParser.ohliProps(text(DesktopSourceParser.ohliPath(board), buildMap {
+            if (page > 1) put("page", page.toString()); if (keyword.isNotBlank()) put("keyword", keyword)
+        })).obj("comics")
+        return comics.list("data").filterIsInstance<JsonObject>().map(DesktopSourceParser::ohliAnime) to comics.text("next_page_url").isBlank()
+    }
+    /** The finished and movie boards search themselves; the airing board lists every airing show, matched here. */
+    private suspend fun ohliSearch(query: String): List<Anime> = coroutineScope {
+        fun key(value: String) = value.lowercase().replace(Regex("\\s+"), "")
+        suspend fun safe(block: suspend () -> List<Anime>) = try { block() } catch (error: CancellationException) { throw error } catch (_: Exception) { emptyList() }
+        val airing = async { safe { ohliAiring() } }
+        val finished = async { safe { ohliBoard("완결", 1, query).first } }
+        val movies = async { safe { ohliBoard("극장판", 1, query).first } }
+        val wanted = key(query)
+        (airing.await().filter { key(it.title).contains(wanted) } + finished.await() + movies.await()).distinctBy { it.id }
+    }
+    /** A series by its page; one saved from www.ohli24.net is opened by its title, or found by a search for it. */
+    private suspend fun ohliDetail(summary: Anime): SourceDetail {
+        val own = summary.detailUrl.startsWith(DesktopSourceParser.OHLI24_WEB + "/c/")
+        val slug = if (own) Url(summary.detailUrl).encodedPath.removePrefix("/c/").decodeURLPart() else summary.title.ifBlank { summary.id }
+        var props = try { DesktopSourceParser.ohliProps(text(DesktopSourceParser.ohliPath("c", slug))) }
+            catch (error: CancellationException) { throw error } catch (error: Exception) { if (own) throw error; JsonObject(emptyMap()) }
+        if (props["comic"] !is JsonObject) {
+            if (own) throw IllegalStateException("애니24에서 이 작품을 찾지 못했습니다.")
+            val hit = ohliSearch(slug).firstOrNull { DesktopTitleRules.compareKey(it.title) == DesktopTitleRules.compareKey(slug) }
+                ?: throw IllegalStateException("애니24에서 이 작품을 찾지 못했습니다.")
+            props = DesktopSourceParser.ohliProps(text(hit.detailUrl))
+        }
+        val comic = props.obj("comic")
+        val rows = props.obj("episodes").list("data").filterIsInstance<JsonObject>().toMutableList()
+        for (page in 2..(props.obj("episodes").number("last_page") ?: 1)) {
+            rows += DesktopSourceParser.ohliProps(text(DesktopSourceParser.ohliPath("c", comic.text("slug")), mapOf("page" to page.toString()))).obj("episodes").list("data").filterIsInstance<JsonObject>()
+        }
+        val detail = DesktopSourceParser.ohliDetail(comic, rows, summary)
+        val ids = if (detail.anime.anilistId == null) lookupNativeIDs(detail.anime.native, detail.anime.year) else null
+        return if (ids == null) detail else detail.copy(anime = detail.anime.copy(anilistId = ids.first, malId = ids.second))
+    }
+    /** An episode's player page, from its page data (desktop resolveOhliEpisode). */
+    suspend fun ohliPlayer(url: String): String =
+        DesktopSourceParser.ohliProps(text(url)).obj("playing").obj("body").text("url").takeIf { it.startsWith("http") }
+            ?: throw IllegalStateException("이 회차의 영상 플레이어를 찾지 못했습니다.")
     suspend fun detail(summary: Anime, source: String): SourceDetail {
+        if (source == "ohli24") return ohliDetail(summary)
         if (source != "miruro") {
             val detail = DesktopSourceParser.koreanDetail(text(summary.detailUrl), summary, source)
             val ids = if (detail.anime.anilistId == null) lookupNativeIDs(detail.anime.native, detail.anime.year) else null
@@ -296,7 +447,7 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
     suspend fun homeShows(source: String, season: Boolean): List<Anime> {
         val date = currentCatalogDate(); val year = date.take(4)
         val quarter = listOf("WINTER", "SPRING", "SUMMER", "FALL")[(date.substring(5, 7).toInt() - 1) / 3]
-        if (source == "ohli24") return if (season) DesktopSourceParser.koreanList(text("https://www.ohli24.net/ing"), source) else emptyList()
+        if (source == "ohli24") return if (season) ohliAiring() else emptyList()
         if (source == "linkani") return (1..if (season) 2 else 1).flatMap { browse(source, "", it, if (season) BrowseFilter(year = year) else BrowseFilter(status = "RELEASING")) }.distinctBy { it.id }
         val candidates = mutableListOf<JsonObject>(); var cursor = ""
         repeat(6) {

@@ -262,7 +262,7 @@ struct DetailView: View {
                         AnimeArtwork(url: anime.poster, width: 96, height: 140).clipShape(RoundedRectangle(cornerRadius: 16))
                         VStack(alignment: .leading, spacing: 9) {
                             AnimeDisplayTitle(anime: anime, source: source).font(.title2.bold()).lineLimit(3).minimumScaleFactor(0.85)
-                            Text([anime.format, anime.year].filter { !$0.isEmpty }.joined(separator: " · "))
+                            Text([anime.format, anime.year, anime.status, anime.score > 0 ? "★ " + String(format: "%g", (anime.score * 100).rounded() / 100) : ""].filter { !$0.isEmpty }.joined(separator: " · "))
                                 .font(.subheadline).foregroundStyle(.white.opacity(0.8))
                             Text(anime.genres.prefix(3).joined(separator: " · ")).font(.caption).foregroundStyle(.white.opacity(0.7))
                         }
@@ -387,6 +387,10 @@ struct DetailView: View {
                 .font(.subheadline).lineSpacing(6).foregroundStyle(.secondary)
             Divider()
             if let views = model.extras?.views, !views.isEmpty { Text("조회 " + views).font(.caption).foregroundStyle(.secondary) }
+            // app.js openDetail: the source's own page for the work (작품 정보).
+            if let page = URL(string: anime.detailUrl), ["http", "https"].contains(page.scheme ?? "") {
+                Link(destination: page) { Label("사이트에서 작품 정보 보기", systemImage: "arrow.up.right.square") }.font(.subheadline)
+            }
             ForEach(Array([("원제", anime.native), ("로마자", anime.romaji), ("영문명", anime.english),
                 ("방영", anime.airedDate), ("제작", anime.studios.joined(separator: ", ")), ("장르", anime.genres.joined(separator: " · ")),
                 ("비고", anime.note)].enumerated()), id: \.offset) { _, row in

@@ -3,6 +3,19 @@ import LilacShared
 @testable import LilacAnime
 
 final class DesktopDownloadTests: XCTestCase {
+    func testSeriesGroupSummarisesEpisodeRangesLikeTheDesktop() {
+        XCTAssertEqual(DownloadStore.episodeRanges([1, 2, 3, 5, 7, 8]), "1~3, 5, 7, 8")
+        XCTAssertEqual(DownloadStore.episodeRanges([4, 2, 2, 1]), "1, 2, 4")
+        XCTAssertEqual(DownloadStore.episodeRanges([12]), "12")
+    }
+    func testServerChoicesGroupByKindWithoutTheKindPrefix() {
+        let stream = { (label: String) in ResolvedStream(label: label, url: URL(string: "https://fixture.test/" + label.replacingOccurrences(of: " ", with: "-") + ".m3u8")!, referer: "", headers: [:]) }
+        let choices = ServerChoice.all(streams: [stream("RAW - anikoto HD-2"), stream("SUB - animepahe animepahe"), stream("DUB - Moon")], servers: [])
+        XCTAssertEqual(ServerChoice.kinds(choices), ["sub", "raw", "dub"])
+        XCTAssertEqual(ServerChoice.name("SUB - animepahe animepahe"), "animepahe")
+        XCTAssertEqual(ServerChoice.name("RAW - anikoto HD-2"), "anikoto HD-2")
+        XCTAssertEqual(ServerChoice.title("soft"), "SOFT · 자막 따로")
+    }
     func testWindowsManifestRelocatesVideoSubtitlesFontsAndChapters() throws {
         let id = "test-" + UUID().uuidString
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(id)

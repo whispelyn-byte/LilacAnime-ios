@@ -10,7 +10,13 @@ struct HomeView: View {
     @State private var homeOrder = "season"
     @State private var featured = 0
     @State private var day = (Calendar.current.component(.weekday, from: Date()) + 5) % 7
-    private var heroItems: [Anime] { home.sections.first { $0.name == "이번 시즌" }?.items.isEmpty == false ? home.sections.first { $0.name == "이번 시즌" }!.items : items }
+    /// app.js renderHero: up to five shows with art; the one shown moves on every nine seconds.
+    private var heroItems: [Anime] {
+        let pool = home.sections.first { $0.name == "이번 시즌" }?.items.isEmpty == false ? home.sections.first { $0.name == "이번 시즌" }!.items : items
+        let withArt = pool.filter { !$0.poster.isEmpty || !$0.backdrop.isEmpty }
+        return Array((withArt.isEmpty ? pool : withArt).prefix(5))
+    }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var workspace = false
     let browse: () -> Void
     private var items: [Anime] { UIShowcase.enabled ? UIShowcase.items : model.items }
@@ -32,7 +38,7 @@ struct HomeView: View {
                         }.padding(.horizontal, 16)
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 12) {
-                                ForEach(Array(heroItems.prefix(8).enumerated()), id: \.element.id) { index, candidate in
+                                ForEach(Array(heroItems.enumerated()), id: \.element.id) { index, candidate in
                                     Button { featured = index } label: {
                                         AnimeArtwork(url: candidate.poster, width: 55, height: 78)
                                             .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -125,6 +131,11 @@ struct HomeView: View {
                 .refreshable { if !UIShowcase.enabled { model.load(); home.load(source: model.source, day: max(day, 0)) } }
                 .onChange(of: day) { value in if !UIShowcase.enabled { home.load(source: model.source, day: max(value, 0)) } }
                 .task(id: library.preferences.source) { if !UIShowcase.enabled { featured = 0; home.load(source: library.preferences.source, day: max(day, 0)) } }
+                .task(id: "\(featured)/\(heroItems.count)") {
+                    guard !UIShowcase.enabled, !reduceMotion, heroItems.count > 1 else { return }
+                    do { try await Task.sleep(nanoseconds: 9_000_000_000) } catch { return }
+                    withAnimation { featured = (min(featured, heroItems.count - 1) + 1) % heroItems.count }
+                }
                 .task(id: library.preferences.source + homeOrder) { if homeOrder == "updated" && !UIShowcase.enabled { await recent.loadHome(library.preferences.source) } }
                 .task { if !UIShowcase.enabled && model.items.isEmpty { model.source = library.preferences.source; model.load() } }
                 .onChange(of: library.preferences.source) { source in if !UIShowcase.enabled && model.source != source { model.source = source; model.load() } }

@@ -34,6 +34,17 @@ final class EpisodePlayerModel: ObservableObject {
     @Published private(set) var subtitleSearchError: String?
     @Published var searchTitle = ""
     @Published var subtitleOffset = 0.0
+    /// Player subtitle tab (app.js renderSubtitleSheet): the chip pressed last, the list opened under the chips and the state line.
+    @Published private(set) var pressedSource: String?
+    private var pressedFor: URL?
+    @Published private(set) var pickedSheet: String?
+    private var sheetPicked = false
+    @Published private(set) var subtitleState: String?
+    @Published private(set) var selectedTrackURL: URL?
+    @Published private(set) var selectedMaker: String?
+    private var chipTask: Task<Void, Never>?
+    private var chipRequest = UUID()
+    private var koreanFiles: [URL: Bool] = [:]
     private let titleLookup = TitleLookup()
     @Published var chapters: [OfflineChapter] = []
     @Published var systemPlayback = false
@@ -162,6 +173,8 @@ final class EpisodePlayerModel: ObservableObject {
         generation = UUID(); titleLookup.cancel(); searchTitle = item.anime.title; self.item = item; active = nil; subtitle = nil; sourceSubtitle = nil; assets = []; subtitleFiles = []; chapters = []; selectedProvider = ""; skipEntered = nil
         selectedJimakuURL = nil
         subtitleSearchRequest = UUID(); subtitleSearchCache = [:]; subtitleResultsProvider = ""; subtitleSearchError = nil; searching = false; makers = []
+        chipTask?.cancel(); chipTask = nil; chipRequest = UUID(); pressedSource = nil; pressedFor = nil; pickedSheet = nil; sheetPicked = false
+        subtitleState = nil; selectedTrackURL = nil; selectedMaker = nil
         loadedSkip = false; lastSave = 0; lastSkipped = ""; systemPlayback = false
         begin(library: library)
     }
@@ -283,11 +296,16 @@ final class EpisodePlayerModel: ObservableObject {
         selectedProvider = provider ?? saved?.provider ?? "user"
         sourceSubtitle = saved?.original ?? url; subtitle = url; engine.subtitle(url)
         EpisodeSubtitleStore.shared.save(url, item: item, provider: selectedProvider, translated: saved?.translated ?? false, original: saved?.original)
+        if selectedProvider != "jimaku" { selectedJimakuURL = nil }
+        if selectedProvider != "reanime" { selectedTrackURL = nil }
+        if selectedProvider != "anissia" { selectedMaker = nil }
         if !automatic {
             library.saveSubtitle(animeID: item.anime.id, episodeID: item.episodeID, file: url, offset: subtitleOffset)
             if saved?.translated == true { library.preferAI(true, animeID: item.anime.id) }
-            else if SubtitleFiles.isKorean(url) { library.preferAI(false, animeID: item.anime.id) }
-            if ["kairan", "csora", "anissia", "jimaku", "reanime"].contains(selectedProvider) { library.preferences.subtitleProvider = selectedProvider }
+            else if isKoreanSubtitle(url) { library.preferAI(false, animeID: item.anime.id) }
+            // Jimaku is picked per episode and is never kept as the default source; the site's tracks are 자동 (app.js switchSubtitleSource).
+            if ["kairan", "csora", "anissia"].contains(selectedProvider) { library.preferences.subtitleProvider = selectedProvider }
+            else if selectedProvider == "reanime" && library.preferences.subtitleProvider != "manual" { library.preferences.subtitleProvider = "auto" }
         }
         if translate && selectedProvider != "user" && saved?.translated != true && library.preferences.translationPreferences(automatic: true) != nil && !SubtitleFiles.isKorean(url) { self.translate(library: library, manual: false) }
         else { prepareAlongside(library: library) }
@@ -399,10 +417,15 @@ final class EpisodePlayerModel: ObservableObject {
         subtitleSearchRequest = UUID()
         let request = subtitleSearchRequest
         searching = true; subtitleSearchError = nil; assets = []; makers = []; subtitleResultsProvider = "anissia"
-        let token = generation
-        service.subtitleMakers(title: searchTitle) { [weak self] values, failure in
-            guard token == self?.generation, request == self?.subtitleSearchRequest else { return }
-            self?.makers = values ?? []; self?.subtitleSearchError = failure; self?.searching = false
+        let token = generation, opening = item, typed = searchTitle
+        Task {
+            // Anissia lists Korean titles: an English or Japanese one is looked up first, as the subtitle search does.
+            let title = typed == opening.anime.title && !TitleCandidates.shared.isKorean(title: typed) ? await preparer.searchTitle(opening) : typed
+            guard token == generation, request == subtitleSearchRequest else { return }
+            service.subtitleMakers(title: title) { [weak self] values, failure in
+                guard token == self?.generation, request == self?.subtitleSearchRequest else { return }
+                self?.makers = values ?? []; self?.subtitleSearchError = failure; self?.searching = false
+            }
         }
     }
     func searchMaker(_ maker: SubtitleMaker) {
@@ -413,6 +436,127 @@ final class EpisodePlayerModel: ObservableObject {
             self?.finishSubtitleSearch(values, failure: failure, key: key, token: token, request: request)
         }
     }
+    // MARK: Subtitle tab (app.js switchSubtitleSource / renderSubtitleSheet)
+
+    func isKoreanSubtitle(_ url: URL) -> Bool {
+        if let known = koreanFiles[url] { return known }
+        let value = SubtitleFiles.isKorean(url); koreanFiles[url] = value; return value
+    }
+    var siteTracks: [RemoteSubtitle] { active?.subtitles ?? resolver.subtitles }
+    /// Re:Anime / Miruro list their subtitle languages; Linkkf has its own Korean subtitle.
+    var trackSource: String? { ["reanime", "miruro", "linkkf"].contains(item.anime.source) && !siteTracks.isEmpty ? (item.anime.source == "linkkf" ? "linkkf" : "reanime") : nil }
+    var currentSaved: SavedSubtitle? { subtitle.flatMap { file in EpisodeSubtitleStore.shared.list(item).first { $0.file == file } } }
+    /// The chip lit: the one pressed last until the subtitle on screen changes, then the source of the subtitle on screen.
+    var activeSubtitleSource: String {
+        if let pressedSource, pressedFor == subtitle { return pressedSource }
+        if pressedSource == "ai" && translation.running { return "ai" }
+        guard subtitle != nil else { return "" }
+        if currentSaved?.translated == true { return "ai" }
+        return ["linkkf", "provider", "reanime"].contains(selectedProvider) ? (trackSource ?? selectedProvider) : selectedProvider
+    }
+    /// The list open under the chips: the one picked last, else the one of the subtitle on screen.
+    var openSheet: String? {
+        if sheetPicked { return pickedSheet }
+        return ["reanime", "jimaku", "anissia"].contains(activeSubtitleSource) ? activeSubtitleSource : nil
+    }
+    var subtitleLabel: String? {
+        guard let subtitle else { return nil }
+        if let saved = currentSaved { return SubtitleLabels.label(saved, maker: selectedMaker) }
+        return SubtitleLabels.label(provider: selectedProvider, translated: false, name: subtitle.lastPathComponent, maker: selectedMaker)
+    }
+    /// One 번역 row: shown while a subtitle that is not Korean is on, a machine translation can be made again, or one runs.
+    var translatable: Bool { translation.running || currentSaved?.translated == true || (subtitle.map { !isKoreanSubtitle($0) } ?? false) }
+    var retranslatable: Bool { currentSaved?.translated == true && sourceSubtitle != nil && sourceSubtitle != subtitle }
+
+    private func press(_ source: String, sheet: String?) {
+        chipTask?.cancel(); chipRequest = UUID()
+        pressedSource = source; pressedFor = subtitle
+        pickedSheet = sheet; sheetPicked = true; subtitleState = nil
+    }
+    func chooseSource(_ source: String, library: LibraryStore) {
+        if source == "jimaku" {
+            press("jimaku", sheet: "jimaku"); subtitleResultsProvider = "jimaku"
+            let opening = item
+            Task { await jimaku.load(opening, retryFailure: true) }
+            return
+        }
+        if source == "ai" {
+            press("ai", sheet: nil)
+            if let translated = EpisodeSubtitleStore.shared.list(item).first(where: \.translated), let file = translated.file {
+                library.preferAI(true, animeID: item.anime.id)
+                selectSubtitle(file, library: library, translate: false, provider: translated.provider); return
+            }
+            translate(library: library); return
+        }
+        press(source, sheet: ["reanime", "anissia"].contains(source) ? source : nil)
+        library.preferAI(false, animeID: item.anime.id)
+        if library.preferences.subtitleProvider != "manual" || ["kairan", "csora", "anissia"].contains(source) {
+            library.preferences.subtitleProvider = ["kairan", "csora", "anissia"].contains(source) ? source : "auto"
+        }
+        if source == "anissia" { loadMakers() }
+        if source == "reanime" || source == "linkkf" {
+            let tracks = siteTracks
+            if let korean = tracks.first(where: DesktopSubtitlePolicy.isKorean) { chooseTrack(korean, library: library); return }
+            if let translated = EpisodeSubtitleStore.shared.list(item).first(where: \.translated), let file = translated.file {
+                selectSubtitle(file, library: library, translate: false, provider: translated.provider); return
+            }
+            if let track = DesktopSubtitlePolicy.translationTrack(tracks) ?? tracks.first { chooseTrack(track, library: library, translate: true) }
+            else { subtitleState = "사이트 자막 트랙이 없습니다." }
+            return
+        }
+        if let saved = EpisodeSubtitleStore.shared.list(item).first(where: { $0.provider == source && !$0.translated }), let file = saved.file {
+            selectSubtitle(file, library: library, provider: source); return
+        }
+        let label = SubtitleLabels.provider(source)
+        subtitleState = label + " 자막을 찾는 중..."
+        let token = generation, request = chipRequest, opening = item
+        chipTask = Task {
+            let found = try? await preparer.community(opening, provider: source)
+            guard token == generation, request == chipRequest, !Task.isCancelled else { return }
+            if let found { subtitleFiles = [found.0]; subtitleState = nil; selectSubtitle(found.0, library: library, provider: found.1) }
+            else { subtitleState = label + " 자막을 찾지 못했습니다." }
+        }
+    }
+    func chooseTrack(_ track: RemoteSubtitle, library: LibraryStore, translate: Bool = false) {
+        if pressedSource == nil || pressedFor != subtitle { pressedSource = trackSource ?? "reanime"; pressedFor = subtitle }
+        selectedTrackURL = track.url
+        importSubtitle(track.url, library: library, headers: track.headers ?? [:], translate: translate, provider: "reanime")
+    }
+    func chooseMaker(_ maker: SubtitleMaker, library: LibraryStore) {
+        press("anissia", sheet: "anissia")
+        subtitleState = "Anissia · " + maker.name + " 자막을 찾는 중..."
+        let token = generation, request = chipRequest, opening = item
+        chipTask = Task {
+            let found = try? await preparer.maker(opening, website: maker.website)
+            guard token == generation, request == chipRequest, !Task.isCancelled else { return }
+            if let found {
+                subtitleFiles = [found.0]; subtitleState = nil
+                selectSubtitle(found.0, library: library, provider: "anissia"); selectedMaker = maker.name
+            } else { subtitleState = maker.name + "의 " + opening.displayNumber + "화 자막을 찾지 못했습니다." }
+        }
+    }
+    /// 한국어 자막 다시 찾기: the automatic order again, past the saved subtitles and earlier results (app.js #findSubtitle).
+    func findKoreanAgain(library: LibraryStore) {
+        chipTask?.cancel(); chipRequest = UUID(); pressedSource = nil; sheetPicked = false
+        library.preferAI(false, animeID: item.anime.id)
+        preparer.resetSearches(); selectedTrackURL = nil
+        subtitleState = "온라인 자막을 찾는 중..."
+        var preferences = library.preferences
+        if preferences.subtitleProvider == "manual" { preferences.subtitleProvider = "auto" }
+        let token = generation, request = chipRequest, opening = item, stream = active
+        chipTask = Task {
+            let found = try? await preparer.prepare(opening, tracks: [], preferences: preferences, skipSaved: true, stream: stream)
+            guard token == generation, request == chipRequest, !Task.isCancelled else { return }
+            if let found { subtitleFiles = [found.0]; subtitleState = "자막 적용 완료"; selectSubtitle(found.0, library: library, provider: found.1) }
+            else { subtitleState = "자막을 찾지 못했습니다. 자막 파일을 직접 열 수 있어요." }
+        }
+    }
+    /// The configured translation API (the chosen one first), for the 번역 button beside 로컬 AI.
+    func cloudProvider(_ library: LibraryStore) -> String? {
+        let clouds = ["gemini", "openai", "deepl", "qwen"], wanted = library.preferences.translationProvider
+        return (clouds.contains(wanted) ? [wanted] + clouds.filter { $0 != wanted } : clouds).first { !SecureKeys.load($0).isEmpty }
+    }
+
     private func stopPrefetch() {
         prefetchTask?.cancel(); prefetchTask = nil; pretranslation.cancel(); nextResolver.cancel(); prefetchStatus = nil
     }
@@ -474,6 +618,7 @@ struct EpisodePlayerView: View {
     @State private var subtitleSheet = false
     @State private var settings = false
     @AppStorage("playerSettingsTab") private var settingsTab = 0
+    @State private var openServerKind = ""
     @State private var originalOrientation: UIInterfaceOrientation = .portrait
     init(item: PlaybackItem) { _model = StateObject(wrappedValue: EpisodePlayerModel(item: item)) }
     var body: some View {
@@ -570,17 +715,7 @@ struct EpisodePlayerView: View {
     @ViewBuilder private var playbackSettings: some View {
         PlayerSettingsGroup("영상 서버 · 화질") {
             Text("영상이 끊기면 다른 서버나 낮은 화질을 선택하세요.").font(.caption).foregroundStyle(.white.opacity(0.5))
-            ForEach(model.resolver.streams) { stream in
-                Button { library.preferences.preferredStream = stream.label; library.preferences.preferredServers = (library.preferences.preferredServers ?? [:]).merging([model.item.anime.source: stream.label]) { _, new in new }; model.play(stream, library: library); showWeb = false } label: {
-                    HStack { Text(stream.label); Spacer(); if model.active?.id == stream.id { Image(systemName: "checkmark") } }
-                }
-            }
-            ForEach(model.resolver.servers.filter { server in !model.resolver.streams.contains(where: { $0.label == server.label }) }, id: \.url) { server in
-                Button(server.label) {
-                    library.preferences.preferredServers = (library.preferences.preferredServers ?? [:]).merging([model.item.anime.source: server.label]) { _, new in new }
-                    model.active = nil; model.engine.pause(); model.resolver.selectServer(server)
-                }
-            }
+            serverPicker
             PlayerChoiceGrid(options: ["Auto", "480p", "720p", "1080p"].map { ($0, $0) }, selection: Binding(get: { library.preferences.quality }, set: {
                 library.preferences.quality = $0; if let stream = model.active { model.play(stream, library: library) }
             }), identifier: "player-quality")
@@ -630,41 +765,63 @@ struct EpisodePlayerView: View {
         }
         if let error = model.error { PlayerSettingsGroup("알림") { Text(error).foregroundStyle(.red) } }
     }
+    /// Video servers grouped by kind (player.js renderVideoServers): 자동 and one chip per kind, the servers of the open kind
+    /// under them, their names without the kind prefix. A picked server is kept for the source's later episodes.
+    @ViewBuilder private var serverPicker: some View {
+        let choices = ServerChoice.all(streams: model.resolver.streams, servers: model.resolver.servers)
+        if choices.count >= 2 {
+            let playing = model.active?.label ?? model.resolver.serverLabel
+            let picked = library.preferences.preferredServers?[model.item.anime.source] ?? ""
+            let kinds = ServerChoice.kinds(choices)
+            let open = kinds.contains(openServerKind) ? openServerKind : (choices.first { $0.label == playing } ?? choices[0]).kind
+            Text("재생 중: " + (playing.isEmpty ? "-" : playing)).font(.caption).foregroundStyle(.white.opacity(0.65))
+            PlayerChoiceGrid(options: [("", "자동 (추천)")] + kinds.map { ("kind:" + $0, ServerChoice.title($0)) },
+                selection: Binding(get: { picked.isEmpty ? "" : "kind:" + open }, set: { value in
+                    if value.hasPrefix("kind:") { openServerKind = String(value.dropFirst(5)); return }
+                    var servers = library.preferences.preferredServers ?? [:]; servers[model.item.anime.source] = nil
+                    library.preferences.preferredServers = servers; library.preferences.preferredStream = nil
+                    model.save(library: library); showWeb = false; model.begin(library: library)
+                }), identifier: "player-server-kinds")
+            PlayerChoiceGrid(options: choices.filter { $0.kind == open }.map { ($0.id, ServerChoice.name($0.label)) },
+                selection: Binding(get: { model.active?.id ?? choices.first { $0.label == (picked.isEmpty ? playing : picked) }?.id ?? "" }, set: { id in
+                    guard let choice = choices.first(where: { $0.id == id }) else { return }
+                    library.preferences.preferredServers = (library.preferences.preferredServers ?? [:]).merging([model.item.anime.source: choice.label]) { _, new in new }
+                    model.save(library: library); showWeb = false
+                    if let stream = choice.stream { library.preferences.preferredStream = stream.label; model.play(stream, library: library) }
+                    else if let server = choice.server { model.active = nil; model.engine.pause(); model.resolver.selectServer(server) }
+                }), identifier: "player-servers")
+            if let note = ServerChoice.note(open) { Text(note).font(.caption).foregroundStyle(.white.opacity(0.5)) }
+        }
+    }
     @ViewBuilder private var subtitleSettings: some View {
         PlayerSettingsGroup("자막 표시") {
             Toggle("자막 표시", isOn: Binding(get: { model.engine.subtitlesVisible }, set: { _ in model.engine.toggleSubtitleVisibility() }))
-            if let subtitle = model.subtitle { Text(SubtitleNames.label(subtitle.lastPathComponent)).font(.caption).foregroundStyle(.white.opacity(0.65)) }
-            if model.subtitleLookupLoading { ProgressView("자막을 찾는 중") }
-            if let error = model.displayedSubtitleSearchError ?? model.error { Text(error).font(.caption).foregroundStyle(.red) }
+            Text(subtitleStateText).font(.caption).foregroundStyle(.white.opacity(0.65)).accessibilityIdentifier("player-subtitle-state")
+            if model.translatable { translateRow }
+            if let error = model.error { Text(error).font(.caption).foregroundStyle(.red) }
         }
         PlayerSettingsGroup("자막 가져올 곳") {
-            PlayerChoiceGrid(options: [("auto", "자동"), ("kairan", "Kairan"), ("csora", "Csora"), ("anissia", "Anissia"), ("jimaku", "Jimaku"), ("manual", "직접 선택")], selection: Binding(get: { library.preferences.subtitleProvider ?? "auto" }, set: { library.preferences.subtitleProvider = $0 }), identifier: "player-subtitle-source")
-            Text("다음 자막 검색부터 선택한 곳을 먼저 찾습니다.").font(.caption).foregroundStyle(.white.opacity(0.5))
-            Button("자막 검색 · Jimaku 파일 · 저장 자막", action: openSubtitleList)
-            Button("한국어 자막 다시 찾기") {
-                let provider = library.preferences.subtitleProvider ?? "auto"
-                model.search(["auto", "manual"].contains(provider) ? "kairan" : provider)
-            }
+            Text("누르면 그곳의 자막으로 바꾸고, 다음 화부터도 그곳을 먼저 찾습니다.").font(.caption).foregroundStyle(.white.opacity(0.5))
+            PlayerChoiceGrid(options: subtitleChips, selection: Binding(get: { model.activeSubtitleSource }, set: { model.chooseSource($0, library: library) }), identifier: "player-subtitle-source")
+            if model.openSheet == "anissia" { makerBox }
+            if model.openSheet == "reanime" && model.trackSource == "reanime" { trackBox }
+            if model.openSheet == "jimaku" { jimakuBox }
+        }
+        PlayerSettingsGroup("자막이 없거나 안 맞을 때") {
+            Button("한국어 자막 다시 찾기") { model.findKoreanAgain(library: library) }
             Button("자막 파일 열기") { importingFont = false; settings = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { importer = true } }
-        }
-        if !(model.active?.subtitles ?? model.resolver.subtitles).isEmpty {
-            PlayerSettingsGroup("사이트 자막 트랙") {
-                ForEach(model.active?.subtitles ?? model.resolver.subtitles) { track in Button(track.label) { model.importSubtitle(track.url, library: library, headers: track.headers ?? [:], provider: "reanime") } }
-            }
-        }
-        PlayerSettingsGroup("한국어로 번역") {
-            Button("번역 API") { model.translate(library: library, provider: library.preferences.translationProvider == "local" ? "gemini" : library.preferences.translationProvider) }
-            Button("로컬 AI") { model.translate(library: library, provider: "local") }
-            Button("캐시 없이 다시 번역") { model.translate(library: library, fresh: true) }
-            TranslationStatus(coordinator: model.translation)
-            if let status = model.prefetchStatus { Text(status).font(.caption) }
+            Text("자막 파일은 ASS · SSA · SRT · VTT · SMI를 열 수 있어요.").font(.caption).foregroundStyle(.white.opacity(0.5))
+            Button("자막 직접 검색 · 다시 번역", action: openSubtitleList)
+            if let status = model.prefetchStatus { Text(status).font(.caption).foregroundStyle(.white.opacity(0.5)) }
         }
         if !savedSubtitles.list(model.item).isEmpty {
             PlayerSettingsGroup("이 회차에 저장한 자막") {
                 ForEach(savedSubtitles.list(model.item)) { record in
                     if let file = record.file {
                         HStack {
-                            Button(record.name) { model.selectSubtitle(file, library: library, translate: !record.translated) }
+                            Button { model.selectSubtitle(file, library: library, translate: !record.translated) } label: {
+                                HStack { Text(SubtitleLabels.label(record)); if model.subtitle == file { Image(systemName: "checkmark") } }
+                            }
                             Spacer(); ShareLink(item: file) { Image(systemName: "square.and.arrow.up") }
                             Button(role: .destructive) { savedSubtitles.remove(record.id) } label: { Image(systemName: "trash") }
                         }
@@ -672,14 +829,85 @@ struct EpisodePlayerView: View {
                 }
             }
         }
-        if !model.assets.isEmpty {
-            PlayerSettingsGroup("검색한 자막") {
-                ForEach(Array(model.assets.enumerated()), id: \.offset) { _, asset in
-                    if asset.source == "post", let url = URL(string: asset.url) { Link(asset.name, destination: url) }
-                    else { Button(asset.name) { if let url = URL(string: asset.url) { model.importSubtitle(url, library: library, provider: asset.source, asset: asset) } } }
-                }
+    }
+    private var subtitleStateText: String {
+        if let state = model.subtitleState { return state }
+        if model.translation.running, let status = model.translation.status { return status }
+        if let label = model.subtitleLabel { return label + " 적용됨" }
+        if model.active == nil { return "영상 연결 후 자막을 확인합니다." }
+        return "자막을 찾는 중이거나 찾은 자막이 없습니다."
+    }
+    private var subtitleChips: [(String, String)] {
+        var chips: [(String, String)] = []
+        if model.trackSource == "linkkf" { chips.append(("linkkf", "Linkkf")) }
+        if model.trackSource == "reanime" { chips.append(("reanime", model.item.anime.source == "miruro" ? "Miruro" : "Re:Anime")) }
+        return chips + [("kairan", "Kairan"), ("csora", "Csora"), ("anissia", "Anissia"), ("jimaku", "Jimaku"), ("ai", "AI 번역")]
+    }
+    /// The one 번역 row (app.js labelTranslateButtons): the API configured, and the local model; again for a translation on screen.
+    @ViewBuilder private var translateRow: some View {
+        let again = model.retranslatable
+        let cloud = model.cloudProvider(library)
+        HStack {
+            if let cloud {
+                Button(SubtitleLabels.engine(cloud) + (again ? "로 다시 번역" : "로 한국어 번역")) { model.translate(library: library, fresh: again, provider: cloud) }
             }
-        }
+            Button(again ? "로컬 AI로 다시 번역" : "로컬 AI로 번역") { model.translate(library: library, fresh: again, provider: "local") }
+        }.disabled(model.translation.running)
+        TranslationStatus(coordinator: model.translation)
+    }
+    private var makerBox: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack { Text("Anissia 자막 제작자").font(.caption.bold()); Spacer(); Text(model.searching ? "불러오는 중…" : model.makers.isEmpty ? "" : "\(model.makers.count)명").font(.caption2) }
+            Text("이 작품의 자막을 만든 분들이에요. 다른 분의 자막으로 바꾸려면 누르세요.").font(.caption2).foregroundStyle(.white.opacity(0.5))
+            if !model.searching && model.makers.isEmpty { Text(model.subtitleSearchError ?? "제작자 정보를 찾지 못했습니다.").font(.caption2).foregroundStyle(.white.opacity(0.5)) }
+            PlayerChoiceGrid(options: model.makers.map { ($0.website, $0.name) }, selection: Binding(get: { model.makers.first { $0.name == model.selectedMaker }?.website ?? "" }, set: { website in
+                if let maker = model.makers.first(where: { $0.website == website }) { model.chooseMaker(maker, library: library) }
+            }), identifier: "player-anissia-makers")
+        }.padding(10).background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+    }
+    private var trackBox: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack { Text((model.item.anime.source == "miruro" ? "Miruro" : "Re:Anime") + " 자막 트랙").font(.caption.bold()); Spacer(); Text("\(model.siteTracks.count)개 트랙").font(.caption2) }
+            Text("영상 사이트가 주는 여러 언어 자막이에요. 한국어가 없으면 영어 트랙 등을 고르세요. 고르면 위의 번역 버튼으로 한국어로 번역할 수 있어요.").font(.caption2).foregroundStyle(.white.opacity(0.5))
+            ForEach(SiteTrackOrder.sorted(model.siteTracks)) { track in
+                Button { model.chooseTrack(track, library: library) } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(SiteTrackOrder.name(track)).font(.caption.bold())
+                            if !SiteTrackOrder.detail(track).isEmpty { Text(SiteTrackOrder.detail(track)).font(.caption2).foregroundStyle(.white.opacity(0.5)) }
+                        }
+                        Spacer()
+                        if model.selectedTrackURL == track.url { Image(systemName: "checkmark") }
+                    }.contentShape(Rectangle())
+                }.buttonStyle(.plain)
+            }
+        }.padding(10).background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+    }
+    private var jimakuBox: some View {
+        let files = model.jimaku.files(model.item)
+        let failure = model.jimaku.error(model.item)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Jimaku 일본어 자막").font(.caption.bold()); Spacer()
+                Text(failure != nil ? "" : files == nil ? "Jimaku에서 찾는 중…" : files!.isEmpty ? "" : "\(files!.count)개 파일").font(.caption2)
+            }
+            Text("일본어 자막 파일이에요. 고르면 일본어로 먼저 나오고, 설정에 따라 한국어로 번역해 바꿔 줍니다.").font(.caption2).foregroundStyle(.white.opacity(0.5))
+            if let failure { Text(failure).font(.caption2).foregroundStyle(.red) }
+            else if files?.isEmpty == true { Text("이 회차의 파일이 없습니다.").font(.caption2).foregroundStyle(.white.opacity(0.5)) }
+            ForEach(files ?? [], id: \.subtitleResultID) { asset in
+                Button { if let url = URL(string: asset.url) { model.importSubtitle(url, library: library, provider: "jimaku", asset: asset) } } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(SubtitleNames.label(asset.name, url: asset.url)).font(.caption).lineLimit(2)
+                            Text(([URL(fileURLWithPath: asset.name).pathExtension.uppercased()] + (asset.size > 0 ? ["\(max(1, Int((Double(asset.size) / 1024).rounded())))KB"] : [])).filter { !$0.isEmpty }.joined(separator: " · "))
+                                .font(.caption2).foregroundStyle(.white.opacity(0.5))
+                        }
+                        Spacer()
+                        if model.selectedJimakuURL == asset.url { Image(systemName: "checkmark") }
+                    }.contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityIdentifier("player-jimaku-file")
+            }
+        }.padding(10).background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
     }
     private var styleSettings: some View {
         Group {

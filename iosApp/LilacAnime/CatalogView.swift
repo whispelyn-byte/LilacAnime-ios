@@ -201,15 +201,26 @@ struct DetailView: View {
     @State private var serverID: Int32 = 0
     private var anime: Anime { model.anime ?? summary }
     private var server: EpisodeServer? { model.servers.first { $0.id == serverID } ?? model.servers.first { $0.name == library.preferences.preferredServer } ?? model.servers.first }
-    private var resume: (EpisodeServer, Int)? {
-        for entry in library.history where entry.anime.id == source + ":" + anime.id {
+    @State private var page = 0
+    @State private var newestFirst = false
+    /// Detail 재생 (app.js resumeEpisode): the last played episode of this series, found by its id or else by its number,
+    /// resumed below 95% and started over from there on; without one, the first playable episode.
+    private var resume: (EpisodeServer, Int, Bool)? {
+        if let last = library.history.first(where: { $0.anime.id == source + ":" + anime.id }) {
             for server in model.servers {
-                if let index = server.episodes.firstIndex(where: { $0.id == entry.episodeID }) { return (server, index) }
+                if let index = server.episodes.firstIndex(where: { $0.id == last.episodeID }) { return (server, index, resumable(last)) }
+            }
+            for server in model.servers {
+                if let index = server.episodes.firstIndex(where: { Int($0.number) == last.number && $0.playable }) { return (server, index, resumable(last)) }
             }
         }
-        if let server, !server.episodes.isEmpty { return (server, 0) }
+        if let server, let index = server.episodes.firstIndex(where: \.playable) { return (server, index, false) }
         return nil
     }
+    private func resumable(_ entry: WatchEntry) -> Bool { entry.position > 0 && (entry.duration <= 0 || entry.position / entry.duration < 0.95) }
+    private var pageSize: Int { source == "reanime" ? 100 : 50 }
+    private var sortKey: String { "episodeNewestFirst:" + source + ":" + anime.id }
+    private func episodeName(_ episode: Episode) -> String { episode.displayNumber.isEmpty ? String(episode.number) : episode.displayNumber }
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
@@ -229,7 +240,7 @@ struct DetailView: View {
                 HStack(spacing: 12) {
                     if let resume {
                         PlaybackButton(item: playback(resume.0.episodes, index: resume.1)) {
-                            Label(resume.1 > 0 || library.history.contains(where: { $0.anime.id == source + ":" + anime.id }) ? "이어 보기" : "첫 회차 보기", systemImage: "play.fill")
+                            Label(episodeName(resume.0.episodes[resume.1]) + "화 " + (resume.2 ? "이어보기" : "재생"), systemImage: "play.fill")
                                 .font(.subheadline.bold()).frame(maxWidth: .infinity).padding(.vertical, 15)
                                 .foregroundStyle(.white).background(LilacStyle.accent, in: RoundedRectangle(cornerRadius: 16))
                         }.buttonStyle(.plain).accessibilityIdentifier("detail-play")
@@ -265,6 +276,7 @@ struct DetailView: View {
                     model.anime = summary
                     model.servers = [EpisodeServer(id: 1, name: "기본 서버", episodes: summary.episodes)]
                 } else if model.anime == nil { model.load(summary, source: source) }
+                newestFirst = UserDefaults.standard.bool(forKey: sortKey)
             }
     }
     private var episodes: some View {
@@ -275,37 +287,59 @@ struct DetailView: View {
                 Spacer()
                 if !model.servers.isEmpty {
                     Menu {
-                        ForEach(model.servers, id: \.id) { server in Button(server.name) { serverID = server.id; library.preferences.preferredServer = server.name } }
+                        ForEach(model.servers, id: \.id) { server in Button(server.name) { serverID = server.id; page = 0; library.preferences.preferredServer = server.name } }
                     } label: { Label(server?.name ?? "서버", systemImage: "chevron.down").font(.caption.bold()) }
                 }
             }
             if let server {
-                Button { downloads.enqueue(server.episodes.indices.map { playback(server.episodes, index: $0) }, quality: library.preferences.quality) } label: {
-                    Label("이 서버의 전체 회차 다운로드", systemImage: "arrow.down.circle").font(.subheadline)
-                }.disabled(downloads.pendingResolution > 0)
+                // app.js mountEpisodeList: newest first per series, pages of 100 (Re:Anime) or 50, 전체 저장 of what is not saved yet.
+                let ordered = newestFirst ? Array(server.episodes.reversed()) : server.episodes
+                let pages = max(1, (ordered.count + pageSize - 1) / pageSize)
+                let current = min(page, pages - 1)
+                HStack(spacing: 10) {
+                    Button { newestFirst.toggle(); UserDefaults.standard.set(newestFirst, forKey: sortKey); page = 0 } label: {
+                        Label(newestFirst ? "최신화순" : "오래된화순", systemImage: "arrow.up.arrow.down").font(.subheadline)
+                    }
+                    Spacer()
+                    Button {
+                        let targets = server.episodes.indices.filter { server.episodes[$0].playable }.map { playback(server.episodes, index: $0) }.filter { downloads.state($0) == .idle }
+                        downloads.enqueue(targets, quality: library.preferences.quality)
+                    } label: { Label("전체 저장", systemImage: "arrow.down.circle").font(.subheadline) }
+                }
+                if pages > 1 {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(0..<pages, id: \.self) { index in
+                                Button { page = index } label: {
+                                    LilacChip(text: episodeName(ordered[index * pageSize]) + "–" + episodeName(ordered[min(ordered.count, (index + 1) * pageSize) - 1]), selected: index == current)
+                                }.buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
                 LazyVStack(spacing: 10) {
-                    ForEach(Array(server.episodes.enumerated()), id: \.element.id) { index, episode in
+                    ForEach(Array(ordered[(current * pageSize)..<min(ordered.count, (current + 1) * pageSize)]), id: \.id) { episode in
+                        let index = server.episodes.firstIndex { $0.id == episode.id } ?? 0
+                        let item = playback(server.episodes, index: index)
                         HStack(spacing: 10) {
-                        PlaybackButton(item: playback(server.episodes, index: index)) {
+                        PlaybackButton(item: item) {
                             HStack(spacing: 14) {
-                                Text(episode.displayNumber.isEmpty ? String(episode.number) : episode.displayNumber)
+                                Text(episodeName(episode))
                                     .font(.headline).frame(width: 44, height: 44)
                                     .background(LilacStyle.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 12)).foregroundStyle(LilacStyle.accent)
                                 VStack(alignment: .leading, spacing: 5) {
-                                    Text(episode.title).font(.subheadline.weight(.semibold)).lineLimit(2)
-                                    if episode.isFiller || episode.isRecap || !episode.playable {
-                                        Text(!episode.playable ? "공개 예정" : episode.isRecap ? "총집편" : "필러").font(.caption).foregroundStyle(LilacStyle.accent)
-                                    }
-                                    Text("에피소드 \(episode.displayNumber.isEmpty ? String(episode.number) : episode.displayNumber)")
-                                        .font(.caption).foregroundStyle(.secondary)
+                                    Text(episode.title.isEmpty || episode.title == "Episode \(episode.number)" ? episodeName(episode) + "화" : episode.title).font(.subheadline.weight(.semibold)).lineLimit(2)
+                                    if !episode.nativeTitle.isEmpty { Text(episode.nativeTitle).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                                    let badges = [episode.dubbed ? "더빙" : "", episode.isFiller ? "FILLER" : "", episode.isRecap ? "RECAP" : "",
+                                        String(episode.airedDate.split(separator: "T").first ?? ""), episode.playable ? "" : "재생 불가"].filter { !$0.isEmpty }
+                                    if !badges.isEmpty { Text(badges.joined(separator: " · ")).font(.caption).foregroundStyle(episode.playable ? LilacStyle.accent : .secondary) }
                                 }
                                 Spacer()
                                 Image(systemName: "play.circle.fill").font(.title2).foregroundStyle(LilacStyle.accent)
                             }.padding(14).background(LilacStyle.card, in: RoundedRectangle(cornerRadius: 18)).foregroundStyle(.primary)
-                        }.buttonStyle(.plain).disabled(!episode.playable).contextMenu {
-                            Button { downloads.enqueue([playback(server.episodes, index: index)], quality: library.preferences.quality) } label: { Label("회차 다운로드", systemImage: "arrow.down.circle") }
-                        }
-                        Button { downloads.enqueue([playback(server.episodes, index: index)], quality: library.preferences.quality) } label: { Image(systemName: "arrow.down.circle").font(.title2).padding(12) }.disabled(!episode.playable).accessibilityLabel(episode.title + " 다운로드")
+                        }.buttonStyle(.plain).disabled(!episode.playable)
+                        Button { downloads.toggle(item, quality: library.preferences.quality) } label: { Image(systemName: downloadIcon(downloads.state(item))).font(.title2).padding(12) }
+                            .disabled(!episode.playable).accessibilityLabel(episode.title + " " + downloadLabel(downloads.state(item)))
                         }
                     }
                 }
@@ -354,6 +388,12 @@ struct DetailView: View {
                 }
             }
         }.padding(.horizontal, 20)
+    }
+    private func downloadIcon(_ state: DownloadStore.EpisodeState) -> String {
+        switch state { case .completed: return "trash"; case .active: return "xmark.circle"; case .stopped: return "arrow.clockwise.circle"; case .idle: return "arrow.down.circle" }
+    }
+    private func downloadLabel(_ state: DownloadStore.EpisodeState) -> String {
+        switch state { case .completed: return "다운로드 삭제"; case .active: return "다운로드 취소"; case .stopped: return "다운로드 다시 시작"; case .idle: return "다운로드" }
     }
     private func playback(_ episodes: [Episode], index: Int) -> PlaybackItem {
         let saved = SavedAnime(AnimeSnapshot.shared.withEpisodes(anime: anime, episodes: episodes), source: source)

@@ -211,6 +211,59 @@ final class DownloadStore: ObservableObject {
         }
     }
     func stopResolving() { resolutionQueue.removeAll(); pendingResolution = 0; resolutionTask?.cancel(); resolver.cancel() }
+    /// An episode's download as the desktop episode button shows it (app.js episodeDownloadMarkup).
+    enum EpisodeState { case idle, active, stopped, completed }
+    func state(_ item: PlaybackItem) -> EpisodeState {
+        let id = SubtitleFiles.key(item.anime.id + "#" + item.episodeID)
+        if resolutionQueue.contains(where: { $0.0.anime.id == item.anime.id && $0.0.episodeID == item.episodeID }) { return .active }
+        guard let entry = entries.first(where: { $0.id == id }) else { return .idle }
+        if entry.localFile != nil { return .completed }
+        return ["대기", "준비 중", "다운로드 중"].contains(entry.status) || busy(id) ? .active : .stopped
+    }
+    // MARK: Series groups (app.js downloadGroupCard / downloads:group)
+    func entries(group animeID: String) -> [DownloadEntry] { entries.filter { $0.anime.id == animeID }.sorted { $0.number < $1.number } }
+    func stopGroup(_ animeID: String) {
+        let queued = resolutionQueue.count
+        resolutionQueue.removeAll { $0.0.anime.id == animeID }
+        pendingResolution = max(0, pendingResolution - (queued - resolutionQueue.count))
+        for entry in entries(group: animeID) where entry.localFile == nil && (["대기", "준비 중", "다운로드 중"].contains(entry.status) || busy(entry.id)) { cancel(entry.id) }
+    }
+    func resumeGroup(_ animeID: String) {
+        for entry in entries(group: animeID) where entry.localFile == nil && ["중단됨", "실패"].contains(entry.status) && !busy(entry.id) { retry(entry) }
+    }
+    func removeGroup(_ animeID: String) async {
+        stopGroup(animeID)
+        var waited = 0
+        while waited < 50 && entries(group: animeID).contains(where: { busy($0.id) }) { try? await Task.sleep(nanoseconds: 100_000_000); waited += 1 }
+        for entry in entries(group: animeID) { delete(entry.id) }
+    }
+    /// "1~3, 5, 7화" (app.js episodeRanges).
+    nonisolated static func episodeRanges(_ numbers: [Int]) -> String {
+        let sorted = Array(Set(numbers)).sorted()
+        var parts: [String] = [], index = 0
+        while index < sorted.count {
+            var end = index
+            while end + 1 < sorted.count && sorted[end + 1] == sorted[end] + 1 { end += 1 }
+            parts.append(end > index + 1 ? "\(sorted[index])~\(sorted[end])" : end > index ? "\(sorted[index]), \(sorted[end])" : "\(sorted[index])")
+            index = end + 1
+        }
+        return parts.joined(separator: ", ")
+    }
+    /// The episode button: delete a saved one, stop one in progress, resume a stopped one, else queue it.
+    func toggle(_ item: PlaybackItem, quality: String) {
+        let id = SubtitleFiles.key(item.anime.id + "#" + item.episodeID)
+        switch state(item) {
+        case .completed: delete(id); notice = "\(item.title) 다운로드를 삭제했습니다."
+        case .active:
+            let queued = resolutionQueue.count
+            resolutionQueue.removeAll { $0.0.anime.id == item.anime.id && $0.0.episodeID == item.episodeID }
+            pendingResolution = max(0, pendingResolution - (queued - resolutionQueue.count))
+            if entries.contains(where: { $0.id == id }) { cancel(id) }
+            notice = "\(item.title) 다운로드를 중지했습니다."
+        case .stopped: if let entry = entries.first(where: { $0.id == id }) { retry(entry); notice = "\(item.title) 다운로드를 다시 시작합니다." }
+        case .idle: enqueue([item], quality: quality)
+        }
+    }
     private func busy(_ id: String) -> Bool {
         restoring || tasks[id] != nil || backgroundTasks.keys.contains { $0.hasPrefix(id + "|") }
     }
@@ -622,6 +675,7 @@ struct DownloadsView: View {
     @State private var analyzing = false
     @State private var analysisMessage: String?
     @State private var collapsed: Set<String> = []
+    @State private var removingGroup: String?
     private var groups: [String] { Dictionary(grouping: downloads.entries, by: { $0.anime.id }).keys.sorted { left, right in
         (downloads.entries.filter { $0.anime.id == left }.map(\.date).max() ?? .distantPast) > (downloads.entries.filter { $0.anime.id == right }.map(\.date).max() ?? .distantPast)
     } }
@@ -663,7 +717,7 @@ struct DownloadsView: View {
                         }.buttonStyle(.borderless)
                     }
                 }
-                  } label: { Text(downloads.entries.first { $0.anime.id == key }?.anime.title ?? key).font(.headline) }
+                  } label: { groupHeader(key) }
                 }
                 if let status = downloads.analysisStatus { ProgressView(status) }
                 if let status = downloads.translationStatus { ProgressView(status) }
@@ -683,6 +737,32 @@ struct DownloadsView: View {
                 .confirmationDialog("다운로드한 영상·자막과 대기 목록을 모두 삭제할까요?", isPresented: $confirmClear, titleVisibility: .visible) {
                     Button("전체 삭제", role: .destructive) { Task { await downloads.clearAll() } }
                 }
+                .confirmationDialog(removingGroup.map { (downloads.entries(group: $0).first?.anime.title ?? "") + "의 다운로드 \(downloads.entries(group: $0).count)개를 모두 삭제할까요? 저장한 영상과 자막도 함께 삭제됩니다." } ?? "",
+                    isPresented: Binding(get: { removingGroup != nil }, set: { if !$0 { removingGroup = nil } }), titleVisibility: .visible) {
+                    Button("전체 삭제", role: .destructive) { if let key = removingGroup { Task { await downloads.removeGroup(key) } }; removingGroup = nil }
+                }
         }
+    }
+    /// One series (app.js downloadGroupCard): its episodes as ranges, what is saved, running or stopped, and actions for all of them.
+    private func groupHeader(_ key: String) -> some View {
+        let jobs = downloads.entries(group: key)
+        let done = jobs.filter { $0.localFile != nil }.count
+        let active = jobs.filter { $0.localFile == nil && ["대기", "준비 중", "다운로드 중"].contains($0.status) }.count
+        let stopped = jobs.filter { $0.localFile == nil && ["중단됨", "실패"].contains($0.status) }.count
+        let summary = [DownloadStore.episodeRanges(jobs.map(\.number)) + "화", done > 0 ? "\(done)개 저장됨" : "", active > 0 ? "\(active)개 받는 중" : "", stopped > 0 ? "\(stopped)개 멈춤" : ""].filter { !$0.isEmpty }.joined(separator: " · ")
+        let progress = jobs.isEmpty ? 0 : jobs.reduce(0.0) { $0 + ($1.localFile != nil ? 1 : $1.total > 0 ? Double($1.completed) / Double($1.total) : 0) } / Double(jobs.count)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(jobs.first?.anime.title ?? key).font(.headline).lineLimit(2)
+                Text("\(jobs.count)개 회차").font(.caption).foregroundStyle(.secondary)
+            }
+            Text(summary).font(.caption).foregroundStyle(.secondary)
+            ProgressView(value: progress)
+            HStack(spacing: 14) {
+                if active > 0 { Button("전체 중지") { downloads.stopGroup(key) } }
+                if stopped > 0 { Button("이어 받기") { downloads.resumeGroup(key) } }
+                Button("전체 삭제", role: .destructive) { removingGroup = key }
+            }.font(.caption).buttonStyle(.borderless)
+        }.padding(.vertical, 4)
     }
 }

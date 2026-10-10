@@ -45,12 +45,63 @@ enum SubtitleNames {
         return fallback
     }
 
-    private static func meaningful(_ value: String) -> Bool {
+    static func meaningful(_ value: String) -> Bool {
         value.unicodeScalars.contains { CharacterSet.alphanumerics.contains($0) }
     }
     private static func containsEastAsian(_ value: String) -> Bool {
         value.unicodeScalars.contains { scalar in
             (0x3040...0x30ff).contains(scalar.value) || (0x3400...0x9fff).contains(scalar.value) || (0xac00...0xd7af).contains(scalar.value)
         }
+    }
+}
+
+/// The site's subtitle tracks as app.js renderSubtitleTracks lists them: Korean, English and Japanese first, and a label
+/// like "Chinese (Chinese (Han, Simplified) - Full Subtitles)" as the language with the rest underneath.
+enum SiteTrackOrder {
+    static func sorted(_ tracks: [RemoteSubtitle]) -> [RemoteSubtitle] {
+        func rank(_ track: RemoteSubtitle) -> Int {
+            let text = track.label + " " + track.language
+            if DesktopSubtitlePolicy.isKorean(track) { return 0 }
+            if text.range(of: "english|(?:^|\\s)en(?:[-_]|$)", options: [.regularExpression, .caseInsensitive]) != nil { return 1 }
+            if text.range(of: "japanese|(?:^|\\s)ja(?:[-_]|$)", options: [.regularExpression, .caseInsensitive]) != nil { return 2 }
+            return 3
+        }
+        return tracks.enumerated().sorted { rank($0.element) == rank($1.element) ? $0.offset < $1.offset : rank($0.element) < rank($1.element) }.map(\.element)
+    }
+    private static func parts(_ track: RemoteSubtitle) -> (String, String) {
+        guard let match = track.label.range(of: #"^(.*?)\s*\((.*)\)$"#, options: .regularExpression) else { return (track.label, "") }
+        let label = String(track.label[match])
+        guard let open = label.firstIndex(of: "(") else { return (track.label, "") }
+        let name = label[..<open].trimmingCharacters(in: .whitespaces)
+        var detail = String(label[label.index(after: open)..<label.index(before: label.endIndex)])
+        if let range = detail.range(of: name) { detail.removeSubrange(range) }
+        detail = detail.replacingOccurrences(of: #"^[\s-]+"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespaces)
+        return (name.isEmpty ? track.label : name, detail)
+    }
+    static func name(_ track: RemoteSubtitle) -> String { parts(track).0 }
+    static func detail(_ track: RemoteSubtitle) -> String { parts(track).1 }
+}
+
+/// Subtitle names as the desktop shows them (app.js SUBTITLE_SOURCE_LABELS, communityLabel, translatedLabel):
+/// by where they came from, not by file name; the user's own files keep their name.
+enum SubtitleLabels {
+    static func provider(_ value: String) -> String {
+        ["linkkf": "Linkkf", "reanime": "사이트", "kairan": "Kairan", "csora": "Csora", "anissia": "Anissia", "jimaku": "Jimaku",
+         "provider": "제공", "download": "다운로드", "user": "내"][value] ?? value
+    }
+    static func engine(_ value: String) -> String {
+        ["gemini": "Gemini", "openai": "OpenAI", "deepl": "DeepL", "qwen": "Qwen", "local": "로컬 AI"][value] ?? "AI"
+    }
+    static func label(provider: String, translated: Bool, name: String, maker: String? = nil) -> String {
+        if translated { return engine(provider) + " 번역" }
+        switch provider {
+        case "user": return SubtitleNames.label(name)
+        case "anissia": return "Anissia" + (maker.map { " · " + $0 } ?? "") + " 자막"
+        case "reanime": return "사이트 자막 트랙 · " + SubtitleNames.label(name)
+        default: return self.provider(provider) + " 자막"
+        }
+    }
+    static func label(_ record: SavedSubtitle, maker: String? = nil) -> String {
+        label(provider: record.provider, translated: record.translated, name: record.name, maker: maker)
     }
 }

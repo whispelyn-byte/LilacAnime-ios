@@ -76,6 +76,54 @@ final class SubtitleSearchTests: XCTestCase {
         for _ in 0..<10 { await Task.yield() }
         XCTAssertEqual(callbacks.filter { $0.0 == "jimaku" }.count, 1)
     }
+    @MainActor func testJimakuChipOpensItsListWithoutBecomingTheDefaultSource() async throws {
+        var callbacks: [String] = []
+        let library = LibraryStore()
+        let previous = library.preferences.subtitleProvider
+        library.preferences.subtitleProvider = "csora"
+        defer { library.preferences.subtitleProvider = previous }
+        let model = EpisodePlayerModel(item: item(), subtitleLookup: { source, reply in callbacks.append(source); reply([], nil) })
+        defer { model.shutdown(library: library) }
+        model.chooseSource("jimaku", library: library)
+        for _ in 0..<100 { if model.jimaku.files(model.item) != nil { break }; await Task.yield() }
+        XCTAssertEqual(model.openSheet, "jimaku")
+        XCTAssertEqual(model.activeSubtitleSource, "jimaku")
+        XCTAssertEqual(callbacks, ["jimaku"])
+        XCTAssertEqual(library.preferences.subtitleProvider, "csora")
+    }
+    @MainActor func testPickingAJimakuFileKeepsTheCommunityDefault() throws {
+        let library = LibraryStore()
+        let previous = library.preferences.subtitleProvider
+        library.preferences.subtitleProvider = "kairan"
+        defer { library.preferences.subtitleProvider = previous }
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".srt")
+        try Data("1\n00:00:00,000 --> 00:00:01,000\nこんにちは\n".utf8).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let model = EpisodePlayerModel(item: item(), subtitleLookup: { _, reply in reply([], nil) })
+        defer { model.shutdown(library: library) }
+        model.selectSubtitle(file, library: library, translate: false, provider: "jimaku")
+        XCTAssertEqual(library.preferences.subtitleProvider, "kairan")
+        XCTAssertEqual(model.activeSubtitleSource, "jimaku")
+        XCTAssertEqual(model.subtitleLabel, "Jimaku 자막")
+        XCTAssertTrue(model.translatable)
+        for record in EpisodeSubtitleStore.shared.list(model.item) { EpisodeSubtitleStore.shared.remove(record.id) }
+    }
+    func testSiteTracksListKoreanEnglishJapaneseFirstWithLanguageOnTop() {
+        let track = { (label: String, language: String) in RemoteSubtitle(label: label, url: URL(string: "https://fixture.test/" + language + ".vtt")!, language: language) }
+        let tracks = [track("Chinese (Chinese (Han, Simplified) - Full Subtitles)", "zh"), track("Japanese", "ja"), track("English (Dialogue)", "en"), track("Korean", "ko")]
+        XCTAssertEqual(SiteTrackOrder.sorted(tracks).map(\.language), ["ko", "en", "ja", "zh"])
+        XCTAssertEqual(SiteTrackOrder.name(tracks[0]), "Chinese")
+        XCTAssertEqual(SiteTrackOrder.detail(tracks[0]), "(Han, Simplified) - Full Subtitles")
+        XCTAssertEqual(SiteTrackOrder.name(tracks[2]), "English"); XCTAssertEqual(SiteTrackOrder.detail(tracks[2]), "Dialogue")
+        XCTAssertEqual(SiteTrackOrder.name(tracks[1]), "Japanese"); XCTAssertEqual(SiteTrackOrder.detail(tracks[1]), "")
+    }
+    func testSavedSubtitlesAreNamedBySourceLikeTheDesktop() {
+        XCTAssertEqual(SubtitleLabels.label(provider: "kairan", translated: false, name: "ìë§.smi"), "Kairan 자막")
+        XCTAssertEqual(SubtitleLabels.label(provider: "anissia", translated: false, name: "x.ass", maker: "제작자"), "Anissia · 제작자 자막")
+        XCTAssertEqual(SubtitleLabels.label(provider: "gemini", translated: true, name: "x.srt"), "Gemini 번역")
+        XCTAssertEqual(SubtitleLabels.label(provider: "local", translated: true, name: "x.srt"), "로컬 AI 번역")
+        XCTAssertEqual(SubtitleLabels.label(provider: "user", translated: false, name: "내 파일.srt"), "내 파일.srt")
+    }
     func testJimakuShiftJISNormalizesToUTF8AndUsesCatalogFilename() async throws {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let content = Data("1\n00:00:00,000 --> 00:00:01,000\n".utf8) + Data([0x82,0xa0,0x82,0xa2,0x82,0xa4])

@@ -75,42 +75,71 @@ final class DesktopSubtitlePreparer {
     /// Start all searches together, but consume in preference order.
     func community(_ item: PlaybackItem, preferences: AppPreferences) async throws -> (URL, String)? {
         let context = await context(item)
-        let pending = DesktopSubtitlePolicy.providers(preferences.subtitleProvider).map { provider -> Task<(URL, String)?, Never> in
-            let key = item.anime.id + "#" + item.episodeID + "#" + context.0 + "#" + provider
-            return searches.task(key) { [weak self] () -> (URL, String)? in
-                guard let self else { return nil }
-                var tried = Set<String>()
-                for round in 0..<2 {
-                    let assets = await self.find(provider, item: item, context: context, fresh: round > 0)
-                    var postKeys: [String] = []
-                    let downloads = assets.filter { $0.source != "post" }
-                    for asset in downloads where !postKeys.contains(asset.postURL) { postKeys.append(asset.postURL) }
-                    for key in postKeys {
-                        var candidates: [URL] = [], fonts: [URL] = []
-                        let group = downloads.filter { $0.postURL == key }
-                        guard CommunityAttachmentAttempt.claim(post: key, links: group.map(\.url), tried: &tried) else { continue }
-                        for asset in group {
-                            if Task.isCancelled { return nil }
-                            if let url = URL(string: asset.url), let files = try? await SubtitleFiles.prepare(url) { candidates += files; fonts += SubtitleFiles.preparedFonts(url) }
-                        }
-                        for file in candidates { try? SubtitleFiles.associateFonts(SubtitleFiles.fonts(for: file) + fonts, with: file) }
-                        if let first = group.first, let file = self.select(candidates, item: item, offsets: [], episode: first.matchedEpisode?.doubleValue ?? first.episode.map { Double($0.intValue) }, strict: first.strict, bundle: first.bundle, community: true) { return (file, provider) }
-                    }
-                    if provider == "anissia" {
-                        for asset in assets where asset.source == "post" {
-                            if Task.isCancelled { return nil }
-                            guard CommunityAttachmentAttempt.claim(post: asset.url, links: ["WinPNG"], tried: &tried) else { continue }
-                            if let url = URL(string: asset.url), let file = try? await WinPNGReader.subtitle(url, episode: asset.matchedEpisode?.doubleValue ?? Double(item.displayNumber) ?? Double(item.number), matched: true) { return (file, provider) }
-                        }
-                    }
-                }
-                return nil
-            }
-        }
+        let pending = DesktopSubtitlePolicy.providers(preferences.subtitleProvider).map { communityTask($0, item: item, context: context) }
         for task in pending {
             let result = await task.value
             try Task.checkCancellation()
             if let result { return result }
+        }
+        return nil
+    }
+
+    /// One source's subtitle for the episode (player chip / app.js findSubtitle(source)), sharing the automatic search.
+    func community(_ item: PlaybackItem, provider: String) async throws -> (URL, String)? {
+        let context = await context(item)
+        let result = await communityTask(provider, item: item, context: context).value
+        try Task.checkCancellation()
+        return result
+    }
+
+    /// An Anissia maker's subtitle (player maker list / app.js findSubtitle('anissia', …, {maker})).
+    func maker(_ item: PlaybackItem, website: String) async throws -> (URL, String)? {
+        let context = await context(item)
+        let assets: [SubtitleAsset] = await withCheckedContinuation { continuation in
+            service.makerSubtitles(title: context.0, episode: Int32(item.number), episodeKey: item.displayNumber, website: website, anilistId: context.1) { values, _ in continuation.resume(returning: values ?? []) }
+        }
+        var tried = Set<String>()
+        let result = await apply(assets, provider: "anissia", item: item, tried: &tried)
+        try Task.checkCancellation()
+        return result
+    }
+
+    private func communityTask(_ provider: String, item: PlaybackItem, context: (String, Int32, [Int])) -> Task<(URL, String)?, Never> {
+        let key = item.anime.id + "#" + item.episodeID + "#" + context.0 + "#" + provider
+        return searches.task(key) { [weak self] () -> (URL, String)? in
+            guard let self else { return nil }
+            var tried = Set<String>()
+            for round in 0..<2 {
+                let assets = await self.find(provider, item: item, context: context, fresh: round > 0)
+                if let found = await self.apply(assets, provider: provider, item: item, tried: &tried) { return found }
+                if Task.isCancelled { return nil }
+            }
+            return nil
+        }
+    }
+
+    /// Downloads a search's posts in rank order and picks the episode's file (desktop downloadCommunityMatch).
+    private func apply(_ assets: [SubtitleAsset], provider: String, item: PlaybackItem, tried: inout Set<String>) async -> (URL, String)? {
+        var postKeys: [String] = []
+        let downloads = assets.filter { $0.source != "post" }
+        for asset in downloads where !postKeys.contains(asset.postURL) { postKeys.append(asset.postURL) }
+        for key in postKeys {
+            var candidates: [URL] = [], fonts: [URL] = []
+            let group = downloads.filter { $0.postURL == key }
+            guard CommunityAttachmentAttempt.claim(post: key, links: group.map(\.url), tried: &tried) else { continue }
+            for asset in group {
+                if Task.isCancelled { return nil }
+                if let url = URL(string: asset.url), let files = try? await SubtitleFiles.prepare(url) { candidates += files; fonts += SubtitleFiles.preparedFonts(url) }
+            }
+            for file in candidates { try? SubtitleFiles.associateFonts(SubtitleFiles.fonts(for: file) + fonts, with: file) }
+            if let first = group.first, let file = select(candidates, item: item, offsets: [], episode: first.matchedEpisode?.doubleValue ?? first.episode.map { Double($0.intValue) }, strict: first.strict, bundle: first.bundle, community: true) { return (file, provider) }
+        }
+        if provider == "anissia" {
+            for asset in assets where asset.source == "post" {
+                if Task.isCancelled { return nil }
+                guard CommunityAttachmentAttempt.claim(post: asset.url, links: ["WinPNG"], tried: &tried) else { continue }
+                if let url = URL(string: asset.url), let file = try? await WinPNGReader.subtitle(url, episode: asset.matchedEpisode?.doubleValue ?? Double(item.displayNumber) ?? Double(item.number), matched: true) { return (file, provider) }
+            }
         }
         return nil
     }
@@ -182,6 +211,10 @@ final class DesktopSubtitlePreparer {
         }
         return nil
     }
+    /// The Korean title the subtitle sources are searched with.
+    func searchTitle(_ item: PlaybackItem) async -> String { await context(item).0 }
+    /// 한국어 자막 다시 찾기 asks the sources again instead of reusing this episode's earlier answers.
+    func resetSearches() { searches.cancel() }
     func cancel() { searches.cancel(); jimaku.cancel(); service.cancel(); titleLookup.cancel() }
     deinit { service.close() }
 }

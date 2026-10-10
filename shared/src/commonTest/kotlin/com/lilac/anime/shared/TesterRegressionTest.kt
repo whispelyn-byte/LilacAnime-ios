@@ -58,9 +58,9 @@ class TesterRegressionTest {
         val translator = CloudTranslator(client)
         try {
             val config = TranslationConfig("deepl", "test")
-            assertEquals(List(8) { "" }, translator.translate(List(8) { "line $it" }, config))
+            assertFails { translator.translate(List(8) { "line $it" }, config) }
             assertEquals(7, requests)
-            translator.translate(listOf("line 0"), config)
+            assertFails { translator.translate(listOf("line 0"), config) }
             assertEquals(8, requests) // No completed cache entry for missing translations.
         } finally { translator.close() }
     }

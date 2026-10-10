@@ -100,6 +100,9 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
             }
         }
         val output = result ?: throw (failure ?: IllegalStateException("사용 가능한 번역 모델이 없습니다."))
+        if (recoveryDepth == 0 && output.all { it.isBlank() }) {
+            throw TranslationFormatException("번역 API가 사용할 수 있는 자막을 반환하지 않았습니다.")
+        }
         if (cache.size > 512) cache.clear()
         if (output.all { it.isNotBlank() }) cache[cacheKey] = output
         return output

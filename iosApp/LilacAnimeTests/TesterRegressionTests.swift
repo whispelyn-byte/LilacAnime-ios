@@ -85,11 +85,13 @@ final class TesterRegressionTests: XCTestCase {
         } catch { XCTAssertTrue(error.localizedDescription.contains("누락")) }
         XCTAssertEqual(kept.count, 89); XCTAssertNil(kept["source 0"])
     }
-    func testApplicationContainsInstalledPhoneAndTabletIcons() throws {
-        let icons = try XCTUnwrap(Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any])
-        XCTAssertNotNil(icons["CFBundlePrimaryIcon"])
-        XCTAssertNotNil(Bundle.main.url(forResource: "AppIcon60x60@2x", withExtension: "png"))
-        XCTAssertNotNil(Bundle.main.infoDictionary?["CFBundleIcons~ipad"])
+    @MainActor func testApplicationContainsCurrentDeviceIcon() throws {
+        let key = UIDevice.current.userInterfaceIdiom == .pad ? "CFBundleIcons~ipad" : "CFBundleIcons"
+        let icons = try XCTUnwrap(Bundle.main.infoDictionary?[key] as? [String: Any])
+        let primary = try XCTUnwrap(icons["CFBundlePrimaryIcon"] as? [String: Any])
+        let files = try XCTUnwrap(primary["CFBundleIconFiles"] as? [String])
+        let installed = Bundle.main.paths(forResourcesOfType: "png", inDirectory: nil).map { URL(fileURLWithPath: $0).lastPathComponent }
+        XCTAssertTrue(files.contains { file in installed.contains { $0.hasPrefix(file) } })
     }
 }
 

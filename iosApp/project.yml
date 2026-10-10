@@ -71,7 +71,7 @@ targets:
     preBuildScripts:
       - name: Build KMP framework
         script: |
-          swift "$SRCROOT/scripts/build-icons.swift"
+          swift -sdk "$(xcrun --sdk macosx --show-sdk-path)" "$SRCROOT/scripts/build-icons.swift"
           cd "$SRCROOT/.."
           /bin/sh ./gradlew :shared:embedAndSignAppleFrameworkForXcode
         basedOnDependencyAnalysis: false

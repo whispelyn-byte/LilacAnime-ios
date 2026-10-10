@@ -7,17 +7,15 @@ if [ "$(uname -m)" != arm64 ]; then
   exit 1
 fi
 command -v xcodegen >/dev/null
+if [ "${GITHUB_REF_TYPE:-}" = tag ]; then
+  python3 iosApp/scripts/android-version.py --check --release-tag "$GITHUB_REF_NAME"
+else
+  python3 iosApp/scripts/android-version.py --check
+fi
 sh ./gradlew :shared:iosSimulatorArm64Test
 cd iosApp
 APP_VERSION="$(python3 scripts/android-version.py --version)"
 APP_BUILD="$(python3 scripts/android-version.py --build)"
-if [ "${GITHUB_REF_TYPE:-}" = tag ]; then
-  test "$GITHUB_REF_NAME" = "$(python3 scripts/android-version.py --tag)"
-  APP_VERSION="${GITHUB_REF_NAME#v}"
-  APP_VERSION="${APP_VERSION%%-ios.*}"
-  python3 -c 'import re,sys; assert re.fullmatch(r"\d+\.\d+(?:\.\d+)?", sys.argv[1]), "Invalid release version"' "$APP_VERSION"
-  test "$APP_VERSION" = "$(python3 scripts/android-version.py --version)"
-fi
 sh scripts/build-native.sh
 swift scripts/build-icons.swift
 python3 scripts/prepare-test-model.py

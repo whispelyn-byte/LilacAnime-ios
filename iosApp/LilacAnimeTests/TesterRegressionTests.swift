@@ -64,7 +64,10 @@ final class TesterRegressionTests: XCTestCase {
             config: TranslationConfig(provider: "gemini", key: "fixture", model: "", region: "international", terminology: ""), service: service,
             position: { 0 }, cached: { kept }, request: { batch in
                 requests.append(batch)
-                return batch.map { line in line == "source 0" && requests.count == 1 ? "" : "번역 " + line }
+                // Concurrent batches may start in either order. Fail this line's
+                // first attempt, regardless of which batch reaches the fixture first.
+                let attempts = requests.filter { $0.contains("source 0") }.count
+                return batch.map { line in line == "source 0" && attempts == 1 ? "" : "번역 " + line }
             }, save: { additions in kept.merge(additions) { old, _ in old } })
         XCTAssertEqual(kept.count, 50)
         XCTAssertEqual(kept["source 0"], "번역 source 0")

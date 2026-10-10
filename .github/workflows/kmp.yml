@@ -15,6 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - run: python3 iosApp/scripts/android-version.py --check
+      - run: python3 iosApp/scripts/android-version.test.py
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

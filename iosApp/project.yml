@@ -22,7 +22,7 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "0.4.0"
-    CURRENT_PROJECT_VERSION: "37"
+    CURRENT_PROJECT_VERSION: "38"
     ENABLE_USER_SCRIPT_SANDBOXING: NO
 targets:
   LilacAnime:
@@ -65,11 +65,13 @@ targets:
         CLANG_CXX_LANGUAGE_STANDARD: c++17
         CLANG_ENABLE_MODULES: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.lilac.anime.ios
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         FRAMEWORK_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)"
         OTHER_LDFLAGS: "$(inherited) -framework LilacShared"
     preBuildScripts:
       - name: Build KMP framework
         script: |
+          swift "$SRCROOT/scripts/build-icons.swift"
           cd "$SRCROOT/.."
           /bin/sh ./gradlew :shared:embedAndSignAppleFrameworkForXcode
         basedOnDependencyAnalysis: false

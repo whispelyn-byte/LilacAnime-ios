@@ -129,7 +129,7 @@ object DesktopSourceParser {
         val title = doc.selectFirst(if (source == "linkani") ".detail-info-title" else "meta[property=og:title]")?.let { if (it.tagName() == "meta") it.attr("content").replace(Regex("\\s*자막\\s*다시보기\\s*$"), "") else it.text() }.orEmpty().ifBlank { summary.title }
         val image = doc.selectFirst(if (source == "linkani") ".detail-img img" else ".article-box-img img")
         val poster = image?.absUrl("data-original").orEmpty().ifBlank { image?.absUrl("src").orEmpty() }.ifBlank { doc.selectFirst("meta[property=og:image]")?.attr("content").orEmpty() }.ifBlank { summary.poster }
-        val description = if (source == "linkani") doc.selectFirst("meta[name=description]")?.attr("content").orEmpty().replace(Regex("^.*?다시보기\\.\\s*"), "") else doc.selectFirst(".movie-coment")?.text().orEmpty()
+        val description = DisplayText.plain(if (source == "linkani") doc.selectFirst("meta[name=description]")?.attr("content").orEmpty().replace(Regex("^.*?다시보기\\.\\s*"), "") else doc.selectFirst(".movie-coment")?.html().orEmpty())
         val year = Regex("(19|20)\\d{2}").find(fields["년"].orEmpty() + fields["방영일"].orEmpty())?.value.orEmpty()
         val native = fields["원제"].orEmpty().ifBlank { Regex("원제\\s*[:：]\\s*(.+?)$").find(doc.selectFirst(".box.tv")?.text().orEmpty())?.groupValues?.get(1).orEmpty() }
         val anime = summary.copy(title = title, poster = poster, source = source, description = description,

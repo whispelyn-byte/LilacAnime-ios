@@ -1,126 +1,7 @@
 {
-  "desktopCommit": "4550d61725a8b57e6e890e97bd0f25244a8cf164",
-  "desktopVersion": "0.5.9",
+  "desktopCommit": "f38763949d9e8b3be2284bf97207a960bd642443",
+  "desktopVersion": "0.5.10",
   "files": [
-    {
-      "desktop": "electron/community-matching.cjs",
-      "sha256": "7f80b5b4f067bb3b309f99bc5cd22537b2a73f709bf4a4828596d34efe40a208",
-      "uncommitted": true,
-      "category": "runtime",
-      "ios": [
-        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopCommunity.kt",
-        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopCommunityFiles.kt",
-        "shared/src/commonMain/kotlin/com/lilac/anime/shared/ported/SubtitleEpisodeMatcher.kt",
-        "iosApp/LilacAnime/DesktopSubtitlePreparer.swift"
-      ]
-    },
-    {
-      "desktop": "electron/desktop-state.cjs",
-      "sha256": "89a4d714a5112324dd3312fad95a7bfc44b120efe3134f632407909cececff85",
-      "uncommitted": true,
-      "category": "runtime",
-      "ios": [
-        "iosApp/LilacAnime/LilacAnimeApp.swift",
-        "iosApp/LilacAnime/LibraryStore.swift"
-      ]
-    },
-    {
-      "desktop": "electron/download-transfer.cjs",
-      "sha256": "afd01d2b60c17c02819bba29bfadd270a561eed6e8af8f64f9baf20b814eb6b8",
-      "uncommitted": true,
-      "category": "runtime",
-      "ios": [
-        "iosApp/LilacAnime/BackgroundDownloads.swift",
-        "iosApp/LilacAnime/DownloadStore.swift"
-      ]
-    },
-    {
-      "desktop": "electron/tmdb-client.cjs",
-      "sha256": "e7a98e598626f7ecd041a7f7122565de3ff32268cbaf0d735e173b129995dc82",
-      "uncommitted": true,
-      "category": "runtime",
-      "ios": [
-        "shared/src/commonMain/kotlin/com/lilac/anime/shared/TmdbRequestGate.kt",
-        "shared/src/commonMain/kotlin/com/lilac/anime/shared/TmdbTitleResolver.kt"
-      ]
-    },
-    {
-      "desktop": "tests/community-matching.test.cjs",
-      "sha256": "ed6bbceda2c44712df149f2dbc6f2e53d970718956ed92baa296e856c8a228e4",
-      "uncommitted": true,
-      "category": "validation",
-      "ios": [
-        "iosApp/LilacAnimeTests",
-        "iosApp/LilacAnimeUITests",
-        "shared/src/commonTest"
-      ]
-    },
-    {
-      "desktop": "tests/community-search.test.cjs",
-      "sha256": "6b604fcd7fd18bbc81e19eb905801039ef505b97df5d54383f15de4aef844c75",
-      "uncommitted": true,
-      "category": "validation",
-      "ios": [
-        "iosApp/LilacAnimeTests",
-        "iosApp/LilacAnimeUITests",
-        "shared/src/commonTest"
-      ]
-    },
-    {
-      "desktop": "tests/desktop-state.test.cjs",
-      "sha256": "339fc1c8423ea8c030a132b8a7fd495d32fa7eb5a823a36b51f27985c22d03ae",
-      "uncommitted": true,
-      "category": "validation",
-      "ios": [
-        "iosApp/LilacAnimeTests",
-        "iosApp/LilacAnimeUITests",
-        "shared/src/commonTest"
-      ]
-    },
-    {
-      "desktop": "tests/download-manager.test.cjs",
-      "sha256": "29025d069814b246eb4eaea109dcec60807f05d9423938602fb5bcd06a48ba08",
-      "uncommitted": true,
-      "category": "validation",
-      "ios": [
-        "iosApp/LilacAnimeTests",
-        "iosApp/LilacAnimeUITests",
-        "shared/src/commonTest"
-      ]
-    },
-    {
-      "desktop": "tests/download-transfer.test.cjs",
-      "sha256": "065c133700443742145c743bb34192608e33ac5445a3f56e84c0c5fc37493fec",
-      "uncommitted": true,
-      "category": "validation",
-      "ios": [
-        "iosApp/LilacAnimeTests",
-        "iosApp/LilacAnimeUITests",
-        "shared/src/commonTest"
-      ]
-    },
-    {
-      "desktop": "tests/issue7.electron.cjs",
-      "sha256": "775dff0032f84a2b5fe1a8cf9bf025220b1182b6695c1142255b781c0c902d70",
-      "uncommitted": true,
-      "category": "validation",
-      "ios": [
-        "iosApp/LilacAnimeTests",
-        "iosApp/LilacAnimeUITests",
-        "shared/src/commonTest"
-      ]
-    },
-    {
-      "desktop": "tests/tmdb-client.test.cjs",
-      "sha256": "590dab64c68dd33f816995dc50f19af8181e9814d1be28afbf4e0200c1837ba1",
-      "uncommitted": true,
-      "category": "validation",
-      "ios": [
-        "iosApp/LilacAnimeTests",
-        "iosApp/LilacAnimeUITests",
-        "shared/src/commonTest"
-      ]
-    },
     {
       "desktop": ".github/workflows/build.yml",
       "sha256": "5fbd6509d7bf59c95d6cd72fe232eeb2bc1df497ea89a37ce0695e594c7981dc",
@@ -163,14 +44,46 @@
       ]
     },
     {
+      "desktop": "electron/community-matching.cjs",
+      "sha256": "7f80b5b4f067bb3b309f99bc5cd22537b2a73f709bf4a4828596d34efe40a208",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopCommunity.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopCommunityFiles.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/ported/SubtitleEpisodeMatcher.kt",
+        "iosApp/LilacAnime/DesktopSubtitlePreparer.swift"
+      ]
+    },
+    {
+      "desktop": "electron/desktop-state.cjs",
+      "sha256": "89a4d714a5112324dd3312fad95a7bfc44b120efe3134f632407909cececff85",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "iosApp/LilacAnime/LilacAnimeApp.swift",
+        "iosApp/LilacAnime/LibraryStore.swift"
+      ]
+    },
+    {
       "desktop": "electron/download-manager.cjs",
       "sha256": "ac24d5cac1fd8c498991801f12e3a08f5fcf36ba803736957cbab5ac89413f97",
-      "uncommitted": true,
+      "uncommitted": false,
       "category": "runtime",
       "ios": [
         "iosApp/LilacAnime/DownloadStore.swift",
         "iosApp/LilacAnime/DownloadTransfer.swift",
         "iosApp/LilacAnime/DesktopDownloads.swift"
+      ]
+    },
+    {
+      "desktop": "electron/download-transfer.cjs",
+      "sha256": "afd01d2b60c17c02819bba29bfadd270a561eed6e8af8f64f9baf20b814eb6b8",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "iosApp/LilacAnime/BackgroundDownloads.swift",
+        "iosApp/LilacAnime/DownloadStore.swift"
       ]
     },
     {
@@ -196,7 +109,7 @@
     {
       "desktop": "electron/main.cjs",
       "sha256": "92f75611568beea849d875b5e4205d521d0e198e6fb48f0cf3a534045a821c8c",
-      "uncommitted": true,
+      "uncommitted": false,
       "category": "runtime",
       "ios": [
         "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt",
@@ -227,7 +140,7 @@
     {
       "desktop": "electron/preload.cjs",
       "sha256": "f307c306ab22035c28f865238a47353e7074d382238623df497cdc71c651aaf5",
-      "uncommitted": true,
+      "uncommitted": false,
       "category": "runtime",
       "ios": [
         "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
@@ -256,6 +169,16 @@
       ]
     },
     {
+      "desktop": "electron/tmdb-client.cjs",
+      "sha256": "e7a98e598626f7ecd041a7f7122565de3ff32268cbaf0d735e173b129995dc82",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/TmdbRequestGate.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/TmdbTitleResolver.kt"
+      ]
+    },
+    {
       "desktop": "electron/updater.cjs",
       "sha256": "f5b00942b962c7af1f51c4efad99c8911fe76180e137d39cf3989dfc30b5ba43",
       "uncommitted": false,
@@ -267,7 +190,7 @@
     },
     {
       "desktop": "package-lock.json",
-      "sha256": "3d651000a3bcf6be024a8de28faa42f8b0904f9cbc32a93da3daeba0cf981c1e",
+      "sha256": "3310b22ecc7bad3be9ef56ebd856d1470d55fa089a80170d06a6c811c2332452",
       "uncommitted": false,
       "category": "platform-build",
       "ios": [
@@ -279,7 +202,7 @@
     },
     {
       "desktop": "package.json",
-      "sha256": "0509ceeec35c5dd6295e4d020daab3e30508979671f2a262b8238f5f6697871c",
+      "sha256": "8becf31a7f989ca5dd5804cad5921150bd74011b164983162752140a77b13692",
       "uncommitted": false,
       "category": "platform-build",
       "ios": [
@@ -321,7 +244,7 @@
     {
       "desktop": "src/app.js",
       "sha256": "ee3449f99b2df65fcbbcc1745ed853c02d1c1ec6fb09a682334553dc23b87836",
-      "uncommitted": true,
+      "uncommitted": false,
       "category": "runtime",
       "ios": [
         "iosApp/LilacAnime/DesktopShell.swift",
@@ -403,7 +326,7 @@
     {
       "desktop": "src/index.html",
       "sha256": "fdbd723f1ae8d00a0ecebde71f9483a73b088bd0701db7f859c8bda68e7fe968",
-      "uncommitted": true,
+      "uncommitted": false,
       "category": "runtime",
       "ios": [
         "iosApp/LilacAnime/DesktopShell.swift",
@@ -635,7 +558,7 @@
     {
       "desktop": "tests/catalog-title-retry.test.cjs",
       "sha256": "f33edb1cf9e6b0465d7cbff7bb43fe009452bcd5edb91b441794ed535a2b3c90",
-      "uncommitted": true,
+      "uncommitted": false,
       "category": "validation",
       "ios": [
         "iosApp/LilacAnimeTests",
@@ -646,6 +569,61 @@
     {
       "desktop": "tests/catalog-updates-ui.test.cjs",
       "sha256": "d2dbcf7ba9250cf13c1f9f38dcfb8a788df19a7c5e1e98e58a282227dd7fc684",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/community-matching.test.cjs",
+      "sha256": "ed6bbceda2c44712df149f2dbc6f2e53d970718956ed92baa296e856c8a228e4",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/community-search.test.cjs",
+      "sha256": "6b604fcd7fd18bbc81e19eb905801039ef505b97df5d54383f15de4aef844c75",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/desktop-state.test.cjs",
+      "sha256": "339fc1c8423ea8c030a132b8a7fd495d32fa7eb5a823a36b51f27985c22d03ae",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/download-manager.test.cjs",
+      "sha256": "29025d069814b246eb4eaea109dcec60807f05d9423938602fb5bcd06a48ba08",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/download-transfer.test.cjs",
+      "sha256": "065c133700443742145c743bb34192608e33ac5445a3f56e84c0c5fc37493fec",
       "uncommitted": false,
       "category": "validation",
       "ios": [
@@ -677,6 +655,17 @@
       ]
     },
     {
+      "desktop": "tests/issue7.electron.cjs",
+      "sha256": "775dff0032f84a2b5fe1a8cf9bf025220b1182b6695c1142255b781c0c902d70",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
       "desktop": "tests/player-interactions.test.cjs",
       "sha256": "d4692b2fa259c8ba0e0016fc6fd4c4b69099257aa88791a99c5fd775c6d360dc",
       "uncommitted": false,
@@ -690,6 +679,17 @@
     {
       "desktop": "tests/subtitle-layout.electron.cjs",
       "sha256": "ec68a98c80ab4bc445cbcbd6791de55da0a9f30296b00ca656c0497e0a3bacb6",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/tmdb-client.test.cjs",
+      "sha256": "590dab64c68dd33f816995dc50f19af8181e9814d1be28afbf4e0200c1837ba1",
       "uncommitted": false,
       "category": "validation",
       "ios": [

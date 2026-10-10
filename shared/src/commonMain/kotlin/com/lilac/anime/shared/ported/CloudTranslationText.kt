@@ -7,12 +7,19 @@ import com.fleeksoft.ksoup.nodes.Element
 import kotlin.math.min
 
 
+internal class TranslationFormatException(message: String) : IllegalStateException(message)
+
 internal object CloudTranslationText {
     fun jsonInput(lines: List<String>, wrapped: Boolean): String {
         val items = JSONArray().apply { lines.forEachIndexed { index, text -> put(JSONObject().put("i", index).put("t", text)) } }
         return if (wrapped) JSONObject().put("lines", items).toString() else items.toString()
     }
-    fun parseDesktop(text: String, original: List<String>): List<String> {
+    fun parseDesktop(text: String, original: List<String>): List<String> = try {
+        parseDesktopResponse(text, original)
+    } catch (error: Exception) {
+        throw TranslationFormatException(error.message ?: "번역 응답 형식을 읽을 수 없습니다.")
+    }
+    private fun parseDesktopResponse(text: String, original: List<String>): List<String> {
         val clean = text.replace(Regex("^```(?:json)?\\s*|\\s*```$"), "").trim()
         if (!clean.startsWith("{") && !clean.startsWith("[")) return parseMarked(text, original)
         val values = if (clean.startsWith("{")) JSONObject(clean).optJSONArray("lines") ?: error("번역 결과에 lines가 없습니다.") else JSONArray(clean)
@@ -47,7 +54,7 @@ internal object CloudTranslationText {
             val end = matches.getOrNull(matchIndex + 1)?.range?.first ?: normalized.length
             result[lineIndex] = stripFences(normalized.substring(start, end).trim().removePrefix(":" ).trim())
         }
-        if (result.indices.any { result[it].isBlank() }) error("API 응답에서 일부 자막 번역이 누락되었습니다.")
+        // Keep valid IDs and let the scheduler retry only missing lines.
         return result
     }
 

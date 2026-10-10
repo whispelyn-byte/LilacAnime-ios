@@ -68,7 +68,6 @@ final class EpisodePlayerModel: ObservableObject {
             let file = SubtitleFiles.root.appendingPathComponent(relative).standardizedFileURL
             if file.path.hasPrefix(SubtitleFiles.root.path + "/"), FileManager.default.fileExists(atPath: file.path) {
                 sourceSubtitle = file; subtitle = file; subtitleFiles = [file]
-                if library.preferences.autoTranslation && !SubtitleFiles.isKorean(file) { translate(library: library) }
             }
         }
         configure(library)
@@ -213,6 +212,8 @@ final class EpisodePlayerModel: ObservableObject {
                 guard token == generation, request == subtitleRequest else { return }
                 subtitleFiles = files
                 if let first = preferredSubtitle(subtitleFiles, asset: asset) { selectSubtitle(first, library: library, translate: translate, provider: provider ?? (url.isFileURL ? "user" : searchProvider)) }
+                else if files.isEmpty { error = "자막이 없습니다. ASS · SSA · SRT · VTT · SMI 파일을 선택하세요." }
+                else { error = "여러 자막을 가져왔습니다. 자막 목록에서 사용할 파일을 선택하세요." }
             } catch { if token == generation, request == subtitleRequest { self.error = error.localizedDescription } }
         }
     }
@@ -229,7 +230,7 @@ final class EpisodePlayerModel: ObservableObject {
             else if SubtitleFiles.isKorean(url) { library.preferAI(false, animeID: item.anime.id) }
             if ["kairan", "csora", "anissia", "jimaku", "reanime"].contains(selectedProvider) { library.preferences.subtitleProvider = selectedProvider }
         }
-        if translate && saved?.translated != true && library.preferences.translationPreferences(automatic: true) != nil && !SubtitleFiles.isKorean(url) { self.translate(library: library, manual: false) }
+        if translate && selectedProvider != "user" && saved?.translated != true && library.preferences.translationPreferences(automatic: true) != nil && !SubtitleFiles.isKorean(url) { self.translate(library: library, manual: false) }
         else { prepareAlongside(library: library) }
         if automatic && saved?.translated != true && !SubtitleFiles.isKorean(url) && !["kairan", "csora", "anissia", "user"].contains(selectedProvider) { offerKorean(library: library) }
         prefetchNext(library: library, token: generation)
@@ -271,7 +272,9 @@ final class EpisodePlayerModel: ObservableObject {
             automaticTask?.cancel()
             automaticTask = Task {
                 do {
-                    guard let prepared = try await preparer.translationSource(item, tracks: active?.subtitles ?? [], preferences: configured, requireAutomatic: false), token == generation, request == subtitleRequest, !Task.isCancelled else { return }
+                    let prepared = try await preparer.translationSource(item, tracks: active?.subtitles ?? [], preferences: configured, requireAutomatic: false)
+                    guard token == generation, request == subtitleRequest, !Task.isCancelled else { return }
+                    guard let prepared else { error = "번역할 원문 자막을 찾지 못했습니다. 자막 파일을 직접 열거나 사이트 자막 트랙을 선택하세요."; return }
                     sourceSubtitle = prepared.0
                     EpisodeSubtitleStore.shared.save(prepared.0, item: item, provider: prepared.1, translated: false)
                     runTranslation(prepared.0, library: library, preferences: configured, fresh: fresh, manual: manual)
@@ -480,12 +483,15 @@ struct EpisodePlayerView: View {
                         guard ["ttf", "otf", "ttc"].contains(file.pathExtension.lowercased()) else { throw SubtitleFiles.failure("TTF · OTF · TTC 글꼴 파일을 선택하세요.") }
                         library.preferences.subtitleFont = try SubtitleFiles.importFont(file)
                         model.applyPreferences(library)
-                    } else { model.importSubtitle(file, library: library) }
+                    } else { model.importSubtitle(file, library: library, translate: false, provider: "user") }
                 } catch { model.error = error.localizedDescription }
             }
             .onChange(of: library.preferences) { _ in model.applyPreferences(library) }
             .onChange(of: settings) { if $0 { model.engine.finishSpaceHold() } }
             .sheet(isPresented: $subtitleSheet) { NavigationStack { subtitleList.navigationTitle("자막 선택").toolbar { Button("닫기") { subtitleSheet = false } } } }
+            .alert("다운로드", isPresented: Binding(get: { downloads.notice != nil }, set: { if !$0 { downloads.notice = nil } })) {
+                Button("확인") { downloads.notice = nil }
+            } message: { Text(downloads.notice ?? "") }
     }
     private func nextEpisode() {
         let remaining = model.item.next
@@ -568,6 +574,7 @@ struct EpisodePlayerView: View {
             Toggle("자막 표시", isOn: Binding(get: { model.engine.subtitlesVisible }, set: { _ in model.engine.toggleSubtitleVisibility() }))
             if let subtitle = model.subtitle { Text(subtitle.lastPathComponent).font(.caption).foregroundStyle(.white.opacity(0.65)) }
             if model.searching { ProgressView("자막을 찾는 중") }
+            if let error = model.error { Text(error).font(.caption).foregroundStyle(.red) }
         }
         PlayerSettingsGroup("자막 가져올 곳") {
             PlayerChoiceGrid(options: [("auto", "자동"), ("kairan", "Kairan"), ("csora", "Csora"), ("anissia", "Anissia"), ("jimaku", "Jimaku"), ("manual", "직접 선택")], selection: Binding(get: { library.preferences.subtitleProvider ?? "auto" }, set: { library.preferences.subtitleProvider = $0 }), identifier: "player-subtitle-source")
@@ -646,6 +653,12 @@ struct EpisodePlayerView: View {
     }
     private var subtitleList: some View {
         List {
+                        Section("내 자막") {
+                            Button("자막 파일 열기") { subtitleSheet = false; importingFont = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { importer = true } }
+                            ForEach(model.subtitleFiles, id: \.self) { file in
+                                Button(file.lastPathComponent) { model.selectSubtitle(file, library: library, translate: false); subtitleSheet = false }
+                            }
+                        }
                         HStack {
                             Button("-0.1초") { model.shiftSubtitle(-0.1, library: library) }
                             Text("자막 싱크 \(model.subtitleOffset, specifier: "%.1f")초")

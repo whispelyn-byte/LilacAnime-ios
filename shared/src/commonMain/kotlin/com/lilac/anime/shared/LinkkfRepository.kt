@@ -122,7 +122,7 @@ internal fun parseAnime(item: JsonObject?): Anime? {
     return Anime(
         id = id, title = item.text("postname", "name"),
         poster = poster, backdrop = poster,
-        description = item.text("postcontent", "description", "synopsis"),
+        description = DisplayText.plain(item.text("postcontent", "description", "synopsis")),
         genres = item.text("postanigenres", "genres").split(',', '|', '/').map(String::trim).filter(String::isNotEmpty),
         year = item.text("postyear"), format = item.text("postseasontype"),
         airedDate = item.text("postdate", "datepub"), studios = item.text("poststudios").split(',', '|', '/').map(String::trim).filter(String::isNotBlank),

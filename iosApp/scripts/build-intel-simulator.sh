@@ -3,6 +3,7 @@ set -eu
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 cd "$ROOT/iosApp"
 sh scripts/build-native.sh
+swift scripts/build-icons.swift
 xcodegen generate
 APP_VERSION="$(python3 scripts/android-version.py --version)"
 APP_BUILD="$(python3 scripts/android-version.py --build)"

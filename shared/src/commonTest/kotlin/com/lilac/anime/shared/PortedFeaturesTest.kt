@@ -57,10 +57,10 @@ class PortedFeaturesTest {
         val posts = listOf(KairanPost("작품 1기 05화", "https://example.test/1"), KairanPost("작품 2기 05화", "https://example.test/2"))
         assertEquals("https://example.test/2", KairanPostMatcher.findBestMatch("작품 2기", 5, posts)?.post?.url)
     }
-    @Test fun structuredCloudLinesAreOrderedAndMissingLinesFail() {
+    @Test fun structuredCloudLinesAreOrderedAndMissingLinesStayPending() {
         val originals = listOf("a", "b")
         assertEquals(listOf("가", "나"), CloudTranslationText.parseMarked("""{"lines":[{"i":2,"t":"나"},{"i":1,"t":"가"}]}""", originals))
-        assertFails { CloudTranslationText.parseMarked("<LILAC_1> 가", originals) }
+        assertEquals(listOf("가", ""), CloudTranslationText.parseMarked("<LILAC_1> 가", originals))
     }
     @Test fun openaiUsesResponsesSchemaAndCachesIdenticalInput() = runTest {
         var calls = 0

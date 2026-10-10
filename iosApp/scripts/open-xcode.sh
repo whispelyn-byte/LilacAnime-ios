@@ -10,6 +10,7 @@ java -version
 xcodebuild -version
 sh iosApp/scripts/build-native.sh
 cd iosApp
+swift scripts/build-icons.swift
 xcodegen generate
 open LilacAnime.xcodeproj
 echo "Select LilacAnime and an iPhone Simulator in Xcode, then press Cmd+R."

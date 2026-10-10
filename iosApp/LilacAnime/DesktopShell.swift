@@ -3,6 +3,8 @@ import LilacShared
 
 struct DesktopWorkspace: View {
     @EnvironmentObject private var library: LibraryStore
+    @EnvironmentObject private var downloads: DownloadStore
+    @EnvironmentObject private var playback: PlaybackRouter
     @Environment(\.horizontalSizeClass) private var sizeClass
     @EnvironmentObject private var navigation: DesktopNavigation
     @State private var menu = false
@@ -14,6 +16,7 @@ struct DesktopWorkspace: View {
         ("favorites", "내 목록", "heart"), ("settings", "설정", "gearshape")
     ]
     var body: some View {
+        ZStack(alignment: .leading) {
         VStack(spacing: 0) {
             searchBar
             Group {
@@ -30,11 +33,18 @@ struct DesktopWorkspace: View {
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else { page.id(navigation.section) }
             }
+        }
+        if menu && sizeClass != .regular {
+            Color.black.opacity(0.4).ignoresSafeArea().onTapGesture { menu = false }
+                .accessibilityLabel("메뉴 닫기")
+            VStack(spacing: 0) {
+                HStack { Text("LilacAnime").font(.headline); Spacer(); Button("닫기") { menu = false }.accessibilityIdentifier("workspace-menu-close") }.padding(16)
+                sidebar
+            }.frame(width: 280).frame(maxHeight: .infinity).background(LilacStyle.background)
+                .accessibilityIdentifier("workspace-drawer")
+        }
         }.environmentObject(navigation)
-            .sheet(isPresented: $menu) {
-                NavigationStack { sidebar.navigationTitle("LilacAnime").toolbar { Button("닫기") { menu = false } } }
-                    .presentationDetents([.medium, .large])
-            }
+            .onChange(of: sizeClass) { _ in menu = false }
             .task(id: library.preferences.source) {
                 if !UIShowcase.enabled && !DesktopCatalog.shared.running &&
                     ((DesktopCatalog.shared.catalogs[library.preferences.source] ?? []).isEmpty || DesktopCatalog.shared.needsRefresh(library.preferences.source)) {
@@ -42,6 +52,10 @@ struct DesktopWorkspace: View {
                 }
             }
             .onChange(of: navigation.query) { search = $0 }
+            .alert("다운로드", isPresented: Binding(get: { downloads.notice != nil && playback.presentation == nil }, set: { if !$0 { downloads.notice = nil } })) {
+                Button("확인") { downloads.notice = nil }
+                Button("다운로드 보기") { downloads.notice = nil; navigation.section = "favorites"; navigation.showDownloads = true; menu = false }
+            } message: { Text(downloads.notice ?? "") }
     }
     private var sidebar: some View {
         List {
@@ -58,7 +72,7 @@ struct DesktopWorkspace: View {
                 Button { navigation.section = "local"; menu = false } label: { Label("로컬 영상 열기", systemImage: "folder") }
                 Picker("영상 소스", selection: $library.preferences.source) {
                     ForEach(ContentSources.keys, id: \.self) { Text(ContentSources.name($0)).tag($0) }
-                }
+                }.pickerStyle(.menu)
             }
             Section { VStack(alignment: .leading) { Text("Your anime.").bold(); Text("Your way.").foregroundStyle(.secondary) }.font(.caption) }
         }.listStyle(.sidebar)
@@ -96,6 +110,7 @@ struct DesktopWorkspace: View {
 struct DesktopSavedView: View {
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var downloads: DownloadStore
+    @EnvironmentObject private var navigation: DesktopNavigation
     @State private var tab = 0
     @State private var order = "saved"
     @ObservedObject private var recent = DesktopRecentUpdates.shared
@@ -125,7 +140,7 @@ struct DesktopSavedView: View {
                         .task(id: order + library.favorites.map(\.id).joined(separator: "|")) { if order == "updated" && !UIShowcase.enabled { await recent.loadLibrary(library.favorites) } }
                 }
             }
-        }
+        }.onAppear { if navigation.showDownloads { tab = 1; navigation.showDownloads = false } }
     }
 }
 

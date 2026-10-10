@@ -317,7 +317,8 @@ struct DetailView: View {
     private var information: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("작품 소개").font(.title3.bold())
-            Text(names.record(SavedAnime(anime, source: source))?.overview.isEmpty == false ? names.record(SavedAnime(anime, source: source))!.overview : (anime.description.isEmpty ? "등록된 소개가 없습니다." : anime.description.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)))
+            let overview = DisplayText.shared.plain(value: names.record(SavedAnime(anime, source: source))?.overview.isEmpty == false ? names.record(SavedAnime(anime, source: source))!.overview : anime.description)
+            Text(overview.isEmpty ? "등록된 소개가 없습니다." : overview)
                 .font(.subheadline).lineSpacing(6).foregroundStyle(.secondary)
             Divider()
             if let views = model.extras?.views, !views.isEmpty { Text("조회 " + views).font(.caption).foregroundStyle(.secondary) }

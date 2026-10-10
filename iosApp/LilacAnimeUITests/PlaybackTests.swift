@@ -1,6 +1,19 @@
 import XCTest
 
 final class PlaybackTests: XCTestCase {
+    func testRepeatedMenuNavigationRemainsInteractive() {
+        let app = XCUIApplication(); app.launchArguments = ["--ui-preview", "workspace"]; app.launch()
+        let menu = app.buttons["workspace-menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 15))
+        for route in ["settings", "history", "favorites", "catalog", "home", "settings", "home"] {
+            var target = app.buttons["workspace-route-" + route]
+            if !target.exists || !target.isHittable { menu.tap(); target = app.buttons["workspace-route-" + route] }
+            XCTAssertTrue(target.waitForExistence(timeout: 5)); XCTAssertTrue(target.isHittable); target.tap()
+            XCTAssertTrue(menu.isHittable)
+            XCTAssertFalse(app.buttons["workspace-menu-close"].exists)
+        }
+        XCTAssertTrue(app.buttons["전체 작품 둘러보기"].waitForExistence(timeout: 5))
+    }
     func testLocalModelsBackAndWorkspaceNavigation() {
         let app = XCUIApplication(); app.launchArguments = ["--ui-preview", "workspace"]; app.launch()
         let settings = app.buttons["workspace-settings"]

@@ -9,6 +9,7 @@ enum CloudSubtitleScheduler {
     }
     static func translate(lines: [String], cues: [SubtitleCue], provider: String, config: TranslationConfig,
                           service: IosServices, position: @escaping () -> Double, seekRevision: @escaping () -> UInt64 = { 0 }, cached: @escaping () -> [String: String],
+                          request: (([String]) async throws -> [String])? = nil,
                           save: @escaping ([String: String]) throws -> Void) async throws {
         try await withThrowingTaskGroup(of: Event.self) { group in
             var active: [UUID: [Int]] = [:]
@@ -23,7 +24,8 @@ enum CloudSubtitleScheduler {
                 var translated = cached()
                 for (line, attempts) in missingAttempts where attempts >= 2 { translated[line] = "" }
                 if !rush { for line in reserved { translated[line] = "" } }
-                let limit = rush || first ? 40 : batchLines
+                let retrying = lines.contains { cached()[$0] == nil && missingAttempts[$0, default: 0] == 1 }
+                let limit = retrying ? 8 : (rush || first ? 40 : batchLines)
                 let candidates = TranslationPriority.indices(starts: cues.map(\.startSeconds), ends: cues.map(\.endSeconds),
                     lines: lines, translated: translated, position: position(), limit: limit)
                 var count = 0
@@ -34,6 +36,10 @@ enum CloudSubtitleScheduler {
                 let id = UUID(); active[id] = indices
                 let texts = indices.map { lines[$0] }
                 group.addTask {
+                    if let request {
+                        do { return .result(id, indices, try await request(texts), nil) }
+                        catch { return .result(id, indices, nil, error.localizedDescription) }
+                    }
                     let value: ([String]?, String?) = await withCheckedContinuation { continuation in
                         service.translateLines(lines: texts, config: config) { values, failure in continuation.resume(returning: (values, failure)) }
                     }

@@ -1,6 +1,7 @@
 package com.lilac.anime.shared
 import com.lilac.anime.shared.compat.*
 import com.lilac.anime.shared.ported.CloudTranslationText
+import com.lilac.anime.shared.ported.TranslationFormatException
 import io.ktor.client.*
 import io.ktor.client.plugins.*
 import io.ktor.client.request.*
@@ -58,7 +59,8 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
         val chain = CloudModelRules.chain(config.provider, preferred, available)
         return chain.filter { spent[config.provider + ":" + config.region + ":" + config.key.hashCode() + ":" + it]?.hasPassedNow() != false }.ifEmpty { listOf(preferred) }
     }
-    suspend fun translate(lines: List<String>, config: TranslationConfig): List<String> {
+    suspend fun translate(lines: List<String>, config: TranslationConfig): List<String> = translate(lines, config, 0)
+    private suspend fun translate(lines: List<String>, config: TranslationConfig, recoveryDepth: Int): List<String> {
         if (lines.isEmpty()) return emptyList()
         require(config.key.isNotBlank()) { "API Key를 설정하세요." }
         val cacheKey = config.provider + "|" + config.model + "|" + config.region + "|" + config.key.hashCode() + "|" + config.terminology + "|" + lines.joinToString("\u0000")
@@ -75,8 +77,17 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
                     "qwen" -> qwen(lines, config.copy(model = model))
                     else -> error("지원하지 않는 번역 공급자입니다.")
                 }
+                if (result.size != lines.size) throw TranslationFormatException("번역 응답의 줄 수가 다릅니다.")
                 break
             } catch (e: CancellationException) { throw e }
+            catch (e: TranslationFormatException) {
+                // Do not discard good batches or switch every provider for one malformed response.
+                // Bounded splitting retains positions; never guess which original a short array belongs to.
+                result = if (lines.size > 1 && recoveryDepth < 2) {
+                    lines.chunked((lines.size + 1) / 2).flatMap { translate(it, config, recoveryDepth + 1) }
+                } else List(lines.size) { "" }
+                break
+            }
             catch (e: ResponseException) {
                 failure = e
                 val status = e.response.status.value
@@ -89,7 +100,6 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
             }
         }
         val output = result ?: throw (failure ?: IllegalStateException("사용 가능한 번역 모델이 없습니다."))
-        check(output.size == lines.size) { "번역 줄 수가 일치하지 않습니다." }
         if (cache.size > 512) cache.clear()
         if (output.all { it.isNotBlank() }) cache[cacheKey] = output
         return output

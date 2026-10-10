@@ -106,6 +106,7 @@ final class DownloadStore: ObservableObject {
     private var rates: [String: Double] = [:]
     private let subtitlePreparer = DesktopSubtitlePreparer()
     @Published var error: String?
+    @Published var notice: String?
     @Published private(set) var pendingResolution = 0
     @Published private(set) var resolvingTitle = ""
     private var resolutionTask: Task<Void, Never>?
@@ -150,11 +151,12 @@ final class DownloadStore: ObservableObject {
             }
         }
     }
-    func download(_ item: PlaybackItem, stream: ResolvedStream, quality: String = "Auto") {
+    func download(_ item: PlaybackItem, stream: ResolvedStream, quality: String = "Auto", announce: Bool = true) {
         let id = SubtitleFiles.key(item.anime.id + "#" + item.episodeID)
-        guard !busy(id) else { return }
+        guard !restoring else { enqueue([item], quality: quality); return }
+        guard !busy(id) else { notice = "이미 다운로드 중인 회차입니다. 내 목록 → 다운로드에서 확인하세요."; return }
         if let existing = entries.first(where: { $0.id == id }), let local = existing.localFile,
-           FileManager.default.fileExists(atPath: Self.directory.appendingPathComponent(id).appendingPathComponent(local).path) { prepareCompletedDownloads(); return }
+           FileManager.default.fileExists(atPath: Self.directory.appendingPathComponent(id).appendingPathComponent(local).path) { notice = "이미 저장한 회차입니다. 내 목록 → 다운로드에서 재생하세요."; prepareCompletedDownloads(); return }
         if !entries.contains(where: { $0.id == id }) {
             entries.insert(DownloadEntry(id: id, anime: item.anime, episodeID: item.episodeID, title: item.title,
                 number: item.number, watchURL: item.watchURL.absoluteString, stream: stream, quality: quality), at: 0)
@@ -165,10 +167,12 @@ final class DownloadStore: ObservableObject {
                 entry.stream = stream; entry.quality = quality
             }
         }
+        if announce { notice = item.title + " 다운로드를 시작합니다. 내 목록 → 다운로드에서 진행 상황을 확인하세요." }
         start(id)
     }
     func enqueue(_ items: [PlaybackItem], quality: String) {
         for item in items where !resolutionQueue.contains(where: { $0.0.anime.id == item.anime.id && $0.0.episodeID == item.episodeID }) { resolutionQueue.append((item, quality)); pendingResolution += 1 }
+        if !items.isEmpty { notice = "\(items.count)개 회차를 다운로드 대기에 추가했습니다. 내 목록 → 다운로드에서 확인하세요." }
         guard resolutionTask == nil else { return }
         error = nil
         resolutionTask = Task {
@@ -178,6 +182,7 @@ final class DownloadStore: ObservableObject {
                 if !resolutionQueue.isEmpty { enqueue([], quality: quality) }
             }
             while !resolutionQueue.isEmpty {
+                while restoring && !Task.isCancelled { do { try await Task.sleep(nanoseconds: 100_000_000) } catch { return } }
                 let (item, quality) = resolutionQueue.removeFirst()
                 if Task.isCancelled { return }
                 resolvingTitle = item.anime.title + " · " + item.title
@@ -193,7 +198,7 @@ final class DownloadStore: ObservableObject {
                 let ordered = DesktopStreamPolicy.ordered(resolver.streams, preferRaw: preferRaw, preferred: library?.preferences.preferredServers?[item.anime.source], workingProvider: UserDefaults.standard.string(forKey: "miruro.working-provider"))
                 let chosen = item.anime.source == "miruro" ? await DownloadStreamSelector.choose(ordered, quality: quality) : resolver.streams.first
                 if Task.isCancelled { return }
-                if let stream = chosen { download(item, stream: stream, quality: quality) }
+                if let stream = chosen { download(item, stream: stream, quality: quality, announce: false) }
                 else { error = item.title + ": " + (resolver.error ?? "영상 주소를 찾지 못했습니다.") }
                 pendingResolution -= 1
             }

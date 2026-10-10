@@ -111,7 +111,12 @@ final class DownloadStore: ObservableObject {
     @Published private(set) var resolvingTitle = ""
     private var resolutionTask: Task<Void, Never>?
     private var resolutionQueue: [(PlaybackItem, String)] = []
-    private let resolver = PlaybackResolver()
+    let resolver: PlaybackResolver = {
+        let resolver = PlaybackResolver()
+        resolver.webView.frame = CGRect(x: 0, y: 0, width: 960, height: 640)
+        resolver.silent = true
+        return resolver
+    }()
     private var tasks: [String: Task<Void, Never>] = [:]
     private var backgroundTasks: [String: URLSessionDownloadTask] = [:]
     private let delegate = BackgroundDownloadDelegate()
@@ -177,7 +182,7 @@ final class DownloadStore: ObservableObject {
         error = nil
         resolutionTask = Task {
             defer {
-                resolver.cancel(); resolutionTask = nil; pendingResolution = resolutionQueue.count; resolvingTitle = ""
+                resolver.cancel(); resolver.webView.loadHTMLString("", baseURL: nil); resolutionTask = nil; pendingResolution = resolutionQueue.count; resolvingTitle = ""
                 // An enqueue immediately after pause/cancel must survive the old worker's cleanup.
                 if !resolutionQueue.isEmpty { enqueue([], quality: quality) }
             }

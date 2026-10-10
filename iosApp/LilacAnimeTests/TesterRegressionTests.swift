@@ -9,6 +9,9 @@ final class TesterRegressionTests: XCTestCase {
         let anime = SavedAnime(AnimeSnapshot.shared.decode(content: "{\"id\":\"\(UUID().uuidString)\",\"title\":\"테스트\",\"episodes\":[{\"id\":\"1\",\"number\":1,\"title\":\"1화\"}]}"), source: "linkkf")
         let item = PlaybackItem(anime: anime, episode: anime.anime.episodes[0])
         let store = DownloadStore(index: folder.appendingPathComponent("index.json"), restoreSession: false)
+        XCTAssertEqual(store.resolver.webView.bounds.width, 960)
+        XCTAssertEqual(store.resolver.webView.bounds.height, 640)
+        XCTAssertTrue(store.resolver.silent)
         let stream = ResolvedStream(label: "video", url: URL(string: "https://fixture.test/video.mp4")!, referer: "", headers: [:])
         defer { store.pauseAll(); try? FileManager.default.removeItem(at: folder); try? FileManager.default.removeItem(at: DownloadStore.directory.appendingPathComponent(SubtitleFiles.key(anime.id + "#1"))) }
         store.download(item, stream: stream)

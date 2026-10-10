@@ -24,6 +24,12 @@ struct LilacAnimeApp: App {
                     DesktopWorkspace()
                 }
             }.environmentObject(library).environmentObject(downloads).environmentObject(playback).environmentObject(navigation)
+                .background {
+                    if !UIShowcase.enabled {
+                        ProviderPlayerView(resolver: downloads.resolver).opacity(0.001)
+                            .allowsHitTesting(false).accessibilityHidden(true)
+                    }
+                }
                 .fullScreenCover(item: $playback.presentation) { presentation in
                     EpisodePlayerView(item: presentation.item)
                         .environmentObject(library).environmentObject(downloads)

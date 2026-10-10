@@ -59,6 +59,7 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
     @Published private(set) var loading = false
     @Published var error: String?
     let webView: WKWebView
+    var silent = false { didSet { installCaptureScripts(ohli: currentItem?.anime.source == "ohli24") } }
     private var timeout: Task<Void, Never>?
     private var generation = UUID()
     private var currentItem: PlaybackItem?
@@ -88,6 +89,17 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
     private func installCaptureScripts(ohli: Bool) {
         let controller = webView.configuration.userContentController
         controller.removeAllUserScripts()
+        if silent {
+            controller.addUserScript(WKUserScript(source: """
+            (() => {
+              const mute = element => { if (element instanceof HTMLMediaElement) { if (!element.muted) element.muted = true; if (element.volume !== 0) element.volume = 0; } };
+              const play = HTMLMediaElement.prototype.play;
+              HTMLMediaElement.prototype.play = function() { mute(this); return play.apply(this, arguments); };
+              document.addEventListener('play', event => mute(event.target), true);
+              document.addEventListener('volumechange', event => mute(event.target), true);
+            })();
+            """, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        }
         controller.addUserScript(WKUserScript(source: Self.captureScript, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         if ohli, let file = Bundle.main.url(forResource: "ohli-capture", withExtension: "js"), let script = try? String(contentsOf: file) {
             controller.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: false))

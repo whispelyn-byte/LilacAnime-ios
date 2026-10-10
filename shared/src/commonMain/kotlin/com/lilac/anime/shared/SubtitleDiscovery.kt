@@ -11,7 +11,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
-data class SubtitleAsset(val name: String, val url: String, val source: String, val score: Double = 0.0, val episode: Int? = null, val strict: Boolean = false, val bundle: Boolean = false, val postURL: String = "", val matchedEpisode: Double? = null)
+data class SubtitleAsset(val name: String, val url: String, val source: String, val score: Double = 0.0, val episode: Int? = null, val strict: Boolean = false, val bundle: Boolean = false, val postURL: String = "", val matchedEpisode: Double? = null, val size: Long = 0)
 @Serializable
 internal data class CommunityCache(val time: Long, val posts: List<CommunityPost>)
 internal expect fun readCommunityCache(name: String): String?
@@ -96,29 +96,42 @@ class SubtitleDiscovery(private val repository: SourceRepository = SourceReposit
     }
     private var jimakuEntries: Map<Int, String> = emptyMap()
     private var jimakuLoaded = kotlin.time.TimeSource.Monotonic.markNow() - kotlin.time.Duration.parse("7h")
+    private val jimakuIndexLock = Mutex()
+    private var jimakuIndexLoading: CompletableDeferred<Unit>? = null
     private suspend fun jimaku(anilistId: Int, title: String, episode: Int): List<SubtitleAsset> {
         require(anilistId > 0) { "Jimaku 검색에는 AniList ID가 필요합니다." }
-        val base = "https://jimaku.cc"
-        if (jimakuEntries.isEmpty() || jimakuLoaded.elapsedNow() > kotlin.time.Duration.parse("6h") ||
-            anilistId !in jimakuEntries && jimakuLoaded.elapsedNow() > kotlin.time.Duration.parse("10m")) {
-            val document = Ksoup.parse(repository.getText("$base/"), base)
-            val entries = document.select("div.entry[data-extra]").mapNotNull {
-                val id = runCatching { JSONObject(it.attr("data-extra")).optInt("anilist_id") }.getOrDefault(0)
-                val href = it.selectFirst("a[href*=/entry/]")?.absUrl("href").orEmpty()
-                if (id <= 0 || href.isEmpty()) null else id to href
-            }.toMap()
-            if (entries.isNotEmpty()) { jimakuEntries = entries; jimakuLoaded = kotlin.time.TimeSource.Monotonic.markNow() }
-        }
-        val href = jimakuEntries[anilistId] ?: return emptyList()
+        refreshJimakuIndex(anilistId)
+        val href = jimakuEntries[anilistId] ?: error("Jimaku에 이 작품의 자막이 없습니다.")
         val files = Ksoup.parse(repository.getText(href), href)
         val assets = files.select("div.entry[data-extra]").mapNotNull {
             val extra = runCatching { JSONObject(it.attr("data-extra")) }.getOrNull()
-            val name = extra?.optString("name").orEmpty().ifBlank { it.selectFirst("a.file-name")?.text().orEmpty() }
-            val link = extra?.optString("url").orEmpty().ifBlank { it.selectFirst("a.file-name")?.absUrl("href").orEmpty() }
-            if (name.substringAfterLast('.').lowercase() !in listOf("ass", "ssa", "srt", "vtt", "smi", "zip", "7z", "rar", "ttml", "sub")) return@mapNotNull null
-            SubtitleAsset(name, if (link.startsWith("http")) link else "$base/" + link.trimStart('/'), "jimaku", if (SubtitleEpisodeMatcher.matches(name, episode)) 1.0 else 0.0)
-        }.distinctBy { it.url }
+            val name = extra?.optString("name").orEmpty().ifBlank { it.selectFirst("a.file-name")?.text().orEmpty() }.trim()
+            val link = extra?.optString("url").orEmpty().ifBlank { it.selectFirst("a.file-name")?.attr("href").orEmpty() }.trim()
+            if (name.isEmpty() || link.isEmpty() || !JimakuRules.supported(name)) return@mapNotNull null
+            SubtitleAsset(name, com.fleeksoft.ksoup.internal.StringUtil.resolve(href, link), "jimaku", size = extra?.optLong("size") ?: 0)
+        }.distinctBy { it.name }
         return JimakuRules.rank(assets, title, episode, "")
+    }
+    private suspend fun refreshJimakuIndex(anilistId: Int) {
+        var owner = false
+        val pending = jimakuIndexLock.withLock {
+            if (jimakuLoaded.elapsedNow() <= kotlin.time.Duration.parse("6h") &&
+                (anilistId in jimakuEntries || jimakuLoaded.elapsedNow() <= kotlin.time.Duration.parse("10m"))) null
+            else jimakuIndexLoading ?: CompletableDeferred<Unit>().also { jimakuIndexLoading = it; owner = true }
+        } ?: return
+        if (!owner) { pending.await(); return }
+        try {
+            val document = Ksoup.parse(repository.getText("https://jimaku.cc/"), "https://jimaku.cc")
+            val entries = document.select("div.entry[data-extra]").mapNotNull {
+                val id = runCatching { JSONObject(it.attr("data-extra")).optInt("anilist_id") }.getOrDefault(0)
+                val entry = Regex("/entry/(\\d+)").find(it.selectFirst("a[href*=/entry/]")?.attr("href").orEmpty())?.groupValues?.get(1)
+                if (id <= 0 || entry == null) null else id to "https://jimaku.cc/entry/$entry"
+            }.distinctBy { it.first }.toMap()
+            if (entries.isNotEmpty()) { jimakuEntries = entries; jimakuLoaded = kotlin.time.TimeSource.Monotonic.markNow() }
+            pending.complete(Unit)
+        } catch (error: CancellationException) { pending.cancel(error); throw error }
+        catch (error: Exception) { pending.completeExceptionally(error); throw error }
+        finally { withContext(NonCancellable) { jimakuIndexLock.withLock { if (jimakuIndexLoading === pending) jimakuIndexLoading = null } } }
     }
     fun close() { repository.close(); metadata.close() }
 }

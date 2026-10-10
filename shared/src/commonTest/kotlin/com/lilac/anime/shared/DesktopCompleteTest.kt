@@ -41,13 +41,13 @@ class DesktopCompleteTest {
         assertEquals(0, DesktopTranslationPrompt.build("Hy-MT2-30B-A3B", "line", "", "", "").topK)
     }
 
-    @Test fun jimakuMovieAndPreferredReleaseKeepCorrectEpisodeAndSeason() {
+    @Test fun jimakuMovieAndPreferredReleaseUseDesktopSeasonBonus() {
         fun file(name: String) = SubtitleAsset(name, "https://example.test/" + name, "jimaku")
         assertEquals(listOf("Movie.ja.ass", "Movie.srt"), JimakuRules.rank(listOf(file("Movie.srt"), file("Movie.ja.ass")), "Movie", 1, "").map { it.name })
         val files = listOf(file("[Other] Anime S02E03.furigana.ass"), file("[Chosen] Anime S02E03.srt"),
             file("[Chosen] Anime S01E03.srt"), file("[Chosen] Anime S02E04.srt"))
         val result = JimakuRules.rank(files, "Anime 2기", 3, "[Chosen] Anime S02E02.srt")
         assertEquals("[Chosen] Anime S02E03.srt", result.first().name)
-        assertEquals(2, result.size)
+        assertEquals(3, result.size) // Desktop keeps other seasons and gives this season a bonus.
     }
 }

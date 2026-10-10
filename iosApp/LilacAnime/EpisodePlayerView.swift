@@ -15,6 +15,7 @@ final class EpisodePlayerModel: ObservableObject {
     @Published var assets: [SubtitleAsset] = []
     @Published var subtitleFiles: [URL] = []
     @Published var subtitle: URL?
+    @Published private(set) var selectedJimakuURL: String?
     @Published var koreanOffer: String?
     private var offeredSubtitle: (URL, String)?
     private var offerTask: Task<Void, Never>?
@@ -41,7 +42,8 @@ final class EpisodePlayerModel: ObservableObject {
     let resolver = PlaybackResolver()
     let translation = TranslationCoordinator()
     let pretranslation = TranslationCoordinator()
-    private let preparer = DesktopSubtitlePreparer()
+    private let preparer: DesktopSubtitlePreparer
+    let jimaku: DesktopJimakuCatalog
     private let nextResolver = PlaybackResolver()
     private var prefetchTask: Task<Void, Never>?
     private var automaticTask: Task<Void, Never>?
@@ -62,10 +64,25 @@ final class EpisodePlayerModel: ObservableObject {
     private var observers: Set<AnyCancellable> = []
     init(item: PlaybackItem, subtitleLookup: ((String, @escaping ([SubtitleAsset]?, String?) -> Void) -> Void)? = nil) {
         self.subtitleLookup = subtitleLookup
+        if let subtitleLookup {
+            jimaku = DesktopJimakuCatalog(fetch: { _ in
+                try await withCheckedThrowingContinuation { continuation in
+                    subtitleLookup("jimaku") { values, error in
+                        if let error { continuation.resume(throwing: SubtitleFiles.failure(error)) }
+                        else { continuation.resume(returning: values ?? []) }
+                    }
+                }
+            })
+        } else { jimaku = DesktopJimakuCatalog() }
+        preparer = DesktopSubtitlePreparer(jimaku: jimaku)
         self.item = item; previous = item.preceding; searchTitle = item.anime.title
         resolver.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observers)
         translation.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observers)
+        jimaku.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observers)
     }
+    var displayedSubtitleAssets: [SubtitleAsset] { subtitleResultsProvider == "jimaku" ? jimaku.files(item) ?? [] : assets }
+    var subtitleLookupLoading: Bool { subtitleResultsProvider == "jimaku" ? jimaku.files(item) == nil && jimaku.error(item) == nil : searching }
+    var displayedSubtitleSearchError: String? { subtitleResultsProvider == "jimaku" ? jimaku.error(item) : subtitleSearchError }
     func begin(library: LibraryStore) {
         active = nil; loadedSkip = false; systemPlayback = false
         let token = generation
@@ -77,6 +94,8 @@ final class EpisodePlayerModel: ObservableObject {
             }
         }
         configure(library)
+        let opening = item
+        Task { await jimaku.load(opening) }
         engine.onEnd = { [weak self, weak library] in
             guard let self, let library, library.preferences.autoPlay, !self.item.next.isEmpty else { return }
             let remaining = self.item.next
@@ -141,6 +160,7 @@ final class EpisodePlayerModel: ObservableObject {
         save(library: library); engine.pause(); proxy?.stop(); proxy = nil; stopPrefetch(); automaticTask?.cancel(); translation.cancel(); cast.stop()
         cancelSubtitleBackground(); preparer.cancel()
         generation = UUID(); titleLookup.cancel(); searchTitle = item.anime.title; self.item = item; active = nil; subtitle = nil; sourceSubtitle = nil; assets = []; subtitleFiles = []; chapters = []; selectedProvider = ""; skipEntered = nil
+        selectedJimakuURL = nil
         subtitleSearchRequest = UUID(); subtitleSearchCache = [:]; subtitleResultsProvider = ""; subtitleSearchError = nil; searching = false; makers = []
         loadedSkip = false; lastSave = 0; lastSkipped = ""; systemPlayback = false
         begin(library: library)
@@ -186,9 +206,18 @@ final class EpisodePlayerModel: ObservableObject {
         }
     }
     func stopCast() { cast.stop() }
+    func prepareSubtitleList() {
+        if subtitleResultsProvider.isEmpty && selectedProvider == "jimaku" { search("jimaku") }
+    }
     func search(_ provider: String) {
         searchProvider = provider
-        let key = provider == "jimaku" ? provider : provider + ":" + searchTitle
+        if provider == "jimaku" {
+            subtitleSearchRequest = UUID(); subtitleResultsProvider = "jimaku"; searching = false; makers = []
+            let opening = item
+            Task { await jimaku.load(opening, retryFailure: true) }
+            return
+        }
+        let key = provider + ":" + searchTitle
         let request = beginSubtitleSearch(key: key, provider: provider)
         let token = generation
         makers = []
@@ -233,10 +262,15 @@ final class EpisodePlayerModel: ObservableObject {
         let token = generation
         Task {
             do {
-                let files = try await SubtitleFiles.prepare(url, headers: headers)
+                let japanese = provider == "jimaku" || asset?.source == "jimaku"
+                if japanese && !JimakuRules.shared.validDownload(url: url.absoluteString) { throw SubtitleFiles.failure("Jimaku 파일 주소가 아닙니다.") }
+                let files = try await SubtitleFiles.prepare(url, headers: headers, japanese: japanese, filename: japanese ? asset?.name : nil)
                 guard token == generation, request == subtitleRequest else { return }
                 subtitleFiles = files
-                if let first = preferredSubtitle(subtitleFiles, asset: asset) { selectSubtitle(first, library: library, translate: translate, provider: provider ?? (url.isFileURL ? "user" : searchProvider)) }
+                if let first = preferredSubtitle(subtitleFiles, asset: asset) {
+                    if asset?.source == "jimaku", let asset { jimaku.remember(asset.name, item: item); selectedJimakuURL = asset.url }
+                    selectSubtitle(first, library: library, translate: translate, provider: provider ?? (url.isFileURL ? "user" : searchProvider))
+                }
                 else if files.isEmpty { error = "자막이 없습니다. ASS · SSA · SRT · VTT · SMI 파일을 선택하세요." }
                 else { error = "여러 자막을 가져왔습니다. 자막 목록에서 사용할 파일을 선택하세요." }
             } catch { if token == generation, request == subtitleRequest { self.error = error.localizedDescription } }
@@ -525,7 +559,7 @@ struct EpisodePlayerView: View {
         guard !remaining.isEmpty else { return }
         var item = remaining[0]; item.next = Array(remaining.dropFirst()); model.change(item, library: library)
     }
-    private func openSubtitleList() { settings = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { subtitleSheet = true } }
+    private func openSubtitleList() { model.prepareSubtitleList(); settings = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { subtitleSheet = true } }
     private var playerSettings: some View {
         PlayerSettingsPanel(tab: $settingsTab, close: { settings = false }) {
             if settingsTab == 0 { playbackSettings }
@@ -600,8 +634,8 @@ struct EpisodePlayerView: View {
         PlayerSettingsGroup("자막 표시") {
             Toggle("자막 표시", isOn: Binding(get: { model.engine.subtitlesVisible }, set: { _ in model.engine.toggleSubtitleVisibility() }))
             if let subtitle = model.subtitle { Text(SubtitleNames.label(subtitle.lastPathComponent)).font(.caption).foregroundStyle(.white.opacity(0.65)) }
-            if model.searching { ProgressView("자막을 찾는 중") }
-            if let error = model.subtitleSearchError ?? model.error { Text(error).font(.caption).foregroundStyle(.red) }
+            if model.subtitleLookupLoading { ProgressView("자막을 찾는 중") }
+            if let error = model.displayedSubtitleSearchError ?? model.error { Text(error).font(.caption).foregroundStyle(.red) }
         }
         PlayerSettingsGroup("자막 가져올 곳") {
             PlayerChoiceGrid(options: [("auto", "자동"), ("kairan", "Kairan"), ("csora", "Csora"), ("anissia", "Anissia"), ("jimaku", "Jimaku"), ("manual", "직접 선택")], selection: Binding(get: { library.preferences.subtitleProvider ?? "auto" }, set: { library.preferences.subtitleProvider = $0 }), identifier: "player-subtitle-source")
@@ -719,13 +753,20 @@ struct EpisodePlayerView: View {
                             }
                         }
                         Section(model.subtitleResultsProvider == "jimaku" ? "Jimaku 자막" : "검색 결과") {
-                        if model.searching { ProgressView(model.subtitleResultsProvider == "jimaku" ? "Jimaku에서 찾는 중…" : "자막 검색 중…") }
-                        ForEach(model.assets, id: \.subtitleResultID) { asset in
+                        if model.subtitleLookupLoading { ProgressView(model.subtitleResultsProvider == "jimaku" ? "Jimaku에서 찾는 중…" : "자막 검색 중…") }
+                        ForEach(model.displayedSubtitleAssets, id: \.subtitleResultID) { asset in
                             if asset.source == "post", let url = URL(string: asset.url) { Link(SubtitleNames.label(asset.name, fallback: "원본 자막 게시물"), destination: url) }
-                            else { Button(SubtitleNames.label(asset.name, url: asset.url)) { if let url = URL(string: asset.url) { model.importSubtitle(url, library: library, provider: asset.source, asset: asset); subtitleSheet = false } } }
+                            else { Button {
+                                if let url = URL(string: asset.url) { model.importSubtitle(url, library: library, provider: asset.source, asset: asset); subtitleSheet = false }
+                            } label: {
+                                HStack {
+                                    Text(SubtitleNames.label(asset.name, url: asset.url))
+                                    if asset.source == "jimaku" && model.selectedJimakuURL == asset.url { Spacer(); Image(systemName: "checkmark") }
+                                }
+                            } }
                         }
-                        if let error = model.subtitleSearchError { Text(error).foregroundStyle(.red) }
-                        else if !model.searching && !model.subtitleResultsProvider.isEmpty && model.assets.isEmpty && model.makers.isEmpty { Text("검색된 자막이 없습니다.").foregroundStyle(.secondary) }
+                        if let error = model.displayedSubtitleSearchError { Text(error).foregroundStyle(.red) }
+                        else if !model.subtitleLookupLoading && !model.subtitleResultsProvider.isEmpty && model.displayedSubtitleAssets.isEmpty && model.makers.isEmpty { Text(model.subtitleResultsProvider == "jimaku" ? "이 회차의 파일이 없습니다." : "검색된 자막이 없습니다.").foregroundStyle(.secondary) }
                         }
                         if let error = model.error { Text(error).foregroundStyle(.red) }
                     }

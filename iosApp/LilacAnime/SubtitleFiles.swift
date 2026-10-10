@@ -9,9 +9,9 @@ enum SubtitleFiles {
     static let fontDirectory = root.appendingPathComponent("Fonts")
     static let translations = root.appendingPathComponent("Translations")
     static func key(_ text: String) -> String { SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined() }
-    static func prepare(_ url: URL, headers: [String: String] = [:]) async throws -> [URL] {
+    static func prepare(_ url: URL, headers: [String: String] = [:], japanese: Bool = false, filename: String? = nil) async throws -> [URL] {
         let data: Data
-        var name = url.lastPathComponent
+        var name = filename ?? url.lastPathComponent
         if url.isFileURL {
             let access = url.startAccessingSecurityScopedResource()
             defer { if access { url.stopAccessingSecurityScopedResource() } }
@@ -32,7 +32,7 @@ enum SubtitleFiles {
             }
             if http.mimeType == "text/html" { throw failure("자막 파일 대신 웹 페이지가 반환되었습니다. 원본 게시물에서 파일을 내려받아 가져오세요.") }
             data = body
-            name = SubtitleNames.downloadFilename(http.value(forHTTPHeaderField: "Content-Disposition"), fallback: name)
+            name = filename ?? SubtitleNames.downloadFilename(http.value(forHTTPHeaderField: "Content-Disposition"), fallback: name)
         }
         let folder = root.appendingPathComponent(key(url.absoluteString))
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -46,14 +46,14 @@ enum SubtitleFiles {
             var fonts: [URL] = []
             for extracted in try SubtitleArchive.extract(file, into: folder) {
                 if ["ttf","otf","ttc"].contains(extracted.pathExtension.lowercased()) { _ = try importFont(extracted); fonts.append(extracted) }
-                else { results.append(try normalize(extracted)) }
+                else { results.append(try normalize(extracted, japanese: japanese)) }
             }
             guard !results.isEmpty || !fonts.isEmpty else { throw failure("압축 파일에 지원하는 자막이 없습니다.") }
             try associateFonts(fonts, with: folder.appendingPathComponent("asset"))
             for subtitle in results { try associateFonts(fonts, with: subtitle) }
             return results
         }
-        return [try normalize(file)]
+        return [try normalize(file, japanese: japanese)]
     }
     static func isKorean(_ file: URL) -> Bool {
         guard let content = try? text(file) else { return false }
@@ -77,17 +77,18 @@ enum SubtitleFiles {
         let files = Set(fonts.filter { $0.standardizedFileURL.path.hasPrefix(prefix) }.map { String($0.standardizedFileURL.path.dropFirst(prefix.count)) })
         try JSONEncoder().encode(files.sorted()).write(to: subtitle.appendingPathExtension("fonts.json"), options: .atomic)
     }
-    static func text(_ file: URL) throws -> String {
+    static func text(_ file: URL, japanese: Bool = false) throws -> String {
         let data = try Data(contentsOf: file)
         if data.starts(with: [0xff, 0xfe]), let value = String(data: data.dropFirst(2), encoding: .utf16LittleEndian) { return value }
         if data.starts(with: [0xfe, 0xff]), let value = String(data: data.dropFirst(2), encoding: .utf16BigEndian) { return value }
         if let value = String(data: data, encoding: .utf8) { return value.hasPrefix("\u{FEFF}") ? String(value.dropFirst()) : value }
         let korean = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.EUC_KR.rawValue)))
-        for encoding in [korean, .shiftJIS, .japaneseEUC] { if let value = String(data: data, encoding: encoding), !value.isEmpty { return value } }
+        let legacy: [String.Encoding] = japanese ? [.shiftJIS] : [korean, .shiftJIS, .japaneseEUC]
+        for encoding in legacy { if let value = String(data: data, encoding: encoding), !value.isEmpty { return value } }
         throw failure("자막 문자 인코딩을 읽을 수 없습니다.")
     }
-    private static func normalize(_ file: URL) throws -> URL {
-        let content = try text(file)
+    private static func normalize(_ file: URL, japanese: Bool = false) throws -> URL {
+        let content = try text(file, japanese: japanese)
         let ext = SubtitleTools.shared.format(content: content, suggested: file.pathExtension)
         guard !ext.isEmpty else { throw failure("지원하는 자막 형식이 아닙니다.") }
         let output = file.deletingPathExtension().appendingPathExtension(ext)

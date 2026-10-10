@@ -196,7 +196,7 @@ final class DownloadStore: ObservableObject {
                 }
                 if Task.isCancelled { return }
                 let ordered = DesktopStreamPolicy.ordered(resolver.streams, preferRaw: preferRaw, preferred: library?.preferences.preferredServers?[item.anime.source], workingProvider: UserDefaults.standard.string(forKey: "miruro.working-provider"))
-                let chosen = item.anime.source == "miruro" ? await DownloadStreamSelector.choose(ordered, quality: quality) : resolver.streams.first
+                let chosen = item.anime.source == "miruro" ? await DownloadStreamSelector.choose(ordered, quality: quality) : ordered.first
                 if Task.isCancelled { return }
                 if let stream = chosen { download(item, stream: stream, quality: quality, announce: false) }
                 else { error = item.title + ": " + (resolver.error ?? "영상 주소를 찾지 못했습니다.") }

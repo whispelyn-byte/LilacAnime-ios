@@ -10,6 +10,21 @@ import kotlinx.serialization.json.Json
 import kotlin.test.*
 
 class CommunityIndexTest {
+    @Test fun anissiaTriesRecentlyUpdatedMakerBeforeOlderMaker() = runTest {
+        val repository = SourceRepository(HttpClient(MockEngine { request ->
+            val body = when {
+                request.url.encodedPath.contains("/anime/list/") -> """{"data":{"content":[{"animeNo":1,"subject":"장송의 프리렌"}]}}"""
+                request.url.encodedPath.contains("/anime/caption/") -> """{"data":[{"name":"이전 제작자","updDt":"2026-09-01","website":"https://old.blogspot.com/"},{"name":"최근 제작자","updDt":"2026-10-10","website":"https://new.blogspot.com/"}]}"""
+                else -> ""
+            }
+            respond(body, headers = headersOf(HttpHeaders.ContentType, "application/json"))
+        }))
+        try {
+            val found = AnissiaDiscovery(repository) { origin, _ -> listOf(CommunityPost("장송의 프리렌 1화", "$origin/1", "<a href='$origin/1.ass'>자막</a>")) }.search("장송의 프리렌", 1, "1")
+            assertEquals(listOf("https://new.blogspot.com/1.ass", "https://old.blogspot.com/1.ass"), found.filter { it.source == "anissia" }.map { it.url })
+            assertEquals(listOf("최근 제작자", "이전 제작자"), AnissiaDiscovery(repository).makers("장송의 프리렌").map { it.name })
+        } finally { repository.close() }
+    }
     @Test fun anissiaLinkedDifferentSeasonNeverBecomesAttachmentOrImageFallback() = runTest {
         val repository = SourceRepository(HttpClient(MockEngine { request ->
             val body = when {

@@ -17,8 +17,7 @@ internal class AnissiaDiscovery(private val repository: SourceRepository, privat
             .maxByOrNull { DesktopCommunity.score(title, it.optString("subject")) } ?: return emptyList()
         if (DesktopCommunity.score(title, anime.optString("subject")) < 0.52) return emptyList()
         val captions = api("/anime/caption/animeNo/" + anime.optInt("animeNo")).optJSONArray("data") ?: return emptyList()
-        return (0 until captions.length()).mapNotNull { index ->
-            val row = captions.optJSONObject(index) ?: return@mapNotNull null
+        return (0 until captions.length()).mapNotNull(captions::optJSONObject).sortedByDescending { it.optString("updDt") }.mapNotNull { row ->
             val website = row.optString("website")
             if (!website.startsWith("https://")) null else SubtitleMaker(row.optString("name"), website, row.optString("status"))
         }.distinctBy { it.website }
@@ -33,8 +32,7 @@ internal class AnissiaDiscovery(private val repository: SourceRepository, privat
         if (DesktopCommunity.score(query, anime.optString("subject")) < 0.52) return emptyList()
         val captions = api("/anime/caption/animeNo/" + anime.optInt("animeNo")).optJSONArray("data") ?: return emptyList()
         val output = mutableListOf<SubtitleAsset>()
-        for (index in 0 until captions.length()) {
-            val maker = captions.optJSONObject(index) ?: continue
+        for (maker in (0 until captions.length()).mapNotNull(captions::optJSONObject).sortedByDescending { it.optString("updDt") }) {
             val website = maker.optString("website")
             if (!website.startsWith("https://") || makerWebsite.isNotBlank() && website != makerWebsite) continue
             try {
@@ -135,7 +133,7 @@ internal class AnissiaDiscovery(private val repository: SourceRepository, privat
             } catch (error: CancellationException) { throw error }
             catch (_: Exception) { /* Try the next maker. */ }
         }
-        return output.distinctBy { it.url }.sortedByDescending { it.score }
+        return output.distinctBy { it.url }
     }
     private suspend fun api(path: String, params: Map<String, String> = emptyMap()): JSONObject {
         val root = JSONObject(repository.getText("https://api.anissia.net" + path, params))

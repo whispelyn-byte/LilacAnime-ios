@@ -32,10 +32,7 @@ enum SubtitleFiles {
             }
             if http.mimeType == "text/html" { throw failure("자막 파일 대신 웹 페이지가 반환되었습니다. 원본 게시물에서 파일을 내려받아 가져오세요.") }
             data = body
-            if let disposition = http.value(forHTTPHeaderField: "Content-Disposition"),
-               let range = disposition.range(of: "filename=") {
-                name = String(disposition[range.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: "\" "))
-            }
+            name = SubtitleNames.downloadFilename(http.value(forHTTPHeaderField: "Content-Disposition"), fallback: name)
         }
         let folder = root.appendingPathComponent(key(url.absoluteString))
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

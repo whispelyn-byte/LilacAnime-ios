@@ -54,6 +54,7 @@ final class EpisodePlayerModel: ObservableObject {
     private var lastSkipped = ""
     private var generation = UUID()
     private var subtitleRequest = UUID()
+    private var subtitleSearchRequest = UUID()
     private var observers: Set<AnyCancellable> = []
     init(item: PlaybackItem) {
         self.item = item; previous = item.preceding; searchTitle = item.anime.title
@@ -181,8 +182,10 @@ final class EpisodePlayerModel: ObservableObject {
     func stopCast() { cast.stop() }
     func search(_ provider: String) {
         searchProvider = provider
+        subtitleSearchRequest = UUID()
+        let request = subtitleSearchRequest
         let token = generation
-        searching = true; error = nil
+        searching = true; error = nil; assets = []; makers = []
         if provider != "jimaku", searchTitle == item.anime.title, !TitleCandidates.shared.isKorean(title: searchTitle) {
             Task {
                 let anime = item.anime.anime
@@ -190,15 +193,15 @@ final class EpisodePlayerModel: ObservableObject {
                 let resolved: String
                 if let korean { resolved = korean }
                 else { let found = await titleLookup.resolve(searchTitle, aliases: [anime.native, anime.romaji, anime.english]); resolved = found ?? searchTitle }
-                guard token == generation else { return }
-                searchTitle = resolved; performSubtitleSearch(provider, token: token)
+                guard token == generation, request == subtitleSearchRequest else { return }
+                searchTitle = resolved; performSubtitleSearch(provider, token: token, request: request)
             }
-        } else { performSubtitleSearch(provider, token: token) }
+        } else { performSubtitleSearch(provider, token: token, request: request) }
     }
-    private func performSubtitleSearch(_ provider: String, token: UUID) {
+    private func performSubtitleSearch(_ provider: String, token: UUID, request: UUID) {
         service.findSubtitles(provider: provider, title: searchTitle, episode: Int32(item.number), episodeKey: item.displayNumber,
             anilistId: item.anime.anime.anilistId?.int32Value ?? Int32(DesktopCatalog.shared.record(item.anime)?.anilist ?? 0)) { [weak self] assets, error in
-                guard token == self?.generation else { return }
+                guard token == self?.generation, request == self?.subtitleSearchRequest else { return }
                 self?.assets = assets ?? []; self?.error = error; self?.searching = false
             }
     }
@@ -337,18 +340,22 @@ final class EpisodePlayerModel: ObservableObject {
         }
     }
     func loadMakers() {
-        searching = true
+        subtitleSearchRequest = UUID()
+        let request = subtitleSearchRequest
+        searching = true; error = nil; assets = []; makers = []
         let token = generation
         service.subtitleMakers(title: searchTitle) { [weak self] values, failure in
-            guard token == self?.generation else { return }
+            guard token == self?.generation, request == self?.subtitleSearchRequest else { return }
             self?.makers = values ?? []; self?.error = failure; self?.searching = false
         }
     }
     func searchMaker(_ maker: SubtitleMaker) {
-        searching = true
+        subtitleSearchRequest = UUID()
+        let request = subtitleSearchRequest
+        searching = true; error = nil; assets = []
         let token = generation
         service.makerSubtitles(title: searchTitle, episode: Int32(item.number), episodeKey: item.displayNumber, website: maker.website, anilistId: item.anime.anime.anilistId?.int32Value ?? Int32(DesktopCatalog.shared.record(item.anime)?.anilist ?? 0)) { [weak self] values, failure in
-            guard token == self?.generation else { return }
+            guard token == self?.generation, request == self?.subtitleSearchRequest else { return }
             self?.assets = values ?? []; self?.error = failure; self?.searching = false
         }
     }
@@ -572,7 +579,7 @@ struct EpisodePlayerView: View {
     @ViewBuilder private var subtitleSettings: some View {
         PlayerSettingsGroup("자막 표시") {
             Toggle("자막 표시", isOn: Binding(get: { model.engine.subtitlesVisible }, set: { _ in model.engine.toggleSubtitleVisibility() }))
-            if let subtitle = model.subtitle { Text(subtitle.lastPathComponent).font(.caption).foregroundStyle(.white.opacity(0.65)) }
+            if let subtitle = model.subtitle { Text(SubtitleNames.label(subtitle.lastPathComponent)).font(.caption).foregroundStyle(.white.opacity(0.65)) }
             if model.searching { ProgressView("자막을 찾는 중") }
             if let error = model.error { Text(error).font(.caption).foregroundStyle(.red) }
         }
@@ -656,7 +663,7 @@ struct EpisodePlayerView: View {
                         Section("내 자막") {
                             Button("자막 파일 열기") { subtitleSheet = false; importingFont = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { importer = true } }
                             ForEach(model.subtitleFiles, id: \.self) { file in
-                                Button(file.lastPathComponent) { model.selectSubtitle(file, library: library, translate: false); subtitleSheet = false }
+                                Button(SubtitleNames.label(file.lastPathComponent)) { model.selectSubtitle(file, library: library, translate: false); subtitleSheet = false }
                             }
                         }
                         HStack {
@@ -681,16 +688,16 @@ struct EpisodePlayerView: View {
                             ForEach(savedSubtitles.list(model.item)) { record in
                                 if let file = record.file {
                                     HStack {
-                                        Button(record.name) { model.selectSubtitle(file, library: library, translate: !record.translated); subtitleSheet = false }
+                                        Button(SubtitleNames.label(record.name)) { model.selectSubtitle(file, library: library, translate: !record.translated); subtitleSheet = false }
                                         ShareLink(item: file) { Image(systemName: "square.and.arrow.up") }
                                     }
                                 }
                             }
                         }
-                        if model.searching { ProgressView() }
+                        if model.searching { ProgressView("자막 검색 중…") }
                         ForEach(Array(model.assets.enumerated()), id: \.offset) { _, asset in
-                            if asset.source == "post", let url = URL(string: asset.url) { Link(asset.name, destination: url) }
-                            else { Button(asset.name) { if let url = URL(string: asset.url) { model.importSubtitle(url, library: library, provider: asset.source, asset: asset); subtitleSheet = false } } }
+                            if asset.source == "post", let url = URL(string: asset.url) { Link(SubtitleNames.label(asset.name, fallback: "원본 자막 게시물"), destination: url) }
+                            else { Button(SubtitleNames.label(asset.name, url: asset.url)) { if let url = URL(string: asset.url) { model.importSubtitle(url, library: library, provider: asset.source, asset: asset); subtitleSheet = false } } }
                         }
                         if let error = model.error { Text(error).foregroundStyle(.red) }
                     }

@@ -20,8 +20,8 @@ final class PlaybackTests: XCTestCase {
         models.tap(); XCTAssertTrue(list.waitForExistence(timeout: 5))
         let menu = app.buttons["workspace-menu"]; menu.tap()
         let home = app.buttons["workspace-route-home"]
-        if !home.isHittable { menu.tap() }
-        XCTAssertTrue(home.waitForExistence(timeout: 5)); home.tap()
+        if !home.exists { menu.tap() }
+        XCTAssertTrue(home.waitForExistence(timeout: 5)); XCTAssertTrue(home.isHittable); home.tap()
         XCTAssertTrue(app.buttons["전체 작품 둘러보기"].waitForExistence(timeout: 10))
         XCTAssertFalse(list.exists)
         settings.tap()
@@ -91,9 +91,9 @@ final class PlaybackTests: XCTestCase {
         let menu = app.buttons["workspace-menu"]
         XCTAssertTrue(menu.waitForExistence(timeout: 15)); XCTAssertTrue(menu.isHittable)
         menu.tap()
-        let catalog = app.buttons["전체"].firstMatch
-        if !catalog.isHittable { menu.tap() }
-        XCTAssertTrue(catalog.waitForExistence(timeout: 5)); catalog.tap()
+        let catalog = app.buttons["workspace-route-catalog"]
+        if !catalog.exists { menu.tap() }
+        XCTAssertTrue(catalog.waitForExistence(timeout: 5)); XCTAssertTrue(catalog.isHittable); catalog.tap()
         XCTAssertTrue(app.buttons["catalog-filter-apply"].waitForExistence(timeout: 10))
     }
     func testEpisodeOpensFullscreenAndBackReturnsToDetail() {

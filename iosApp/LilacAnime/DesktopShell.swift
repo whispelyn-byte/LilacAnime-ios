@@ -18,13 +18,16 @@ struct DesktopWorkspace: View {
             searchBar
             Group {
             if sizeClass == .regular {
-                NavigationSplitView(columnVisibility: $columns) {
-                    sidebar.navigationTitle("LilacAnime")
-                        .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 240)
-                } detail: { page.id(navigation.section) }
-                .navigationSplitViewStyle(.balanced)
-                // Reset the column path too when replacing the workspace page.
-                .id(navigation.section)
+                HStack(spacing: 0) {
+                    if columns != .detailOnly {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("LilacAnime").font(.headline).padding(.horizontal, 16).padding(.vertical, 12)
+                            sidebar
+                        }.frame(width: 210).frame(maxHeight: .infinity)
+                        Divider()
+                    }
+                    page.id(navigation.section).frame(maxWidth: .infinity, maxHeight: .infinity)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else { page.id(navigation.section) }
             }
         }.environmentObject(navigation)

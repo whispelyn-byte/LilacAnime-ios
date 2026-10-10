@@ -14,7 +14,7 @@ final class TesterRegressionTests: XCTestCase {
         await fulfillment(of: [loaded], timeout: 10)
         withExtendedLifetime(delegate) {}
         let checked = expectation(description: "download media is muted")
-        LilacCallAsyncJavaScript(resolver.webView, "const video = document.getElementById('fixture'); video.muted = false; video.volume = 1; video.dispatchEvent(new Event('play', {bubbles:true})); return [video.muted, video.volume, innerWidth];") { value, error in
+        resolver.webView.evaluateJavaScript("(() => { const video = document.getElementById('fixture'); video.muted = false; video.volume = 1; video.dispatchEvent(new Event('play', {bubbles:true})); return [video.muted, video.volume, innerWidth]; })()") { value, error in
             XCTAssertNil(error)
             guard let values = value as? [NSNumber], values.count == 3 else { XCTFail("Missing WebKit fixture result"); checked.fulfill(); return }
             XCTAssertTrue(values[0].boolValue)

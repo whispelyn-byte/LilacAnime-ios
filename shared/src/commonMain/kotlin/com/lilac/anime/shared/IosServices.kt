@@ -1,5 +1,11 @@
 package com.lilac.anime.shared
 import kotlinx.coroutines.*
+/** Swift calls in on the main thread and gets its callbacks there, but the work itself (parsing pages, ranking a blog's
+ *  posts for subtitles) runs here: on the main thread it froze the player until iOS killed the app. One worker at a
+ *  time keeps the repositories' caches single-threaded, as they were on the main thread. */
+@OptIn(ExperimentalCoroutinesApi::class)
+internal val kotlinWork: CoroutineDispatcher = Dispatchers.Default.limitedParallelism(1)
+
 class IosServices {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val source = SourceRepository()
@@ -63,14 +69,14 @@ class IosServices {
             for (batch in lines.chunked(16)) {
                 ensureActive()
                 translated += translator.translate(batch, config)
-                progress(translated.size, lines.size)
-                partial(SubtitleTools.replace(content, extension, translated + lines.drop(translated.size)))
+                val preview = SubtitleTools.replace(content, extension, translated + lines.drop(translated.size))
+                withContext(Dispatchers.Main) { progress(translated.size, lines.size); partial(preview) }
             }
             SubtitleTools.replace(content, extension, translated)
         } }
     }
     fun cloudModels(config: TranslationConfig, completion: (List<String>?, String?) -> Unit) { scope.launch { call(completion) { translator.models(config) } } }
-    fun clearTranslationCache() = translator.clearCache()
+    fun clearTranslationCache() { scope.launch(kotlinWork) { translator.clearCache() } }
     fun translateLines(lines: List<String>, config: TranslationConfig, completion: (List<String>?, String?) -> Unit) {
         scope.launch { call(completion) { translator.translate(lines, config) } }
     }
@@ -78,7 +84,7 @@ class IosServices {
         scope.launch { call(completion) { skip.segments(anilistId, malId, episode, duration) } }
     }
     private suspend fun <T> call(completion: (T?, String?) -> Unit, block: suspend () -> T) {
-        try { completion(block(), null) }
+        try { completion(withContext(kotlinWork) { block() }, null) }
         catch (error: CancellationException) { completion(null, "요청을 취소했습니다."); throw error }
         catch (error: Exception) { completion(null, error.message ?: "요청을 완료할 수 없습니다.") }
     }

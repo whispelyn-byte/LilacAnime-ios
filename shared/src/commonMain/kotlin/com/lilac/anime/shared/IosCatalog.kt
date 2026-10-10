@@ -12,7 +12,7 @@ class IosCatalog {
         request?.cancel()
         request = scope.launch {
             try {
-                completion(if (query.isBlank()) repository.home(page) else repository.search(query, page), null)
+                completion(withContext(kotlinWork) { if (query.isBlank()) repository.home(page) else repository.search(query, page) }, null)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) { completion(null, error.message ?: "목록을 불러올 수 없습니다.") }
         }
@@ -22,11 +22,12 @@ class IosCatalog {
         request?.cancel()
         request = scope.launch {
             try {
-                coroutineScope {
+                val (anime, servers) = withContext(kotlinWork) {
                     val anime = async { repository.detail(id) }
                     val servers = async { repository.servers(id) }
-                    completion(anime.await(), servers.await(), null)
+                    anime.await() to servers.await()
                 }
+                completion(anime, servers, null)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) { completion(null, null, error.message ?: "상세 정보를 불러올 수 없습니다.") }
         }

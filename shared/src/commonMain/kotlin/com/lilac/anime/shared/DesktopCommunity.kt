@@ -11,6 +11,20 @@ data class CommunityMatch(val post: CommunityPost, val links: List<String>, val 
 /** main.cjs/communityLinks and rankCommunityPosts. */
 object DesktopCommunity {
     private val trailing = Regex("(?<!season|시즌|part|파트|vol\\.?|제)\\s+(\\d{1,3}(?:\\.\\d+)?)\\s*(?:\\((?:끝|완|完)\\))?\\s*(?:자막)?\\s*$", RegexOption.IGNORE_CASE)
+    // Compiled once: ranking runs these over every post of a blog, and compiling them per call cost seconds.
+    private val ranges = Regex("(?<![\\d.])(\\d+(?:\\.\\d+)?)\\s*[~∼〜～–—-]\\s*(\\d+(?:\\.\\d+)?)\\s*(?:화|회|편)")
+    private val listed = Regex("(?<![\\d.])((?:\\d+(?:\\.\\d+)?\\s*[,、&/]\\s*)*\\d+(?:\\.\\d+)?)\\s*(?:화|회|편)")
+    private val listSeparator = Regex("[,、&/]")
+    private val episodeMark = Regex("\\bep(?:isode)?\\s*\\.?\\s*(\\d+(?:\\.\\d+)?)(?![\\d.])", RegexOption.IGNORE_CASE)
+    private val numberJoin = Regex("\\d+(?:\\.\\d+)?\\s*[~∼〜～–—\\-,、&/]\\s*(?=\\d)")
+    private val titleNoise = Regex("\\d+(?:\\.\\d+)?\\s*(?:화|회|편)|\\bep(?:isode)?\\s*\\.?\\s*\\d+(?:\\.\\d+)?|\\((?:끝|완|完)\\)|작업\\s*중|블루레이판|자막", RegexOption.IGNORE_CASE)
+    private val subtitleLink = Regex("drive\\.google\\.com|docs\\.google\\.com|\\.zip(?:$|\\?)|\\.(?:ass|ssa|srt|vtt|smi)(?:$|\\?)", RegexOption.IGNORE_CASE)
+    private val fontLabel = Regex("폰트|font", RegexOption.IGNORE_CASE)
+    private val tildeBlock = Regex("[~〜～][^~〜～]*[~〜～]")
+    private val spaces = Regex("\\s+")
+    private val longHangul = Regex("^[가-힣]{4,}$")
+    private val unfinished = Regex("작업\\s*중|하차")
+    private val seasonMark = Regex("\\s*(?:\\d+\\s*기(?![가-힣])|season\\s*\\d+|시즌\\s*\\d+|\\d+(?:st|nd|rd|th)\\s*season)", RegexOption.IGNORE_CASE)
     data class Episodes(val list: List<Double>, val ranges: List<ClosedFloatingPointRange<Double>>) {
         val any get() = list.isNotEmpty() || ranges.isNotEmpty()
         fun has(value: Int) = has(value.toDouble())
@@ -18,19 +32,18 @@ object DesktopCommunity {
     }
     fun episodes(input: String): Episodes {
         val value = normalizeDesktopTitle(input)
-        val ranges = Regex("(?<![\\d.])(\\d+(?:\\.\\d+)?)\\s*[~∼〜～–—-]\\s*(\\d+(?:\\.\\d+)?)\\s*(?:화|회|편)")
         val found = ranges.findAll(value).map { it.groupValues[1].toDouble()..it.groupValues[2].toDouble() }.filter { it.start <= it.endInclusive }.toList()
         val text = ranges.replace(value, " ")
-        val list = Regex("(?<![\\d.])((?:\\d+(?:\\.\\d+)?\\s*[,、&/]\\s*)*\\d+(?:\\.\\d+)?)\\s*(?:화|회|편)").findAll(text).flatMap { it.groupValues[1].split(Regex("[,、&/]")).map { part -> part.trim().toDouble() } }.toMutableList()
-        list += Regex("\\bep(?:isode)?\\s*\\.?\\s*(\\d+(?:\\.\\d+)?)(?![\\d.])", RegexOption.IGNORE_CASE).findAll(value).map { it.groupValues[1].toDouble() }
+        val list = listed.findAll(text).flatMap { it.groupValues[1].split(listSeparator).map { part -> part.trim().toDouble() } }.toMutableList()
+        list += episodeMark.findAll(value).map { it.groupValues[1].toDouble() }
         return Episodes(list.distinct(), found)
     }
     private fun postEpisodes(title: String): Episodes = episodes(title).takeIf { it.any } ?: trailing.find(normalizeDesktopTitle(title))?.let { Episodes(listOf(it.groupValues[1].toDouble()), emptyList()) } ?: Episodes(emptyList(), emptyList())
-    private fun title(value: String): String = normalizeDesktopTitle(value).replace(Regex("\\d+(?:\\.\\d+)?\\s*[~∼〜～–—\\-,、&/]\\s*(?=\\d)"), "").replace(Regex("\\d+(?:\\.\\d+)?\\s*(?:화|회|편)|\\bep(?:isode)?\\s*\\.?\\s*\\d+(?:\\.\\d+)?|\\((?:끝|완|完)\\)|작업\\s*중|블루레이판|자막", RegexOption.IGNORE_CASE), " ").trim()
+    private fun title(value: String): String = normalizeDesktopTitle(value).replace(numberJoin, "").replace(titleNoise, " ").trim()
     fun links(post: CommunityPost, episode: Int, offsets: List<Int> = emptyList(), allowOffset: Boolean = false, episodeNumber: Double = episode.toDouble()): CommunityMatch {
         val anchors = Ksoup.parse(post.html, post.url).select("a[href]").map { it.absUrl("href") to it.text().trim() }
-            .filter { Regex("drive\\.google\\.com|docs\\.google\\.com|\\.zip(?:$|\\?)|\\.(?:ass|ssa|srt|vtt|smi)(?:$|\\?)", RegexOption.IGNORE_CASE).containsMatchIn(it.first) }
-        val fonts = anchors.filter { Regex("폰트|font", RegexOption.IGNORE_CASE).containsMatchIn(it.second) }
+            .filter { subtitleLink.containsMatchIn(it.first) }
+        val fonts = anchors.filter { fontLabel.containsMatchIn(it.second) }
         val subs = anchors.filter { it !in fonts }
         fun withFonts(selected: List<Pair<String,String>>) = if (selected.isEmpty()) emptyList() else (selected + fonts).map { it.first }.distinct()
         val own = postEpisodes(post.title)
@@ -59,11 +72,11 @@ object DesktopCommunity {
         return if (ma > 0 && mb > 0) 0.0 else minOf((aa.size - ma).toDouble() / aa.size, (bb.size - mb).toDouble() / bb.size)
     }
     fun score(first: String, second: String): Double {
-        fun bare(value: String) = value.replace(Regex("[~〜～][^~〜～]*[~〜～]"), " ").replace(Regex("\\s+"), " ").trim()
+        fun bare(value: String) = value.replace(tildeBlock, " ").replace(spaces, " ").trim()
         val a = DesktopTitleRules.key(bare(first)); val b = DesktopTitleRules.key(bare(second))
         val short = if (a.length < b.length) a else b; val long = if (short == a) b else a
         var best = maxOf(titleScore(first, second), titleScore(bare(first), bare(second)))
-        if (Regex("^[가-힣]{4,}$").matches(short) && long.startsWith(short)) best = maxOf(best, .6)
+        if (longHangul.matches(short) && long.startsWith(short)) best = maxOf(best, .6)
         val distance = HangulSimilarityMatcher.weightedEditDistance(a.replace("카구야", "가구야"), b.replace("카구야", "가구야"))
         val similarity = if (maxOf(a.length, b.length) == 0) 0.0 else 1 - distance / maxOf(a.length, b.length)
         if (similarity >= .75 && distance <= 1.5) best = maxOf(best, similarity)
@@ -71,18 +84,22 @@ object DesktopCommunity {
     }
     fun rank(posts: List<CommunityPost>, wantedTitle: String, episode: Int, offsets: List<Int>, episodeNumber: Double = episode.toDouble()): List<CommunityMatch> {
         val season = DesktopTitleRules.season(wantedTitle)
-        val usable = posts.filterNot { Regex("작업\\s*중|하차").containsMatchIn(it.title) }
-        fun ranked(items: List<CommunityPost>, name: String, number: Double) = items.map { post ->
-            val score = score(title(name), title(trailing.replace(post.title, " ")))
-            links(post, number.toInt(), offsets, season > 1, number).copy(score = score)
-        }.filter { it.score >= .52 && it.links.isNotEmpty() }.sortedWith { a,b ->
-            val difference = kotlin.math.floor((b.score - a.score) * 20 + .5).toInt()
-            if (difference != 0) difference else a.strict.compareTo(b.strict)
+        val usable = posts.filterNot { unfinished.containsMatchIn(it.title) }
+        fun ranked(items: List<CommunityPost>, name: String, number: Double): List<CommunityMatch> {
+            val wanted = title(name)
+            // Only a post whose title matches is worth parsing: parsing every post of a busy blog took seconds.
+            return items.mapNotNull { post ->
+                val score = score(wanted, title(trailing.replace(post.title, " ")))
+                if (score < .52) null else links(post, number.toInt(), offsets, season > 1, number).copy(score = score)
+            }.filter { it.links.isNotEmpty() }.sortedWith { a,b ->
+                val difference = kotlin.math.floor((b.score - a.score) * 20 + .5).toInt()
+                if (difference != 0) difference else a.strict.compareTo(b.strict)
+            }
         }
         val direct = ranked(usable.filter { (DesktopTitleRules.explicitSeason(title(it.title)) ?: 1) == season }, wantedTitle, episodeNumber)
         if (direct.isNotEmpty() || season < 2) return direct
         val unmarked = usable.filter { DesktopTitleRules.explicitSeason(title(it.title)) == null }
-        val base = wantedTitle.replace(Regex("\\s*(?:\\d+\\s*기(?![가-힣])|season\\s*\\d+|시즌\\s*\\d+|\\d+(?:st|nd|rd|th)\\s*season)", RegexOption.IGNORE_CASE), " ")
+        val base = wantedTitle.replace(seasonMark, " ")
         for (offset in offsets) {
             val number = episodeNumber + offset
             val found = ranked(unmarked, base, number).filter { it.episodeNumber == number && (postEpisodes(it.post.title).has(number) || !it.strict) }

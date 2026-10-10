@@ -108,7 +108,7 @@ internal class AnissiaDiscovery(private val repository: SourceRepository) {
                 val direct = DesktopCommunity.rank(hydrated, subject, episode, offsets).firstOrNull()
                     ?: DesktopCommunity.rank(hydrated, title, episode, offsets).firstOrNull()
                 if (direct != null) {
-                    output += direct.links.map { link -> SubtitleAsset("Anissia · " + maker.optString("name"), link, "anissia", direct.score, direct.episode, direct.strict) }
+                    output += direct.links.map { link -> SubtitleAsset("Anissia · " + maker.optString("name"), link, "anissia", direct.score, direct.episode, direct.strict, direct.bundle, direct.post.url) }
                     continue
                 }
                 val match = DesktopEpisodeRules.findPost(subject, episode, candidates, episodeKey, offsets) ?: continue
@@ -140,7 +140,7 @@ internal class AnissiaDiscovery(private val repository: SourceRepository) {
             if (driveId == null && suffix !in listOf("ass", "ssa", "srt", "vtt", "smi", "zip", "7z", "rar", "ttml", "sub") && !link.contains("attach", true)) return@mapNotNull null
             SubtitleAsset("Anissia · " + maker + " · " + name.ifBlank { link.substringAfterLast('/') },
                 if (driveId != null) "https://drive.usercontent.google.com/download?id=" + driveId + "&export=download&confirm=t" else link, "anissia",
-                if (SubtitleEpisodeMatcher.matches(name, episode)) 1.0 else 0.6)
+                if (SubtitleEpisodeMatcher.matches(name, episode)) 1.0 else 0.6, postURL = page)
         }
         val numbered = assets.filter { SubtitleEpisodeMatcher.parse(it.name)?.episode != null }
         return if (numbered.isEmpty()) assets else assets.filter { it !in numbered || SubtitleEpisodeMatcher.matches(it.name, episode) }

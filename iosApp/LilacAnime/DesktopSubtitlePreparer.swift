@@ -78,14 +78,19 @@ final class DesktopSubtitlePreparer {
             return searches.task(key) { [weak self] () -> (URL, String)? in
                 guard let self else { return nil }
                 let assets = await self.find(provider, item: item, context: context)
-                var candidates: [URL] = []
-                var fonts: [URL] = []
-                for asset in assets where asset.source != "post" {
-                    if Task.isCancelled { return nil }
-                    if let url = URL(string: asset.url), let files = try? await SubtitleFiles.prepare(url) { candidates += files; fonts += SubtitleFiles.preparedFonts(url) }
+                var postKeys: [String] = []
+                let downloads = assets.filter { $0.source != "post" }
+                for asset in downloads where !postKeys.contains(asset.postURL) { postKeys.append(asset.postURL) }
+                for key in postKeys {
+                    var candidates: [URL] = [], fonts: [URL] = []
+                    let group = downloads.filter { $0.postURL == key }
+                    for asset in group {
+                        if Task.isCancelled { return nil }
+                        if let url = URL(string: asset.url), let files = try? await SubtitleFiles.prepare(url) { candidates += files; fonts += SubtitleFiles.preparedFonts(url) }
+                    }
+                    for file in candidates { try? SubtitleFiles.associateFonts(SubtitleFiles.fonts(for: file) + fonts, with: file) }
+                    if let first = group.first, let file = self.select(candidates, item: item, offsets: [], episode: first.episode?.intValue, strict: first.strict, bundle: first.bundle, community: true) { return (file, provider) }
                 }
-                for file in candidates { try? SubtitleFiles.associateFonts(SubtitleFiles.fonts(for: file) + fonts, with: file) }
-                if let first = assets.first(where: { $0.source != "post" }), let file = self.select(candidates, item: item, offsets: context.2, episode: first.episode?.intValue, strict: first.strict) { return (file, provider) }
                 if provider == "anissia" {
                     for asset in assets where asset.source == "post" {
                         if Task.isCancelled { return nil }
@@ -130,7 +135,7 @@ final class DesktopSubtitlePreparer {
             service.episodeOffsets(anilistId: anilist, title: title) { values, _ in continuation.resume(returning: values ?? []) }
         }
         let result = (title, anilist, values.map(\.intValue))
-        contexts[item.anime.id] = result
+        if !result.2.isEmpty || DesktopTitleRules.shared.season(title: title) < 2 { contexts[item.anime.id] = result }
         return result
     }
     private func find(_ provider: String, item: PlaybackItem, context: (String, Int32, [Int])) async -> [SubtitleAsset] {
@@ -145,7 +150,11 @@ final class DesktopSubtitlePreparer {
         }
         return []
     }
-    private func select(_ files: [URL], item: PlaybackItem, offsets: [Int], episode: Int? = nil, strict: Bool = false) -> URL? {
+    private func select(_ files: [URL], item: PlaybackItem, offsets: [Int], episode: Int? = nil, strict: Bool = false, bundle: Bool = false, community: Bool = false) -> URL? {
+        if community {
+            let index = DesktopCommunityFiles.shared.select(names: files.map(\.lastPathComponent), sizes: files.map { KotlinLong(value: Int64((try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)) }, episode: Double(episode ?? item.number), strict: strict, bundle: bundle, season: DesktopTitleRules.shared.season(title: item.anime.title))
+            return index >= 0 && Int(index) < files.count ? files[Int(index)] : nil
+        }
         let wanted = [episode ?? item.number] + offsets.map { item.number + $0 }
         let compatible = files.filter { file in
             guard let season = SubtitleEpisodeMatcher.shared.parse(name: file.lastPathComponent)?.season else { return true }

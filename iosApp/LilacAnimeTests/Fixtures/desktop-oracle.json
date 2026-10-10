@@ -1,4 +1,234 @@
 {
+  "communityFiles": [
+    {
+      "input": {
+        "names": [
+          "Kaiju No. 8 [1080p] [5A2B3C4D].ass",
+          "Anime E05.srt"
+        ],
+        "episode": 8,
+        "strict": true
+      },
+      "expected": null
+    },
+    {
+      "input": {
+        "names": [
+          "Anime S01E05.ass",
+          "Anime S02E05.ass"
+        ],
+        "episode": 5,
+        "season": 2,
+        "strict": true
+      },
+      "expected": "Anime S02E05.ass"
+    },
+    {
+      "input": {
+        "names": [
+          "Anime - 03v2.ass",
+          "Anime - 03.srt"
+        ],
+        "episode": 3,
+        "strict": true
+      },
+      "expected": "Anime - 03v2.ass"
+    },
+    {
+      "input": {
+        "names": [
+          "Anime 2025 1080p.ass",
+          "Anime 2025 720p.srt"
+        ],
+        "episode": 1,
+        "strict": true
+      },
+      "expected": "Anime 2025 1080p.ass"
+    },
+    {
+      "input": {
+        "names": [
+          "Anime 2025 1080p.ass"
+        ],
+        "episode": 2,
+        "strict": true,
+        "bundle": true
+      },
+      "expected": null
+    },
+    {
+      "input": {
+        "names": [
+          "NCOP.ass",
+          "Anime - 01.srt"
+        ],
+        "episode": 1
+      },
+      "expected": "Anime - 01.srt"
+    },
+    {
+      "input": {
+        "names": [
+          "Movie.smi",
+          "Movie.ass"
+        ],
+        "episode": 1,
+        "strict": true
+      },
+      "expected": "Movie.ass"
+    },
+    {
+      "input": {
+        "names": [
+          "Movie.ass",
+          "Song.srt"
+        ],
+        "episode": 2,
+        "strict": true,
+        "bundle": true
+      },
+      "expected": null
+    },
+    {
+      "input": {
+        "names": [
+          "Anime E12.5.ass",
+          "Anime E12.ass"
+        ],
+        "episode": 12.5,
+        "strict": true
+      },
+      "expected": "Anime E12.5.ass"
+    },
+    {
+      "input": {
+        "names": [
+          "작품 1~12화.ass",
+          "작품 12화.srt"
+        ],
+        "episode": 12,
+        "strict": true,
+        "bundle": true
+      },
+      "expected": "작품 12화.srt"
+    },
+    {
+      "input": {
+        "names": [
+          "Anime.ass",
+          "Anime E05.ass"
+        ],
+        "episode": 6
+      },
+      "expected": "Anime.ass"
+    },
+    {
+      "input": {
+        "names": [
+          "예고편.ass",
+          "작품.ass"
+        ],
+        "episode": 1,
+        "strict": true
+      },
+      "expected": "작품.ass"
+    }
+  ],
+  "reanime": [
+    {
+      "input": {
+        "anime_id": "sample",
+        "title": {
+          "english": "Sample",
+          "native": "原題"
+        },
+        "average_score": 87,
+        "popularity": 99,
+        "season": "SPRING",
+        "season_year": 2025,
+        "status": "Not yet released",
+        "started_on": "2025-04-12",
+        "subbed": 0,
+        "dubbed": 0
+      },
+      "expected": {
+        "season": "SPRING",
+        "aired": "2025-04-12",
+        "totalEpisodes": null,
+        "availableEpisodes": 0,
+        "updatedAt": "",
+        "provider": "reanime",
+        "id": "sample",
+        "mal_id": "reanime:sample",
+        "title": "Sample",
+        "title_english": "",
+        "images": {
+          "webp": {
+            "large_image_url": ""
+          }
+        },
+        "score": 8.7,
+        "year": 2025,
+        "type": "Anime",
+        "episodes": null,
+        "status": "Not yet released",
+        "synopsis": "",
+        "genres": [],
+        "studios": [],
+        "url": "https://reanime.to/anime/sample",
+        "anilistId": null,
+        "malId": null,
+        "canWatch": true,
+        "subbed": 0,
+        "dubbed": 0
+      }
+    },
+    {
+      "input": {
+        "anime_id": "second",
+        "title": {
+          "romaji": "Second"
+        },
+        "average_score": 91,
+        "season": "FALL",
+        "season_year": 2026,
+        "start_date": "2026-10-08",
+        "subbed": 2,
+        "episodes": 12
+      },
+      "expected": {
+        "season": "FALL",
+        "aired": "2026-10-08",
+        "totalEpisodes": 12,
+        "availableEpisodes": 2,
+        "updatedAt": "",
+        "provider": "reanime",
+        "id": "second",
+        "mal_id": "reanime:second",
+        "title": "Second",
+        "title_english": "",
+        "images": {
+          "webp": {
+            "large_image_url": ""
+          }
+        },
+        "score": 9.1,
+        "year": 2026,
+        "type": "Anime",
+        "episodes": 12,
+        "status": "",
+        "synopsis": "",
+        "genres": [],
+        "studios": [],
+        "url": "https://reanime.to/anime/second",
+        "anilistId": null,
+        "malId": null,
+        "canWatch": true,
+        "subbed": 2,
+        "dubbed": 0
+      }
+    }
+  ],
   "tmdbQueries": [
     {
       "input": [
@@ -197,12 +427,10 @@
         "episode": 2
       },
       "expected": {
-        "links": [
-          "https://fixture.test/14.ass",
-          "https://fixture.test/fonts.zip"
-        ],
-        "episode": 14,
-        "strict": false
+        "links": [],
+        "episode": 2,
+        "strict": false,
+        "bundle": false
       }
     },
     {
@@ -216,7 +444,8 @@
           "https://fixture.test/bundle.zip"
         ],
         "episode": 4,
-        "strict": true
+        "strict": true,
+        "bundle": true
       }
     },
     {

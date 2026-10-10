@@ -13,13 +13,13 @@ final class WinPNGReader: NSObject, WKNavigationDelegate {
         let entries = try await reader.read(url).filter { $0["ass"]?.isEmpty == false || $0["raw"]?.isEmpty == false || $0["smi"]?.isEmpty == false }
         let extra = "non-?telop|\\bNC(?:OP|ED)\\b|tokuten|\\bSP\\d|\\bPV\\b|\\bCM\\b|menu|preview|trailer"
         let main = entries.filter { ($0["name"] ?? "").range(of: extra, options: [.regularExpression, .caseInsensitive]) == nil }
-        let pool = main.isEmpty ? entries : main
-        func matches(_ entry: [String: String], _ number: Int) -> Bool {
-            SubtitleEpisodeMatcher.shared.matches(name: entry["name"] ?? "", episodeNumber: Int32(number), expectedSeason: nil)
+        let names = main.map { entry -> String in
+            let ext = entry["ass"]?.isEmpty == false ? "ass" : entry["raw"]?.isEmpty == false ? URL(fileURLWithPath: entry["name"] ?? "sub.srt").pathExtension : "smi"
+            return URL(fileURLWithPath: entry["name"] ?? "subtitle").deletingPathExtension().lastPathComponent + "." + ext
         }
-        let unnumbered = !pool.contains { entry in (1...60).contains { matches(entry, $0) } }
-        let selected = pool.first { matches($0, episode) } ?? ((unnumbered || (matched && pool.count == 1)) ? pool.max { ($0["ass"] ?? $0["raw"] ?? $0["smi"] ?? "").utf8.count < ($1["ass"] ?? $1["raw"] ?? $1["smi"] ?? "").utf8.count } : nil)
-        guard let selected else { return nil }
+        let index = DesktopCommunityFiles.shared.select(names: names, sizes: main.map { KotlinLong(value: Int64(($0["ass"] ?? $0["raw"] ?? $0["smi"] ?? "").utf8.count)) }, episode: Double(episode), strict: !matched, bundle: false, season: 0)
+        guard index >= 0 && Int(index) < main.count else { return nil }
+        let selected = main[Int(index)]
         let ext = selected["ass"]?.isEmpty == false ? "ass" : selected["raw"]?.isEmpty == false ? URL(fileURLWithPath: selected["name"] ?? "sub.srt").pathExtension : "smi"
         let content = [selected["ass"], selected["raw"], selected["smi"]].compactMap { $0 }.first(where: { !$0.isEmpty }) ?? ""
         let folder = SubtitleFiles.root.appendingPathComponent(SubtitleFiles.key(url.absoluteString))

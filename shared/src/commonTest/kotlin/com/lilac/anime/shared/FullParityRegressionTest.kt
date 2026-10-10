@@ -8,6 +8,56 @@ import kotlinx.serialization.json.*
 import kotlin.test.*
 
 class FullParityRegressionTest {
+    @Test fun failedPrequelGraphqlResultDoesNotBecomePermanentEmptyOffsetCache() = runTest {
+        var calls = 0
+        val client = HttpClient(MockEngine {
+            calls++
+            val body = when (calls) {
+                1 -> """{"errors":[{"message":"rate limited"}]}"""
+                2 -> """{"data":{"Media":{"relations":{"edges":[{"relationType":"PREQUEL","node":{"id":1,"format":"TV","episodes":12}}]}}}}"""
+                else -> """{"data":{"Media":{"relations":{"edges":[]}}}}"""
+            }
+            respond(body, headers = headersOf(HttpHeaders.ContentType, "application/json"))
+        })
+        val repository = DesktopMetadataRepository(client)
+        try {
+            assertFailsWith<IllegalStateException> { repository.previousEpisodeOffsets(2, "Anime Season 2") }
+            assertEquals(listOf(12), repository.previousEpisodeOffsets(2, "Anime Season 2"))
+            assertEquals(listOf(12), repository.previousEpisodeOffsets(2, "Anime Season 2"))
+            assertEquals(3, calls)
+        } finally { repository.close() }
+    }
+    @Test fun communityArchiveSelectionMatchesDesktopForCrcSeasonsExtrasAndBundles() {
+        val fixtures = desktopOracle.list("communityFiles").filterIsInstance<JsonObject>()
+        assertEquals(12, fixtures.size)
+        for (fixture in fixtures) {
+            val input = fixture.obj("input")
+            val names = input.list("names").map { it.jsonPrimitive.content }
+            val selected = DesktopCommunityFiles.select(names, names.indices.map { (100 + it).toLong() }, input.text("episode").toDouble(), input.text("strict") == "true", input.text("bundle") == "true", input.number("season") ?: 0)
+            assertEquals(fixture["expected"]?.jsonPrimitive?.contentOrNull, names.getOrNull(selected), input.toString())
+        }
+        assertTrue(DesktopCommunity.links(CommunityPost("작품", "https://fixture.test/", "<a href='/13.ass'>13화</a>"), 1).links.isEmpty())
+        assertEquals(13, DesktopCommunity.links(CommunityPost("작품 2기", "https://fixture.test/", "<a href='/13.ass'>13화</a>"), 1, listOf(12), true).episode)
+        assertFalse(DesktopCommunity.episodes("12.5화").has(5))
+    }
+    @Test fun reanimeMetadataMatchesActualDesktopFunctionAcrossCatalogAndDetailParsers() {
+        val fixtures = desktopOracle.list("reanime").filterIsInstance<JsonObject>()
+        assertEquals(2, fixtures.size)
+        for (fixture in fixtures) {
+            val input = fixture.obj("input"); val expected = fixture.obj("expected")
+            val json = buildJsonObject { put("data", JsonArray(listOf(input))) }.toString()
+            val item = com.lilac.anime.shared.ported.ReAnimeHarParser.parseSearch(json).single()
+            assertEquals(expected.text("score").toDouble(), item.score)
+            assertEquals(expected.text("status"), item.status)
+            assertEquals(expected.text("season"), item.season)
+            assertEquals(expected.text("aired"), item.airedDate)
+            assertEquals(expected.number("availableEpisodes"), item.availableEpisodes)
+            val detail = DesktopReanimeParser.detail(input, item)
+            assertEquals(item.score, detail.score)
+            assertEquals(item.status, detail.status)
+            assertEquals(item.season, detail.season)
+        }
+    }
     @Test fun catalogSortExcludesUnreleasedAndRetainsSourceOrderOnTies() {
         val first = Anime(id = "1", title = "Z", year = "2025", score = 8.0, popularity = 10)
         val second = first.copy(id = "2", title = "A")

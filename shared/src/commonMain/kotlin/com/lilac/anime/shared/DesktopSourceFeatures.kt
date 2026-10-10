@@ -11,7 +11,7 @@ object DesktopReanimeParser {
             if (id.isBlank() || id == old.id) null else ReAnimeRelated(id, it.obj("title").text("english").ifBlank { it.obj("title").text("romaji") },
                 it.obj("title").text("native"), it.obj("title").text("romaji"), it.obj("cover_image").text("extra_large"), it.text("format"), it.text("relation_type"), it.text("season"), it.number("season_year"))
         }
-        return old.copy(score = root.text("average_score").toDoubleOrNull() ?: old.score, popularity = root.number("popularity") ?: old.popularity, source = "reanime", native = titles.text("native"), romaji = titles.text("romaji"), english = titles.text("english"),
+        return old.copy(score = root.text("average_score").toDoubleOrNull()?.takeIf { it > 0 }?.div(10) ?: old.score, popularity = root.number("popularity") ?: old.popularity, source = "reanime", status = root.text("status").ifBlank { old.status }, season = root.text("season").ifBlank { old.season }, native = titles.text("native"), romaji = titles.text("romaji"), english = titles.text("english"),
             description = Ksoup.parse(root.text("description")).text().ifBlank { old.description },
             poster = root.obj("cover_image").text("extra_large").ifBlank { old.poster },
             genres = root.list("genres").mapNotNull { (it as? JsonPrimitive)?.content },

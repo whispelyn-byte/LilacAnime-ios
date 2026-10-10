@@ -7,7 +7,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
-data class SubtitleAsset(val name: String, val url: String, val source: String, val score: Double = 0.0, val episode: Int? = null, val strict: Boolean = false)
+data class SubtitleAsset(val name: String, val url: String, val source: String, val score: Double = 0.0, val episode: Int? = null, val strict: Boolean = false, val bundle: Boolean = false, val postURL: String = "")
 @Serializable
 internal data class CommunityCache(val time: Long, val posts: List<CommunityPost>)
 internal expect fun readCommunityCache(name: String): String?
@@ -65,14 +65,13 @@ class SubtitleDiscovery(private val repository: SourceRepository = SourceReposit
     }
     private suspend fun blog(provider: String, title: String, episode: Int, episodeKey: String, offsets: List<Int>): List<SubtitleAsset> {
         require(provider in listOf("kairan", "csora"))
-        var match = DesktopCommunity.rank(communityPosts(provider), title, episode, offsets).firstOrNull()
-        if (match == null) match = DesktopCommunity.rank(communityPosts(provider, force = true), title, episode, offsets).firstOrNull()
-        if (match == null) return emptyList()
-        return match.links.map { link ->
+        var matches = DesktopCommunity.rank(communityPosts(provider), title, episode, offsets).take(5)
+        if (matches.isEmpty()) matches = DesktopCommunity.rank(communityPosts(provider, force = true), title, episode, offsets).take(5)
+        return matches.flatMap { match -> match.links.map { link ->
             val id = Regex("/file/d/([^/?]+)").find(link)?.groupValues?.get(1) ?: runCatching { Url(link).parameters["id"] }.getOrNull()
             val url = if (id != null && (link.contains("drive.google.com") || link.contains("docs.google.com"))) "https://drive.usercontent.google.com/download?id=" + id.encodeURLParameter() + "&export=download&confirm=t" else link
-            SubtitleAsset(match.post.title, url, provider, match.score, match.episode, match.strict)
-        } + SubtitleAsset("원본 자막 게시물", match.post.url, "post", match.score)
+            SubtitleAsset(match.post.title, url, provider, match.score, match.episode, match.strict, match.bundle, match.post.url)
+        } + SubtitleAsset("원본 자막 게시물", match.post.url, "post", match.score) }
     }
     private var jimakuEntries: Map<Int, String> = emptyMap()
     private var jimakuLoaded = kotlin.time.TimeSource.Monotonic.markNow() - kotlin.time.Duration.parse("7h")

@@ -6,6 +6,7 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import kotlinx.coroutines.CancellationException
+import kotlin.time.Clock
 import kotlinx.serialization.json.*
 
 data class AnimeCharacter(val name: String, val native: String, val first: String, val last: String, val gender: String)
@@ -60,10 +61,10 @@ class DesktopMetadataRepository(private val client: HttpClient = newSharedClient
             if (id.toIntOrNull() != null && TitleCandidates.isKorean(title)) put(id, title)
         } }.toString()
     }
-    private val prequels = mutableMapOf<Int, List<Int>>()
+    private val prequels = linkedMapOf<Int, Pair<Long, List<Int>>>()
     suspend fun previousEpisodeOffsets(anilist: Int, title: String): List<Int> {
         if (anilist <= 0 || DesktopTitleRules.season(title) < 2) return emptyList()
-        prequels[anilist]?.let { return it }
+        prequels[anilist]?.takeIf { Clock.System.now().toEpochMilliseconds() - it.first < 600000 }?.let { return it.second }
         var current = anilist
         val visited = mutableSetOf<Int>()
         val counts = mutableListOf<Int>()
@@ -73,13 +74,17 @@ class DesktopMetadataRepository(private val client: HttpClient = newSharedClient
                 contentType(ContentType.Application.Json)
                 setBody(buildJsonObject { put("query", query); put("variables", buildJsonObject { put("id", current) }) }.toString())
             }.bodyAsText()).jsonObject
+            check(root.list("errors").isEmpty() && root.obj("data").obj("Media").obj("relations")["edges"] is JsonArray) { "이전 시즌 회차 정보를 읽지 못했습니다." }
             val prequel = root.obj("data").obj("Media").obj("relations").list("edges").filterIsInstance<JsonObject>().firstOrNull {
                 it.text("relationType") == "PREQUEL" && it.obj("node").text("format") in listOf("TV", "TV_SHORT", "ONA") && (it.obj("node").number("episodes") ?: 0) > 0
             }?.obj("node") ?: break
             counts += prequel.number("episodes") ?: break
             current = prequel.number("id") ?: break
         }
-        return listOfNotNull(counts.firstOrNull(), counts.sum().takeIf { it > 0 }).distinct().also { prequels[anilist] = it }
+        return listOfNotNull(counts.firstOrNull(), counts.sum().takeIf { it > 0 }).distinct().also {
+            prequels[anilist] = Clock.System.now().toEpochMilliseconds() to it
+            if (prequels.size > 128) prequels.remove(prequels.keys.first())
+        }
     }
     private val tmdb = TmdbTitleResolver(client)
     private suspend fun media(anime: Anime, includeCast: Boolean): JsonObject {

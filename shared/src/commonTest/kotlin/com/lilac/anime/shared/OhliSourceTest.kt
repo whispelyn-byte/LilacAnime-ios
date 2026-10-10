@@ -20,6 +20,13 @@ class OhliSourceTest {
         assertEquals("SP 노벨 히로인즈", DesktopSourceParser.episodeTitle("SP 노벨 히로인즈"))
     }
 
+    @Test fun pathsEscapeSlashesInTitles() {
+        assertEquals("https://ani.ohli24.com/c/%EB%9E%80%EB%A7%88%201%2F2%20%282026%29", DesktopSourceParser.ohliPath("c", "란마 1/2 (2026)"))
+        val anime = DesktopSourceParser.ohliAnime(kotlinx.serialization.json.Json.parseToJsonElement("""{"slug":"란마 1/2 (2026)","title":"란마 1/2 (2026)","rating":null,"episode_total":null,"eps":"2화",
+            "metadata":{"info_rows":[["방영일","2026.10.04 00:55 (일)"]]}}""") as kotlinx.serialization.json.JsonObject)
+        assertEquals("2026", anime.year); assertEquals(0.0, anime.score); assertEquals(2, anime.availableEpisodes); assertNull(anime.totalEpisodes)
+        assertEquals("방영중", anime.status)
+    }
     @Test fun publishTimesAreReadAsTheDayInKorea() {
         assertEquals("2025-10-29", DesktopSourceParser.ohliDay("2025-10-29T10:14:25+09:00"))
         assertEquals("2025-10-26", DesktopSourceParser.ohliDay("2025-10-25T20:49:54.000000Z"))

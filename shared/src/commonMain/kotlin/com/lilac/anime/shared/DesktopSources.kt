@@ -113,7 +113,8 @@ object DesktopSourceParser {
             ?: throw IllegalStateException("애니24 페이지를 읽지 못했습니다.")
         return Json.parseToJsonElement(json).jsonObject.obj("props")
     }
-    fun ohliPath(vararg parts: String): String = OHLI24_WEB + "/" + parts.joinToString("/") { it.encodeURLPathPart() }
+    /** Each part escaped whole, "/" too (a title like "란마 1/2 (2026)"), as encodeURIComponent does. */
+    fun ohliPath(vararg parts: String): String = OHLI24_WEB + "/" + parts.joinToString("/") { it.encodeURLParameter() }
     fun ohliInfo(item: JsonObject): Map<String, String> = item.obj("metadata").list("info_rows").mapNotNull { row ->
         val pair = row as? JsonArray ?: return@mapNotNull null
         val label = (pair.getOrNull(0) as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null

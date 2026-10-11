@@ -791,7 +791,7 @@ struct EpisodePlayerView: View {
             Text("영상이 끊기면 다른 서버나 낮은 화질을 선택하세요.").font(.caption).foregroundStyle(.white.opacity(0.5))
             serverPicker
             PlayerChoiceGrid(options: ["Auto", "480p", "720p", "1080p"].map { ($0, $0) }, selection: Binding(get: { library.preferences.quality }, set: {
-                library.preferences.quality = $0; if let stream = model.active { model.play(stream, library: library) }
+                library.preferences.quality = $0; if let stream = model.active { model.save(library: library); model.play(stream, library: library) }
             }), identifier: "player-quality")
         }
         PlayerSettingsGroup("재생 속도") {
@@ -837,7 +837,7 @@ struct EpisodePlayerView: View {
             Button(showWeb ? "네이티브 플레이어" : "웹 플레이어") { showWeb.toggle(); settings = false }
         }
         PlayerSettingsGroup("조작") {
-            Text("영상 꾹 누르기: 2배속 · 왼쪽/오른쪽 더블탭: 탐색\nSpace 짧게: 재생/정지 · 길게: 2배속\n←/→ 탐색 · C 자막 · Z/X 싱크 · M 음소거\nPageUp/PageDown 이전/다음 화").font(.caption).foregroundStyle(.white.opacity(0.5))
+            Text("영상 꾹 누르기: 2배속 · 왼쪽/오른쪽 더블탭: 탐색\nSpace 짧게: 재생/정지 · 길게: 2배속\n←/→ 탐색 · C 자막 · Z/X 싱크 · M 음소거\nS OP/ED 건너뛰기 · P 스크린샷 · [/] 속도\nPageUp/PageDown 이전/다음 화").font(.caption).foregroundStyle(.white.opacity(0.5))
         }
         if let error = model.error { PlayerSettingsGroup("알림") { Text(error).foregroundStyle(.red) } }
     }

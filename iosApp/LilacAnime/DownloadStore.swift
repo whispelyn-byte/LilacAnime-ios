@@ -503,10 +503,10 @@ final class DownloadStore: ObservableObject {
         defer { clearing = false }
         pauseAll()
         for _ in 0..<100 {
-            if tasks.isEmpty && backgroundTasks.isEmpty && resolutionTask == nil && subtitleTask == nil && preparationTask == nil && analysisTask == nil && !restoring { break }
+            if tasks.isEmpty && backgroundTasks.isEmpty && writing.isEmpty && resolutionTask == nil && subtitleTask == nil && preparationTask == nil && analysisTask == nil && !restoring { break }
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
-        guard tasks.isEmpty && backgroundTasks.isEmpty && resolutionTask == nil && subtitleTask == nil && preparationTask == nil && analysisTask == nil && !restoring else {
+        guard tasks.isEmpty && backgroundTasks.isEmpty && writing.isEmpty && resolutionTask == nil && subtitleTask == nil && preparationTask == nil && analysisTask == nil && !restoring else {
             error = "다운로드 중단이 끝나면 다시 삭제하세요."; return
         }
         for entry in entries { delete(entry.id) }

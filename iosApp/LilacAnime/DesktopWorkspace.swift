@@ -202,25 +202,43 @@ struct LocalVideoView: View {
     @State private var importer = false
     @State private var item: PlaybackItem?
     @State private var error: String?
+    @State private var copying = false
     var body: some View {
         NavigationStack {
             VStack(spacing: 18) {
                 Image(systemName: "folder").font(.largeTitle)
-                Button("파일에서 영상 열기") { importer = true }
+                Button("파일에서 영상 열기") { importer = true }.disabled(copying)
+                if copying { ProgressView("영상을 앱으로 복사하는 중…") }
                 if let error { Text(error).foregroundStyle(.red) }
             }.navigationTitle("로컬 영상")
                 .fileImporter(isPresented: $importer, allowedContentTypes: [.movie, .video, .data]) { result in
-                    do {
-                        let url = try result.get(); let access = url.startAccessingSecurityScopedResource()
-                        defer { if access { url.stopAccessingSecurityScopedResource() } }
-                        let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("Videos")
-                        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                        let file = folder.appendingPathComponent(SubtitleFiles.key(url.absoluteString) + "." + url.pathExtension)
-                        if !FileManager.default.fileExists(atPath: file.path) { try FileManager.default.copyItem(at: url, to: file) }
-                        let anime = SavedAnime(AnimeSnapshot.shared.localVideo(name: url.deletingPathExtension().lastPathComponent, url: file.absoluteString), source: "local")
-                        item = PlaybackItem(entry: WatchEntry(id: anime.id, anime: anime, episodeID: "file", episodeTitle: url.lastPathComponent,
-                            number: 1, watchURL: file.absoluteString, directURL: file.absoluteString, position: 0, duration: 0, updatedAt: Date()))
-                    } catch { self.error = error.localizedDescription }
+                    let url: URL
+                    do { url = try result.get() } catch { self.error = error.localizedDescription; return }
+                    copying = true; error = nil
+                    Task {
+                        defer { copying = false }
+                        do {
+                            // A video can be gigabytes: copying it on the main thread froze the app until iOS stopped it.
+                            let file = try await Task.detached(priority: .userInitiated) { () throws -> URL in
+                                let access = url.startAccessingSecurityScopedResource()
+                                defer { if access { url.stopAccessingSecurityScopedResource() } }
+                                let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("Videos")
+                                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                                let file = folder.appendingPathComponent(SubtitleFiles.key(url.absoluteString) + "." + url.pathExtension)
+                                if !FileManager.default.fileExists(atPath: file.path) {
+                                    // Under another name until complete: a copy cut short is not taken for the video next time.
+                                    let partial = file.appendingPathExtension("part")
+                                    try? FileManager.default.removeItem(at: partial)
+                                    try FileManager.default.copyItem(at: url, to: partial)
+                                    try FileManager.default.moveItem(at: partial, to: file)
+                                }
+                                return file
+                            }.value
+                            let anime = SavedAnime(AnimeSnapshot.shared.localVideo(name: url.deletingPathExtension().lastPathComponent, url: file.absoluteString), source: "local")
+                            item = PlaybackItem(entry: WatchEntry(id: anime.id, anime: anime, episodeID: "file", episodeTitle: url.lastPathComponent,
+                                number: 1, watchURL: file.absoluteString, directURL: file.absoluteString, position: 0, duration: 0, updatedAt: Date()))
+                        } catch { self.error = error.localizedDescription }
+                    }
                 }
                 .onChange(of: item != nil) { ready in if ready, let item { playback.open(item); self.item = nil } }
         }

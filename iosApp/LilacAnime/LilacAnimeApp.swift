@@ -49,7 +49,16 @@ struct LilacAnimeApp: App {
                     await DesktopCatalog.shared.load()
                     await EpisodeSubtitleStore.shared.load()
                     await DeviceSync.shared.load()
-                    await Task.detached(priority: .utility) { SubtitleFiles.restoreFonts() }.value
+                    await Task.detached(priority: .utility) {
+                        SubtitleFiles.restoreFonts()
+                        // Subtitle blog caches are files now; the copies earlier versions kept in UserDefaults (megabytes
+                        // of pages, read in with every preference) are dropped once.
+                        let defaults = UserDefaults.standard
+                        if !defaults.bool(forKey: "community-cache-moved-v1") {
+                            for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("desktop.community.") { defaults.removeObject(forKey: key) }
+                            defaults.set(true, forKey: "community-cache-moved-v1")
+                        }
+                    }.value
                     downloads.library = library
                     restored = true
                     if !UIShowcase.enabled { DesktopUpdater.shared.automaticCheck(); DeviceSync.shared.start(library: library) }

@@ -276,9 +276,16 @@ enum DeviceSyncMapping {
         return anime.id
     }
     static func iosID(_ id: String, source: String) -> String { ["reanime", "animenosub"].contains(source) && !id.hasPrefix(source + ":") ? source + ":" + id : id }
+    /// Every sync maps the whole list two or three times (and a playing episode changes the history every few seconds):
+    /// the episode-less form of a snapshot is made once.
+    private static var trimmedForms: [String: (Anime, String)] = [:]
     private static func trimmed(_ saved: SavedAnime) -> (Anime, String) {
+        if let known = trimmedForms[saved.snapshot] { return known }
         let anime = AnimeSnapshot.shared.withEpisodes(anime: saved.anime, episodes: [])
-        return (anime, AnimeSnapshot.shared.encode(anime: anime))
+        let result = (anime, AnimeSnapshot.shared.encode(anime: anime))
+        if trimmedForms.count > 2000 { trimmedForms.removeAll() }
+        trimmedForms[saved.snapshot] = result
+        return result
     }
     static func animeItem(_ anime: Anime, source: String) -> DeviceSyncPlan.Item {
         let id = desktopID(anime, source: source)

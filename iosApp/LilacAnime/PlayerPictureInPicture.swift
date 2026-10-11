@@ -80,6 +80,10 @@ final class PlayerPictureInPicture: NSObject, ObservableObject, AVPictureInPictu
     private var timebase: CMTimebase?
     private var pausedState: Bool?
     var supported: Bool { AVPictureInPictureController.isPictureInPictureSupported() }
+    private var frameReady: Bool {
+        if #available(iOS 17.4, *) { return layer.isReadyForDisplay }
+        return layer.status == .rendering
+    }
     init(engine: MPVEngine) {
         self.engine = engine
         super.init()
@@ -111,10 +115,10 @@ final class PlayerPictureInPicture: NSObject, ObservableObject, AVPictureInPictu
             pump(token)
             // A sample must reach the attached display layer before iOS allows PiP to start.
             for _ in 0..<50 {
-                if controller.isPictureInPicturePossible || failure != nil { break }
+                if (controller.isPictureInPicturePossible && frameReady) || failure != nil { break }
                 try await Task.sleep(nanoseconds: 100_000_000)
             }
-            guard token == revision, failure == nil, controller.isPictureInPicturePossible else {
+            guard token == revision, failure == nil, controller.isPictureInPicturePossible, frameReady else {
                 throw SubtitleFiles.failure(failure ?? "PiP를 시작하지 못했습니다. 영상을 재생한 뒤 다시 시도하세요.")
             }
             controller.startPictureInPicture()

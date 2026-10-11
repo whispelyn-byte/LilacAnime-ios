@@ -350,7 +350,8 @@ final class MPVEngine: ObservableObject {
         notifications.append(NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.updateScreenAwake() })
         notifications.append(NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
             guard let self, !self.pictureInPictureOutput else { return }
-            self.endPictureInPictureOutput()
+            if self.softwareOutput { self.endPictureInPictureOutput() }
+            else { self.set("vid", "auto") }
         })
         notifications.append(NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
             if (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) == AVAudioSession.InterruptionType.began.rawValue { self?.pause() }

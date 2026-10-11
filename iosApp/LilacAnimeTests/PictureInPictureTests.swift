@@ -36,7 +36,14 @@ final class PictureInPictureTests: XCTestCase {
             command(["sub-add", subtitle.path, "select"])
             // Pause at a cue with a decoded frame. No GPU output exists in this test.
             mpv_set_property_string(handle, "pause", "no")
-            for _ in 0..<12 { _ = mpv_wait_event(handle, 0.05) }
+            let frameDeadline = Date().addingTimeInterval(5)
+            var position = 0.0
+            while Date() < frameDeadline {
+                _ = mpv_get_property(handle, "time-pos", MPV_FORMAT_DOUBLE, &position)
+                if position >= 0.25 { break }
+                _ = mpv_wait_event(handle, 0.05)
+            }
+            guard position >= 0.25 else { throw SubtitleFiles.failure("Fixture video did not advance to a decoded subtitle frame") }
             mpv_set_property_string(handle, "pause", "yes")
             let sample = try PiPFrame.capture(handle, position: 0)
             guard let pixel = CMSampleBufferGetImageBuffer(sample) else { return false }

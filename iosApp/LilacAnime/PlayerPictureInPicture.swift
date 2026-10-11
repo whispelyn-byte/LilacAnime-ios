@@ -200,7 +200,7 @@ final class PlayerPictureInPicture: NSObject, ObservableObject, AVPictureInPictu
 struct PlayerPiPSurface: UIViewRepresentable {
     let pip: PlayerPictureInPicture
     func makeUIView(context: Context) -> PiPSurface {
-        let view = PiPSurface(); view.videoLayer = pip.layer; view.layer.addSublayer(pip.layer); pip.attach(); return view
+        let view = PiPSurface(); view.videoLayer = pip.layer; view.layer.addSublayer(pip.layer); return view
     }
     func updateUIView(_ view: PiPSurface, context: Context) {}
 }

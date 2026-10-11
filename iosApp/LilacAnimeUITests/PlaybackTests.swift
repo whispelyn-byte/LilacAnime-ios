@@ -47,13 +47,13 @@ final class PlaybackTests: XCTestCase {
     func testPlayerPanelAndFitModes() {
         let app = XCUIApplication(); app.launchArguments = ["--ui-preview", "player"]; app.launch()
         XCTAssertTrue(app.buttons["플레이어 설정"].waitForExistence(timeout: 15))
-        let landscape = NSPredicate { _, _ in app.windows.firstMatch.frame.width > app.windows.firstMatch.frame.height }
+        let landscape = NSPredicate { _, _ in let frame = self.mainWindowFrame(app); return frame.width > frame.height }
         expectation(for: landscape, evaluatedWith: app); waitForExpectations(timeout: 10)
         selectPlayerOption(app, identifier: "player-aspect-21:9")
         selectPlayerOption(app, identifier: "player-fit-contain")
         let video = app.descendants(matching: .any)["preview-video-frame"].firstMatch
         XCTAssertTrue(video.waitForExistence(timeout: 5))
-        let viewport = app.windows.firstMatch.frame
+        let viewport = mainWindowFrame(app)
         let contain = video.frame
         XCTAssertEqual(contain.width / contain.height, 16 / 9, accuracy: 0.03)
         XCTAssertTrue(contain.width < viewport.width - 10 || contain.height < viewport.height - 10)
@@ -87,6 +87,11 @@ final class PlaybackTests: XCTestCase {
         }
         XCTAssertTrue(option.isHittable); option.tap()
         app.buttons["닫기"].tap()
+    }
+    private func mainWindowFrame(_ app: XCUIApplication) -> CGRect {
+        // AVKit can add a zero-size helper window. Measure the visible app viewport.
+        app.windows.allElementsBoundByIndex.map { $0.frame }
+            .max { $0.width * $0.height < $1.width * $1.height } ?? .zero
     }
     private func dragUp(_ element: XCUIElement) {
         element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8)).press(forDuration: 0.05,

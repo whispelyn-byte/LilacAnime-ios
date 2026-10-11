@@ -232,19 +232,17 @@ final class MPVEngine: ObservableObject {
     /// without subtitles or controls, as a PNG.
     func screenshot(to file: URL) async throws {
         guard let handle, fileLoaded else { throw SubtitleFiles.failure("영상이 나온 뒤에 찍을 수 있어요") }
-        let path = file.path
-        let result: Int32 = await withCheckedContinuation { continuation in
+        let result: Result<Void, Error> = await withCheckedContinuation { continuation in
             Self.blocking.async {
-                let command: [String] = ["screenshot-to-file", path, "video"]
-                let arguments = command.map { strdup($0) }
-                defer { arguments.forEach { free($0) } }
-                var values: [UnsafePointer<CChar>?] = arguments.map { $0.map { UnsafePointer<CChar>($0) } } + [nil]
-                continuation.resume(returning: mpv_command(handle, &values))
+                continuation.resume(returning: Result {
+                    mpv_set_property_string(handle, "screenshot-sw", "yes")
+                    let frame = try PiPFrame.capture(handle, position: 0, mode: "video", maximumWidth: 8192)
+                    guard let pixel = CMSampleBufferGetImageBuffer(frame) else { throw SubtitleFiles.failure("영상 프레임이 없습니다.") }
+                    try PlayerScreenshot.write(pixel, to: file)
+                })
             }
         }
-        guard result >= 0, FileManager.default.fileExists(atPath: path) else {
-            throw SubtitleFiles.failure(result < 0 ? String(cString: mpv_error_string(result)) : "화면을 찍지 못했습니다.")
-        }
+        try result.get()
     }
     private func command(_ arguments: [String]) {
         guard let handle else { return }

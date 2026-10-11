@@ -1,8 +1,18 @@
 import Foundation
 import Photos
+import CoreImage
 
 /// 스크린샷 (desktop player:screenshot): the frame goes to the Photos app, named after the episode and the time in it.
 enum PlayerScreenshot {
+    static func write(_ pixel: CVPixelBuffer, to file: URL) throws {
+        // MPVKit ships without FFmpeg's PNG encoder; encode the software frame with Core Image.
+        let context = CIContext(options: [.useSoftwareRenderer: true])
+        guard let png = context.pngRepresentation(of: CIImage(cvPixelBuffer: pixel), format: .RGBA8,
+                                                 colorSpace: CGColorSpaceCreateDeviceRGB(), options: [:]) else {
+            throw SubtitleFiles.failure("스크린샷 PNG를 만들지 못했습니다.")
+        }
+        try png.write(to: file)
+    }
     static func name(title: String, episode: String, position: Double) -> String {
         let seconds = max(0, Int(position.isFinite ? position : 0))
         let time = seconds >= 3600 ? String(format: "%d-%02d-%02d", seconds / 3600, seconds / 60 % 60, seconds % 60) : String(format: "%02d-%02d", seconds / 60, seconds % 60)

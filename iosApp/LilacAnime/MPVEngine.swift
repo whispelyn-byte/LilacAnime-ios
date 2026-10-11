@@ -276,7 +276,16 @@ final class MPVEngine: ObservableObject {
         timer?.invalidate(); timer = nil
         notifications.forEach(NotificationCenter.default.removeObserver); notifications = []
         remoteTargets.forEach { $0.0.removeTarget($0.1) }; remoteTargets = []
-        if let handle { mpv_terminate_destroy(handle); self.handle = nil }
+        if let handle {
+            // Waits for mpv to stop, which a stalled stream can make slow: not on the main thread. mpv draws into the
+            // layer until then, so the layer is kept until it has stopped.
+            let layer = mediaLayer
+            DispatchQueue.global(qos: .userInitiated).async {
+                mpv_terminate_destroy(handle)
+                DispatchQueue.main.async { withExtendedLifetime(layer) {} }
+            }
+            self.handle = nil
+        }
         mediaLayer = nil; pendingStream = nil; pendingSubtitle = nil; fileLoaded = false; position = 0; duration = 0
         observed = [:]; configured = [:]; configuredSpeed = nil; lastNowPlaying = nil
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil

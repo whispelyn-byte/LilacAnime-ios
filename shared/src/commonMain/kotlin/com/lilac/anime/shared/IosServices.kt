@@ -8,13 +8,22 @@ internal val kotlinWork: CoroutineDispatcher = Dispatchers.Default.limitedParall
 
 class IosServices {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private val source = SourceRepository()
-    private val discovery = SubtitleDiscovery()
-    private val translator = CloudTranslator()
-    private val skip = AniSkip()
-    private val models = ModelRepository()
-    private val tmdb = TmdbTitleResolver()
-    private val metadata = DesktopMetadataRepository()
+    // Each holds its own HTTP client; the app makes several of these at once (the player alone about seven), and
+    // most use one or two, so each is made when first used.
+    private val sourceLazy = lazy { SourceRepository() }
+    private val discoveryLazy = lazy { SubtitleDiscovery() }
+    private val translatorLazy = lazy { CloudTranslator() }
+    private val skipLazy = lazy { AniSkip() }
+    private val modelsLazy = lazy { ModelRepository() }
+    private val tmdbLazy = lazy { TmdbTitleResolver() }
+    private val metadataLazy = lazy { DesktopMetadataRepository() }
+    private val source by sourceLazy
+    private val discovery by discoveryLazy
+    private val translator by translatorLazy
+    private val skip by skipLazy
+    private val models by modelsLazy
+    private val tmdb by tmdbLazy
+    private val metadata by metadataLazy
     fun catalogKoreanIndex(completion: (String?, String?) -> Unit) { scope.launch { call(completion) { metadata.wikidataIndex() } } }
     fun desktopMetadata(anime: Anime, credential: String, includeCast: Boolean, completion: (DesktopMetadata?, String?) -> Unit) {
         scope.launch { call(completion) { metadata.resolve(anime, credential, includeCast) } }
@@ -76,7 +85,7 @@ class IosServices {
         } }
     }
     fun cloudModels(config: TranslationConfig, completion: (List<String>?, String?) -> Unit) { scope.launch { call(completion) { translator.models(config) } } }
-    fun clearTranslationCache() { scope.launch(kotlinWork) { translator.clearCache() } }
+    fun clearTranslationCache() { if (translatorLazy.isInitialized()) scope.launch(kotlinWork) { translator.clearCache() } }
     fun translateLines(lines: List<String>, config: TranslationConfig, completion: (List<String>?, String?) -> Unit) {
         scope.launch { call(completion) { translator.translate(lines, config) } }
     }
@@ -95,5 +104,14 @@ class IosServices {
         scope.launch { call(completion) { models.files(repo) } }
     }
     fun cancel() { scope.coroutineContext.cancelChildren() }
-    fun close() { scope.cancel(); source.close(); discovery.close(); translator.close(); skip.close(); models.close(); tmdb.close(); metadata.close() }
+    fun close() {
+        scope.cancel()
+        if (sourceLazy.isInitialized()) source.close()
+        if (discoveryLazy.isInitialized()) discovery.close()
+        if (translatorLazy.isInitialized()) translator.close()
+        if (skipLazy.isInitialized()) skip.close()
+        if (modelsLazy.isInitialized()) models.close()
+        if (tmdbLazy.isInitialized()) tmdb.close()
+        if (metadataLazy.isInitialized()) metadata.close()
+    }
 }

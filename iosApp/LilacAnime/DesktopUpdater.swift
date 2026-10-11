@@ -6,6 +6,19 @@ struct DesktopRelease: Decodable, Identifiable {
     var tag_name: String; var body: String?; var html_url: String; var assets: [Asset]
     var id: String { tag_name }
     struct Asset: Decodable { var name: String; var browser_download_url: String }
+    /// "v0.4.5-ios.17" -> "0.4.5": the app version, as the installed one is shown.
+    var version: String { tag_name.range(of: #"\d+(?:\.\d+)+"#, options: .regularExpression).map { String(tag_name[$0]) } ?? tag_name }
+}
+enum AppVersion {
+    /// Numeric parts compared in order ("0.4.10" is after "0.4.9").
+    static func compare(_ left: String, _ right: String) -> ComparisonResult {
+        let a = left.split(separator: ".").map { Int($0) ?? 0 }, b = right.split(separator: ".").map { Int($0) ?? 0 }
+        for index in 0..<max(a.count, b.count) {
+            let x = index < a.count ? a[index] : 0, y = index < b.count ? b[index] : 0
+            if x != y { return x < y ? .orderedAscending : .orderedDescending }
+        }
+        return .orderedSame
+    }
 }
 @MainActor
 final class DesktopUpdater: ObservableObject {
@@ -19,7 +32,11 @@ final class DesktopUpdater: ObservableObject {
     @Published var downloaded: URL?
     /// The installed version's notes, shown once on its first start (app.js showChangelogIfUpdated).
     @Published var changelog: DesktopRelease?
-    var current: String { (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") + " (" + (Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?") + ")" }
+    /// The app version (0.4.5): every iOS release raises it, so it is what the installed and latest are compared by.
+    var current: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?" }
+    /// The latest release is this version and nothing newer is out.
+    var upToDate: Bool { release.map { AppVersion.compare($0.version, current) != .orderedDescending } == true && !updateAvailable }
+    static let sourceAddress = "https://github.com/whispelyn-byte/LilacAnime-ios/releases/latest/download/source.json"
     func automaticCheck() {
         guard !busy, Date().timeIntervalSince(lastCheck) > 6 * 3600 else { return }
         check()
@@ -44,12 +61,14 @@ final class DesktopUpdater: ObservableObject {
                         latestBuild = versions.first?["buildVersion"] as? String
                     }
                 }
-                let current = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
-                updateAvailable = (Int(latestBuild ?? "0") ?? 0) > (Int(current) ?? 0)
-                if latestBuild == current && UserDefaults.standard.string(forKey: "update.lastSeenBuild") != current {
-                    UserDefaults.standard.set(current, forKey: "update.lastSeenBuild"); changelog = result
+                let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
+                // A newer version, or (from before every release raised it) the same version with a newer build.
+                let order = AppVersion.compare(result.version, self.current)
+                updateAvailable = order == .orderedDescending || (order == .orderedSame && (Int(latestBuild ?? "0") ?? 0) > (Int(build) ?? 0))
+                if latestBuild == build && UserDefaults.standard.string(forKey: "update.lastSeenBuild") != build {
+                    UserDefaults.standard.set(build, forKey: "update.lastSeenBuild"); changelog = result
                 }
-                status = updateAvailable ? "새 버전 " + result.tag_name + "을 받을 수 있습니다." : "최신 릴리즈: " + result.tag_name
+                status = updateAvailable ? "새 버전 " + result.version + "을 받을 수 있습니다." : "최신 버전을 쓰고 있습니다."
             } catch { status = error.localizedDescription }
         }
     }
@@ -73,19 +92,30 @@ final class DesktopUpdater: ObservableObject {
 }
 struct DesktopUpdateView: View {
     @ObservedObject private var updater = DesktopUpdater.shared
+    @State private var copied = false
     var body: some View {
         List {
             Section("업데이트 · 정보") {
-                Text("설치 버전 " + updater.current); Text(updater.status)
-                Button("새 버전 확인") { updater.check() }.disabled(updater.busy)
-                if updater.release != nil { Button("릴리즈 IPA 받기") { updater.download() }.disabled(updater.busy) }
+                // Both as the app version (0.4.5), so an installed update reads the same as the latest release.
+                LabeledContent("설치 버전", value: updater.current)
+                LabeledContent("최신 릴리즈", value: updater.release?.version ?? (updater.busy ? "확인 중…" : "-"))
+                Text(updater.status)
                 if updater.busy { ProgressView() }
-                if let file = updater.downloaded { ShareLink(item: file) { Label("IPA 공유·저장", systemImage: "square.and.arrow.up") } }
-                Link("SideStore 소스 등록", destination: URL(string: "https://github.com/whispelyn-byte/LilacAnime-ios/releases/latest/download/source.json")!)
-                Text("iOS에서 앱이 자기 자신을 재서명해 설치할 수는 없습니다. 같은 Bundle ID·Apple 계정으로 SideStore에서 업데이트하면 보관함과 설정을 유지합니다.").font(.caption)
+                // Up to date: nothing to fetch, check or register.
+                if !updater.upToDate {
+                    Button("새 버전 확인") { updater.check() }.disabled(updater.busy)
+                    if updater.release != nil { Button("릴리즈 IPA 받기") { updater.download() }.disabled(updater.busy) }
+                    if let file = updater.downloaded { ShareLink(item: file) { Label("IPA 공유·저장", systemImage: "square.and.arrow.up") } }
+                    // Copied for SideStore's Sources -> +: opened in Safari it only offered to download the JSON file.
+                    Button(copied ? "소스 주소를 복사했어요" : "SideStore 소스 주소 복사") {
+                        UIPasteboard.general.string = DesktopUpdater.sourceAddress; copied = true
+                    }
+                    if copied { Text("SideStore의 Sources → +에 붙여 넣으세요.").font(.caption) }
+                    Text("iOS에서 앱이 자기 자신을 재서명해 설치할 수는 없습니다. 같은 Bundle ID·Apple 계정으로 SideStore에서 업데이트하면 보관함과 설정을 유지합니다.").font(.caption)
+                }
             }
             if let release = updater.release {
-                Section(release.tag_name + " 변경 사항") {
+                Section(release.version + " 변경 사항") {
                     ReleaseNotesText(notes: release.body).textSelection(.enabled)
                     if let url = URL(string: release.html_url) { Link("릴리즈 페이지", destination: url) }
                 }
@@ -103,7 +133,7 @@ struct DesktopUpdateView: View {
 struct ReleaseNotesText: View {
     let notes: String?
     var body: some View {
-        let text = (notes ?? "").replacingOccurrences(of: #"^\s*#{1,6}\s*v?\d+(?:\.\d+)+\S*\s*\n"#, with: "", options: .regularExpression)
+        let text = (notes ?? "").replacingOccurrences(of: #"^\s*#{1,6}\s*v?\d+(?:\.\d+)+[^\n]*\n"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"(?m)^#{1,6}\s+"#, with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if text.isEmpty { Text("변경 사항을 불러오지 못했어요. GitHub 릴리스에서 확인할 수 있어요.") }
@@ -122,7 +152,7 @@ struct ChangelogSheet: View {
                     Link("GitHub 릴리스에서 보기", destination: URL(string: release.html_url) ?? URL(string: "https://github.com/whispelyn-byte/LilacAnime-ios/releases")!)
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(20)
             }
-            .navigationTitle(release.tag_name + " 변경 사항").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(release.version + " 변경 사항").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("닫기") { dismiss() } } }
         }
     }

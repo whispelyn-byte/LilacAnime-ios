@@ -4,7 +4,13 @@ import LilacLocalAI
 
 enum LocalModelFiles {
     static let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Models")
-    static func importModel(_ url: URL) throws -> URL {
+    static func importModel(_ url: URL) async throws -> URL {
+        try Task.checkCancellation()
+        let worker = Task.detached(priority: .userInitiated) { try copyModel(url) }
+        return try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
+    }
+    private static func copyModel(_ url: URL) throws -> URL {
+        try Task.checkCancellation()
         let access = url.startAccessingSecurityScopedResource()
         defer { if access { url.stopAccessingSecurityScopedResource() } }
         try validate(url)
@@ -13,6 +19,7 @@ enum LocalModelFiles {
         if destination != url {
             if FileManager.default.fileExists(atPath: destination.path) { throw SubtitleFiles.failure("같은 이름의 모델이 있습니다.") }
             try FileManager.default.copyItem(at: url, to: destination)
+            if Task.isCancelled { try? FileManager.default.removeItem(at: destination); throw CancellationError() }
         }
         return destination
     }
@@ -99,6 +106,7 @@ struct LocalModelsView: View {
     @ObservedObject private var modelInstaller = DesktopModelInstaller.shared
     @State private var files: [URL] = []
     @State private var importing = false
+    @State private var copyingModel = false
     @State private var downloading = false
     @State private var modelSearch = false
     @State private var address = ""
@@ -129,6 +137,8 @@ struct LocalModelsView: View {
                     refresh()
                 }
                 Button("파일 가져오기") { importing = true }
+                    .disabled(copyingModel)
+                if copyingModel { ProgressView("모델 가져오는 중…") }
             }
             Section("모델 다운로드") {
                 Button("Hugging Face에서 찾기") { modelSearch = true }
@@ -163,8 +173,12 @@ struct LocalModelsView: View {
             .onChange(of: modelInstaller.revision) { _ in refresh() }
             .sheet(isPresented: $modelSearch) { HuggingFaceSearchView { address = $0 } }
             .fileImporter(isPresented: $importing, allowedContentTypes: [.data]) { result in
-                do { library.preferences.selectedGGUF = try LocalModelFiles.importModel(result.get()).lastPathComponent; refresh() }
-                catch { self.error = error.localizedDescription }
+                copyingModel = true
+                Task {
+                    defer { copyingModel = false }
+                    do { library.preferences.selectedGGUF = try await LocalModelFiles.importModel(result.get()).lastPathComponent; refresh() }
+                    catch { self.error = error.localizedDescription }
+                }
             }
     }
     private func refresh() { files = ((try? FileManager.default.contentsOfDirectory(at: LocalModelFiles.directory, includingPropertiesForKeys: nil)) ?? []).filter { $0.pathExtension.lowercased() == "gguf" } }

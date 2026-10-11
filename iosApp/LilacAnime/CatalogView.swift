@@ -38,8 +38,9 @@ final class CatalogModel: ObservableObject {
     private let service = IosServices()
     private var generation = UUID()
     private var catalogSignature: String?
+    private var indexSearch: Task<Void, Never>?
     func load(reset: Bool = true) {
-        if reset { service.cancel(); generation = UUID(); page = 1; items = []; canLoadMore = true; catalogSignature = nil }
+        if reset { indexSearch?.cancel(); service.cancel(); generation = UUID(); page = 1; items = []; canLoadMore = true; catalogSignature = nil }
         else if loading || !canLoadMore { return }
         loading = true; error = nil
         let token = generation
@@ -56,7 +57,16 @@ final class CatalogModel: ObservableObject {
             }
             return
         }
-        let indexed = [genre, year, format, status, season, studio].allSatisfy(\.isEmpty) ? DesktopCatalog.shared.search(query, source: source) : []
+        // Resolve the local index off the UI thread before combining it with the site's results.
+        let source = source, query = query
+        let useIndex = [genre, year, format, status, season, studio].allSatisfy(\.isEmpty)
+        indexSearch = Task { [weak self] in
+            let indexed = useIndex ? await DesktopCatalog.shared.search(query, source: source) : []
+            guard let self, token == self.generation else { return }
+            self.loadRemote(indexed: indexed, token: token)
+        }
+    }
+    private func loadRemote(indexed: [Anime], token: UUID) {
         let callback: ([Anime]?, String?) -> Void = { [weak self] result, error in
             guard let self, token == self.generation else { return }
             self.loading = false; self.error = error
@@ -90,7 +100,8 @@ final class CatalogModel: ObservableObject {
     static func englishOnly(_ source: String, query: String) -> Bool { ["animenosub", "miruro"].contains(source) && TitleCandidates.shared.isKorean(title: query) }
     /// The query's other-language titles (the names already known, then TMDB), searched six at a time; new results are added.
     private func searchVariants(_ query: String, token: UUID) async {
-        var variants = DesktopCatalog.shared.variants(query)
+        var variants = await DesktopCatalog.shared.variants(query)
+        guard token == generation else { return }
         let credential = SecureKeys.load("tmdb"), korean = TitleCandidates.shared.isKorean(title: query)
         if !credential.isEmpty {
             let remote: [String] = await withCheckedContinuation { continuation in

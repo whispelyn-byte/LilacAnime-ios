@@ -75,7 +75,7 @@ enum DeviceSyncPlan {
 
 @MainActor
 final class DeviceSync: ObservableObject {
-    static let shared = DeviceSync()
+    static let shared = DeviceSync(deferLoading: true)
     @Published private(set) var server = ""
     @Published private(set) var connected = false
     @Published private(set) var state = "연결된 서버가 없습니다."
@@ -92,10 +92,28 @@ final class DeviceSync: ObservableObject {
     private var saved = Saved()
     private let tokenName = "device-sync-token"
 
-    init() {
-        if let data = try? Data(contentsOf: file), let value = try? JSONDecoder().decode(Saved.self, from: data) { saved = value }
+    private var loaded = false
+    private var loading: Task<Void, Never>?
+    init(deferLoading: Bool = false) {
+        if deferLoading { return }
+        restore(Self.read(file))
+    }
+    private nonisolated static func read(_ file: URL) -> Saved {
+        guard let data = try? Data(contentsOf: file), let value = try? JSONDecoder().decode(Saved.self, from: data) else { return Saved() }
+        return value
+    }
+    private func restore(_ value: Saved) {
+        saved = value; loaded = true
         server = saved.server; connected = !server.isEmpty && !SecureKeys.load(tokenName).isEmpty
         state = connected ? server + "에 연결됨" : server.isEmpty ? "연결된 서버가 없습니다." : "연결이 끊겨 있습니다. 비밀번호를 넣고 연결하세요."
+    }
+    func load() async {
+        if loaded { return }
+        if let loading { await loading.value; return }
+        let file = file
+        let task = Task { self.restore(await Task.detached(priority: .userInitiated) { Self.read(file) }.value) }
+        loading = task
+        await task.value
     }
 
     /// Runs when the app opens, when it comes back to the front, every 5 minutes, and a little after either list changes.

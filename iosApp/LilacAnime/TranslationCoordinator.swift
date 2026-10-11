@@ -37,6 +37,7 @@ final class TranslationCoordinator: ObservableObject {
                 guard !lines.isEmpty else { throw SubtitleFiles.failure("번역할 자막이 없습니다.") }
                 let settings: [String: Any] = [
                     "desktopPrompt": "prompt-3/local-5/bilingual-1/requests-2", "localOnly": localOnly,
+                    "subtitleOutput": "plain-vtt-1",
                     "provider": preferences.translationProvider, "model": preferences.translationModel,
                     "models": preferences.translationModels ?? [:], "cloudFallback": preferences.cloudFallback ?? true,
                     "credentials": ["gemini", "openai", "qwen", "deepl"].map { SubtitleFiles.key(SecureKeys.load($0)) },
@@ -50,7 +51,7 @@ final class TranslationCoordinator: ObservableObject {
                 let configuration = try JSONSerialization.data(withJSONObject: settings, options: [.sortedKeys])
                 let cacheID = SubtitleFiles.key(content + String(decoding: configuration, as: UTF8.self))
                 try FileManager.default.createDirectory(at: SubtitleFiles.translations, withIntermediateDirectories: true)
-                let resultFile = SubtitleFiles.translations.appendingPathComponent(cacheID + "." + ext)
+                let resultFile = SubtitleFiles.translations.appendingPathComponent(cacheID + ".vtt")
                 let partialFile = SubtitleFiles.translations.appendingPathComponent(cacheID + ".lines.json")
                 if fresh { try? FileManager.default.removeItem(at: resultFile); try? FileManager.default.removeItem(at: partialFile) }
                 if FileManager.default.fileExists(atPath: resultFile.path) {
@@ -58,16 +59,16 @@ final class TranslationCoordinator: ObservableObject {
                     completion(resultFile); running = false; progress = 1; status = "저장된 번역을 불러왔습니다."; return
                 }
                 var kept: [String: String] = [:]
-                if let data = try? Data(contentsOf: partialFile), let saved = try? JSONDecoder().decode([String: String].self, from: data) {
-                    kept = saved.filter { !$0.value.isEmpty }
-                }
+                kept = await Task.detached(priority: .utility) {
+                    guard let data = try? Data(contentsOf: partialFile), let saved = try? JSONDecoder().decode([String: String].self, from: data) else { return [String: String]() }
+                    return saved.filter { !$0.value.isEmpty }
+                }.value
+                try Task.checkCancellation()
                 for index in blanks {
                     let value = index.intValue; if lines.indices.contains(value) { kept[lines[value]] = "" }
                 }
                 for line in lines where line.rangeOfCharacter(from: .letters) == nil { kept[line] = line }
-                let working = SubtitleFiles.translations.appendingPathComponent("working-" + token.uuidString + "." + ext)
-                try SubtitleFiles.associateFonts(SubtitleFiles.fonts(for: file), with: working)
-                try SubtitleFiles.associateFonts(SubtitleFiles.fonts(for: file), with: resultFile)
+                let working = SubtitleFiles.translations.appendingPathComponent("working-" + token.uuidString + ".vtt")
                 workingFiles.insert(working)
                 @MainActor func publish() throws {
                     guard token == generation else { return }
@@ -75,7 +76,7 @@ final class TranslationCoordinator: ObservableObject {
                     progress = Double(lines.filter { kept[$0] != nil }.count) / Double(lines.count)
                     writer.async { [weak self] in
                         do {
-                            try SubtitleTools.shared.replace(content: content, extension: ext, lines: translated).write(to: working, atomically: true, encoding: .utf8)
+                            try SubtitleTools.shared.translatedVtt(content: content, extension: ext, lines: translated).write(to: working, atomically: true, encoding: .utf8)
                             try JSONEncoder().encode(saved).write(to: partialFile, options: .atomic)
                         } catch { return }
                         DispatchQueue.main.async { guard let self, token == self.generation, self.running else { return }; completion(working) }
@@ -189,14 +190,13 @@ final class TranslationCoordinator: ObservableObject {
                 let outcome = TranslationOutcome(lines: lines, kept: kept)
                 guard outcome.translated > 0 else { throw terminalFailure ?? SubtitleFiles.failure("번역 결과를 받지 못했습니다.") }
                 // A partial result is usable, but must never masquerade as a finished cache hit.
-                let destination = outcome.failed == 0 ? resultFile : SubtitleFiles.translations.appendingPathComponent(cacheID + "-partial-" + token.uuidString + "." + ext)
+                let destination = outcome.failed == 0 ? resultFile : SubtitleFiles.translations.appendingPathComponent(cacheID + "-partial-" + token.uuidString + ".vtt")
                 let finished = lines.map { kept[$0] ?? $0 }
                 // After the batches still being written, so none of them replaces the finished file in the player.
                 let written: Result<Void, Error> = await withCheckedContinuation { continuation in
                     writer.async {
                         continuation.resume(returning: Result {
-                            try SubtitleTools.shared.replace(content: content, extension: ext, lines: finished).write(to: destination, atomically: true, encoding: .utf8)
-                            try SubtitleFiles.associateFonts(SubtitleFiles.fonts(for: file), with: destination)
+                            try SubtitleTools.shared.translatedVtt(content: content, extension: ext, lines: finished).write(to: destination, atomically: true, encoding: .utf8)
                         })
                     }
                 }

@@ -35,6 +35,7 @@ final class MPVEngine: ObservableObject {
     private var fileLoaded = false { didSet { updateScreenAwake() } }
     private let screenAwake = PlaybackScreenAwake()
     private var pendingSubtitle: URL?
+    private var translatedSubtitle = false
     private var mediaLayer: CAMetalLayer?
     private var preferences = AppPreferences()
     private var notifications: [NSObjectProtocol] = []
@@ -80,8 +81,9 @@ final class MPVEngine: ObservableObject {
         setupAudio()
         if let pendingStream {
             let subtitle = pendingSubtitle
+            let translated = translatedSubtitle
             load(pendingStream, resume: resumePosition)
-            if let subtitle { self.subtitle(subtitle) }
+            if let subtitle { self.subtitle(subtitle, translated: translated) }
         }
     }
     func configure(_ settings: AppPreferences) {
@@ -92,7 +94,7 @@ final class MPVEngine: ObservableObject {
         if configuredSpeed != settings.speed { configuredSpeed = settings.speed; setSpeed(settings.speed) }
         configure("sub-scale", (settings.subtitleSize / 100).description)
         configure("sub-delay", settings.subtitleOffset.description)
-        configure("sub-font", settings.subtitleFont.isEmpty ? "sans-serif" : settings.subtitleFont)
+        configure("sub-font", SubtitleAppearance.font(settings.subtitleFont))
         configure("sub-color", settings.subtitleColor); configure("sub-border-color", settings.outlineColor)
         configure("sub-border-size", settings.outlineWidth.description)
         configure("sub-bold", settings.subtitleBold ? "yes" : "no")
@@ -101,16 +103,19 @@ final class MPVEngine: ObservableObject {
         configure("sub-font-size", "36")
         configure("sub-ass", settings.assEffects ? "yes" : "no")
         configure("sub-ass-override", assOverride)
+        configure("embeddedfonts", translatedSubtitle ? "no" : "yes")
+        configure("sub-shadow-offset", "0")
+        configure("sub-scale-with-window", "no")
         configure("sub-fonts-dir", SubtitleFiles.fontDirectory.path)
     }
-    private var assOverride: String { pendingSubtitle?.pathExtension.lowercased() == "ass" && preferences.assEffects ? "no" : preferences.vttStyle == false ? "strip" : "yes" }
+    private var assOverride: String { SubtitleAppearance.assOverride(extension: pendingSubtitle?.pathExtension, translated: translatedSubtitle, effects: preferences.assEffects, keepStyle: preferences.vttStyle != false) }
     private func configure(_ name: String, _ value: String) {
         guard configured[name] != value else { return }
         configured[name] = value; set(name, value)
     }
     func load(_ stream: ResolvedStream, resume: Double = 0) {
         finishSpaceHold()
-        pendingStream = stream; resumePosition = resume; pendingSubtitle = nil
+        pendingStream = stream; resumePosition = resume; pendingSubtitle = nil; translatedSubtitle = false
         guard handle != nil else { return }
         error = nil; fileLoaded = false
         set("http-header-fields", stream.headers.map { $0.key + ": " + $0.value.replacingOccurrences(of: ",", with: "\\,") }.joined(separator: ","))
@@ -157,7 +162,12 @@ final class MPVEngine: ObservableObject {
     private(set) var seekRevision: UInt64 = 0
     func seek(_ seconds: Double) { seekRevision &+= 1; command(["seek", max(0, seconds).description, "absolute+exact"]) }
     func skip(_ delta: Double) { seek(position + delta) }
-    func subtitle(_ file: URL) { pendingSubtitle = file; configure("sub-ass-override", assOverride); if fileLoaded { command(["sub-add", file.path, "select"]) } }
+    func subtitle(_ file: URL, translated: Bool = false) {
+        pendingSubtitle = file; translatedSubtitle = translated
+        configure("sub-ass-override", assOverride)
+        configure("embeddedfonts", translated ? "no" : "yes")
+        if fileLoaded { command(["sub-add", file.path, "select"]) }
+    }
     func reloadSubtitle() { command(["sub-reload"]) }
     func selectTrack(_ track: MediaTrack) { set(track.type == "audio" ? "aid" : "sid", track.id.description) }
     func toggleSubtitleVisibility() { subtitlesVisible.toggle(); set("sub-visibility", subtitlesVisible ? "yes" : "no") }

@@ -15,7 +15,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
                      completionHandler: @escaping () -> Void) {
         if identifier == "com.lilac.downloads" {
             BackgroundEvents.completions[identifier] = completionHandler
-            _ = DownloadStore.shared
+            Task { await DownloadStore.shared.load() }
         } else if identifier == "com.lilac.model-downloads" {
             BackgroundEvents.completions[identifier] = completionHandler
             _ = DesktopModelInstaller.shared

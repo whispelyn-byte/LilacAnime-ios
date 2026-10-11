@@ -118,18 +118,43 @@ final class LibraryStore: ObservableObject {
     private let file: URL
     private var ready = false
     private struct State: Codable { var preferences: AppPreferences; var favorites: [SavedAnime]; var history: [WatchEntry]; var subtitles: [String: SubtitleChoice]?; var aiSubtitleSeries: [String: Bool]? }
-    init() {
-        file = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("library.json")
+    private var loading: Task<Void, Never>?
+    init(file: URL? = nil, deferLoading: Bool = false) {
+        self.file = file ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("library.json")
+        if deferLoading { return }
+        restore(Self.read(self.file))
+    }
+    private nonisolated static func read(_ file: URL) -> Result<State?, Error> {
         if FileManager.default.fileExists(atPath: file.path) {
             do {
                 let state = try JSONDecoder().decode(State.self, from: Data(contentsOf: file))
+                for item in state.favorites { _ = item.anime }
+                for item in state.history { _ = item.anime.anime }
+                return .success(state)
+            } catch { return .failure(error) }
+        }
+        return .success(nil)
+    }
+    private func restore(_ result: Result<State?, Error>) {
+        switch result {
+        case .success(let state):
+            if let state {
                 preferences = state.preferences; favorites = state.favorites; history = state.history; subtitleChoices = state.subtitles ?? [:]
                 aiSubtitleSeries = state.aiSubtitleSeries ?? [:]
                 // Existing custom prompts and sampling values remain active after upgrading.
                 if preferences.modelSampling == nil { preferences.modelSampling = false }
-            } catch { persistenceError = "저장된 보관함을 읽지 못했습니다: " + error.localizedDescription }
+            }
+        case .failure(let error): persistenceError = "저장된 보관함을 읽지 못했습니다: " + error.localizedDescription
         }
         ready = true
+    }
+    func load() async {
+        if ready { return }
+        if let loading { await loading.value; return }
+        let file = file
+        let task = Task { self.restore(await Task.detached(priority: .userInitiated) { Self.read(file) }.value) }
+        loading = task
+        await task.value
     }
     func subtitleChoice(animeID: String, episodeID: String) -> SubtitleChoice? { subtitleChoices[animeID + "#" + episodeID] }
     func preferAI(_ value: Bool, animeID: String) { aiSubtitleSeries[animeID] = value ? true : nil; persist() }
@@ -140,6 +165,10 @@ final class LibraryStore: ObservableObject {
         persist()
     }
     func clearSubtitleFiles() { for key in subtitleChoices.keys { subtitleChoices[key]?.relativeFile = nil }; persist() }
+    func clearSubtitleFiles(matching saved: [String: SubtitleChoice]) {
+        for (key, choice) in saved where subtitleChoices[key]?.relativeFile == choice.relativeFile { subtitleChoices[key]?.relativeFile = nil }
+        persist()
+    }
     func contains(_ anime: Anime, source: String) -> Bool { favorites.contains { $0.id == source + ":" + anime.id } }
     func toggle(_ anime: Anime, source: String) {
         var saved = SavedAnime(anime, source: source)

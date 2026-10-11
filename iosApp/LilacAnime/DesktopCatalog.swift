@@ -18,7 +18,7 @@ struct CatalogName: Codable {
 }
 @MainActor
 final class DesktopCatalog: ObservableObject {
-    static let shared = DesktopCatalog()
+    static let shared = DesktopCatalog(deferLoading: true)
     @Published private(set) var names: [String: CatalogName] = [:]
     @Published private(set) var catalogs: [String: [SavedAnime]] = [:]
     @Published private(set) var status = "대기"
@@ -32,12 +32,36 @@ final class DesktopCatalog: ObservableObject {
     private var nextLookup = Date.distantPast
     private var titleFailures: [String: (code: String, retry: Double)] = [:]
     private let service = IosServices()
-    private let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("DesktopCatalog")
-    init() {
+    private let directory: URL
+    private var loaded = false
+    private var loading: Task<Void, Never>?
+    init(directory: URL? = nil, deferLoading: Bool = false) {
+        self.directory = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("DesktopCatalog")
+        if deferLoading { return }
+        let saved = Self.read(self.directory, keys: ContentSources.keys)
+        names = saved.0; catalogs = saved.1; loaded = true
+    }
+    private nonisolated static func read(_ directory: URL, keys: [String]) -> ([String: CatalogName], [String: [SavedAnime]]) {
+        var names: [String: CatalogName] = [:], catalogs: [String: [SavedAnime]] = [:]
         if let data = try? Data(contentsOf: directory.appendingPathComponent("names.json")), let saved = try? JSONDecoder().decode([String: CatalogName].self, from: data) { names = saved }
-        for key in ContentSources.keys {
-            if let data = try? Data(contentsOf: directory.appendingPathComponent(key + ".json")), let saved = try? JSONDecoder().decode([SavedAnime].self, from: data) { catalogs[key] = saved }
+        for key in keys {
+            if let data = try? Data(contentsOf: directory.appendingPathComponent(key + ".json")), let saved = try? JSONDecoder().decode([SavedAnime].self, from: data) {
+                for item in saved { _ = item.anime }
+                catalogs[key] = saved
+            }
         }
+        return (names, catalogs)
+    }
+    func load() async {
+        if loaded { return }
+        if let loading { await loading.value; return }
+        let directory = directory, keys = ContentSources.keys
+        let task = Task {
+            let saved = await Task.detached(priority: .userInitiated) { Self.read(directory, keys: keys) }.value
+            names = saved.0; catalogs = saved.1; loaded = true
+        }
+        loading = task
+        await task.value
     }
     func title(_ anime: Anime, source: String, language: String?) -> String {
         let cached = names[source + ":" + anime.id]
@@ -49,6 +73,7 @@ final class DesktopCatalog: ObservableObject {
     func record(_ anime: Anime, source: String) -> CatalogName? { names[source + ":" + anime.id] }
     @discardableResult
     func enrich(_ anime: Anime, source: String, cast: Bool = false, force: Bool = false, bulk: Bool = false) async -> Bool {
+        await load()
         let key = source + ":" + anime.id
         let credential = SubtitleFiles.key(SecureKeys.load("tmdb"))
         if !force, let name = names[key], name.isFresh(credential: credential, cast: cast, bulk: bulk) { return true }
@@ -82,27 +107,41 @@ final class DesktopCatalog: ObservableObject {
         }
         lookups[key] = pending; return await pending.value
     }
-    func search(_ query: String, source: String) -> [Anime] {
+    func search(_ query: String, source: String) async -> [Anime] {
+        await load()
+        guard !Task.isCancelled else { return [] }
+        let catalog = catalogs[source] ?? [], names = names
+        let worker = Task.detached(priority: .userInitiated) { () -> [Anime] in
         let wanted = DesktopTitleRules.shared.key(title: query)
         guard !wanted.isEmpty else { return [] }
-        return (catalogs[source] ?? []).filter { saved in
+        return catalog.filter { saved in
+            guard !Task.isCancelled else { return false }
             let name = names[saved.id]
             return ([saved.title, saved.anime.native, saved.anime.english, saved.anime.romaji, name?.korean ?? "", name?.english ?? ""] + (name?.aliases ?? []))
                 .contains { DesktopTitleRules.shared.key(title: $0).contains(wanted) }
         }.map(\.anime)
+        }
+        return await withTaskCancellationHandler(operation: { await worker.value }, onCancel: { worker.cancel() })
     }
     /// The other-language names already known for titles containing the query (main.cjs lookupTitleVariants), so a
     /// Korean search reaches English-only sites and an English one the Korean names.
-    func variants(_ query: String) -> [String] {
+    func variants(_ query: String) async -> [String] {
+        await load()
+        guard !Task.isCancelled else { return [] }
+        let names = names
+        let worker = Task.detached(priority: .userInitiated) { () -> [String] in
         let key = DesktopTitleRules.shared.key(title: query)
         guard !key.isEmpty else { return [] }
         let korean = TitleCandidates.shared.isKorean(title: query)
         var found: [String] = []
         for name in names.values {
+            if Task.isCancelled { return [] }
             let from = korean ? name.korean : name.english, to = korean ? name.english : name.korean
             if !from.isEmpty, !to.isEmpty, !found.contains(to), DesktopTitleRules.shared.key(title: from).contains(key) { found.append(to) }
         }
         return found
+        }
+        return await withTaskCancellationHandler(operation: { await worker.value }, onCancel: { worker.cancel() })
     }
     var known: Int { (catalogs[source] ?? []).filter { names[$0.id]?.korean.isEmpty == false || TitleCandidates.shared.isKorean(title: $0.title) }.count }
     func needsRefresh(_ source: String) -> Bool {
@@ -114,6 +153,7 @@ final class DesktopCatalog: ObservableObject {
         stop(); self.source = source; running = true; error = nil
         let token = generation
         task = Task {
+            await load()
             defer { if token == generation { running = false } }
             do {
                 var gathered = refresh ? [] : catalogs[source] ?? []

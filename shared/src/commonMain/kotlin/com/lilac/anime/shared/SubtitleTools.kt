@@ -37,6 +37,17 @@ object SubtitleTools {
         require(cues.size == lines.size) { "번역 자막 줄 수가 일치하지 않습니다." }
         return SubtitleDocument.render(content, extension.lowercase(), cues, lines.map { it as String? }.toTypedArray())
     }
+    /** Desktop AI output is plain WebVTT, without the source ASS font, positioning or animation. */
+    fun translatedVtt(content: String, extension: String, lines: List<String>): String {
+        val cues = SubtitleDocument.parse(content, extension.lowercase())
+        require(cues.size == lines.size) { "번역 자막 줄 수가 일치하지 않습니다." }
+        return "WEBVTT\n\n" + cues.mapIndexedNotNull { index, cue ->
+            val text = lines[index].lineSequence().filter { it.isNotBlank() }.joinToString("\n")
+            if (text.isBlank()) return@mapIndexedNotNull null
+            (index + 1).toString() + "\n" + clock(cue.startMs / 1000.0) + " --> " + clock(cue.endMs / 1000.0) + "\n" +
+                text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        }.joinToString("\n\n")
+    }
     fun cues(content: String, extension: String): List<SubtitleCue> =
         SubtitleDocument.parse(content, extension.lowercase()).map {
             SubtitleCue(it.startMs / 1000.0, it.endMs / 1000.0,

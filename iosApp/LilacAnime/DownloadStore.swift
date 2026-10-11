@@ -86,7 +86,7 @@ struct DownloadEntry: Codable, Identifiable {
 @MainActor
 final class DownloadStore: ObservableObject {
     nonisolated static let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Downloads")
-    static let shared = DownloadStore()
+    static let shared = DownloadStore(deferLoading: true)
     @Published private(set) var entries: [DownloadEntry] = []
     private var savedManifests: [String: Data] = [:]
     weak var library: LibraryStore? { didSet { prepareCompletedDownloads(); analyzeCompletedDownloads() } }
@@ -136,14 +136,33 @@ final class DownloadStore: ObservableObject {
     }()
     private let indexFile: URL?
     private var file: URL { indexFile ?? Self.directory.appendingPathComponent("index.json") }
-    init(index: URL? = nil, restoreSession: Bool = true) {
+    private var loaded = false
+    private var loading: Task<Void, Never>?
+    private let restoreSession: Bool
+    init(index: URL? = nil, restoreSession: Bool = true, deferLoading: Bool = false) {
         indexFile = index
-        var continuing: Set<String> = []
-        if let data = try? Data(contentsOf: file), let saved = try? JSONDecoder().decode([DownloadEntry].self, from: data) {
-            continuing = Set(saved.filter { $0.status == "다운로드 중" }.map(\.id))
-            entries = saved.map { entry in var item = entry; if restoreSession && (item.status == "다운로드 중" || item.status == "준비 중") { item.status = "중단됨" }; return item }
-        }
+        self.restoreSession = restoreSession
         delegate.owner = self
+        if deferLoading { return }
+        restore(Self.read(file))
+    }
+    private nonisolated static func read(_ file: URL) -> [DownloadEntry] {
+        guard let data = try? Data(contentsOf: file), let saved = try? JSONDecoder().decode([DownloadEntry].self, from: data) else { return [] }
+        for item in saved { _ = item.anime.anime }
+        return saved
+    }
+    func load() async {
+        if loaded { return }
+        if let loading { await loading.value; return }
+        let file = file
+        let task = Task { self.restore(await Task.detached(priority: .userInitiated) { Self.read(file) }.value) }
+        loading = task
+        await task.value
+    }
+    private func restore(_ saved: [DownloadEntry]) {
+        let continuing = Set(saved.filter { $0.status == "다운로드 중" }.map(\.id))
+        entries = saved.map { entry in var item = entry; if restoreSession && (item.status == "다운로드 중" || item.status == "준비 중") { item.status = "중단됨" }; return item }
+        loaded = true
         guard restoreSession else { restoring = false; return }
         let resumeIDs = continuing
         session.getAllTasks { [weak self] found in
@@ -563,7 +582,8 @@ final class DownloadStore: ObservableObject {
         }
         if preferences.downloadSubtitles != false && !DesktopSubtitlePolicy.burnedKorean(source: entry.anime.source, stream: entry.stream) {
             if let prepared = try await subtitlePreparer.prepare(entry.playback, tracks: entry.stream.subtitles, preferences: preferences, stream: entry.stream) {
-                primary = try copy(prepared.0, label: prepared.1, language: SubtitleFiles.isKorean(prepared.0) ? "ko" : prepared.1 == "jimaku" ? "ja" : "", provider: prepared.1)
+                let korean = await SubtitleFiles.isKorean(prepared.0)
+                primary = try copy(prepared.0, label: prepared.1, language: korean ? "ko" : prepared.1 == "jimaku" ? "ja" : "", provider: prepared.1)
                 EpisodeSubtitleStore.shared.save(prepared.0, item: entry.playback, provider: prepared.1, translated: EpisodeSubtitleStore.shared.list(entry.playback).contains { $0.file == prepared.0 && $0.translated })
             }
             for track in entry.stream.subtitles {
@@ -632,7 +652,11 @@ final class DownloadStore: ObservableObject {
                 let tracks = entry.subtitleTracks ?? []
                 let jimaku = library.preferences.autoTranslation ? tracks.first { $0.provider == "jimaku" } : nil
                 let remote = tracks.map { RemoteSubtitle(label: $0.label, url: folder.appendingPathComponent($0.file), language: $0.language) }
-                guard let original = jimaku.map({ folder.appendingPathComponent($0.file) }) ?? DesktopSubtitlePolicy.translationTrack(remote)?.url ?? (tracks.isEmpty ? files.first(where: { !SubtitleFiles.isKorean($0) }) : nil) else { continue }
+                var original = jimaku.map({ folder.appendingPathComponent($0.file) }) ?? DesktopSubtitlePolicy.translationTrack(remote)?.url
+                if original == nil && tracks.isEmpty {
+                    for file in files { if !(await SubtitleFiles.isKorean(file)) { original = file; break } }
+                }
+                guard let original else { continue }
                 let item = entry.playback
                 translationStatus = entry.anime.title + " · " + entry.title + " 자막 번역"
                 EpisodeSubtitleStore.shared.save(original, item: item, provider: "download", translated: false)

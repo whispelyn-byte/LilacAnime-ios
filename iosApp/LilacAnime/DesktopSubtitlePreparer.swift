@@ -66,7 +66,8 @@ final class DesktopSubtitlePreparer {
             if let files = try? await SubtitleFiles.prepare(track.url, headers: track.headers ?? [:]), let file = select(files, item: item, offsets: []) { return (file, "reanime") }
         }
         if let first = saved.first, let file = first.file { return (file, first.provider) }
-        if let local = item.localSubtitles.first(where: SubtitleFiles.isKorean) ?? item.localSubtitles.first { return (local, "download") }
+        for local in item.localSubtitles { if await SubtitleFiles.isKorean(local) { return (local, "download") } }
+        if let local = item.localSubtitles.first { return (local, "download") }
         guard item.anime.source != "local" && item.anime.source != "linkkf" else { return nil }
         if let found = try await community(item, preferences: preferences) { return found }
         return try await translationSource(item, tracks: tracks, preferences: preferences)

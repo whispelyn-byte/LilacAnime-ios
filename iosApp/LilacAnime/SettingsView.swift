@@ -12,6 +12,7 @@ struct SettingsView: View {
     @State private var testingAPI = false
     @State private var previousProvider = ""
     @State private var error: String?
+    @State private var cleaningCache = false
     @State private var importFont = false
     @State private var tmdbKey = ""
     @State private var tmdbStatus: String?
@@ -175,7 +176,14 @@ struct SettingsView: View {
                     NavigationLink("저장 자막·캐시 관리") { SubtitleStorageView() }
                     NavigationLink(updater.updateAvailable ? "새 버전 있음 · 업데이트·릴리즈 노트" : "업데이트·릴리즈 노트") { DesktopUpdateView() }
                     Button("시청 기록 삭제", role: .destructive) { store.clearHistory() }
-                    Button("저장 자막을 보존하고 번역 캐시 정리") { do { try SubtitleCache.clean(library: store, all: false) } catch { self.error = error.localizedDescription } }
+                    Button("저장 자막을 보존하고 번역 캐시 정리") {
+                        cleaningCache = true
+                        Task {
+                            defer { cleaningCache = false }
+                            do { try await SubtitleCache.clean(library: store, all: false) }
+                            catch { self.error = error.localizedDescription }
+                        }
+                    }.disabled(cleaningCache)
                     Button("OP/ED 분석 캐시 삭제") { OfflineAnalyzer.clearCache() }
                 }
                 }

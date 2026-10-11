@@ -91,7 +91,7 @@ final class SubtitleSearchTests: XCTestCase {
         XCTAssertEqual(callbacks, ["jimaku"])
         XCTAssertEqual(library.preferences.subtitleProvider, "csora")
     }
-    @MainActor func testPickingAJimakuFileKeepsTheCommunityDefault() throws {
+    @MainActor func testPickingAJimakuFileKeepsTheCommunityDefault() async throws {
         let library = LibraryStore()
         let previous = library.preferences.subtitleProvider
         library.preferences.subtitleProvider = "kairan"
@@ -102,11 +102,29 @@ final class SubtitleSearchTests: XCTestCase {
         let model = EpisodePlayerModel(item: item(), subtitleLookup: { _, reply in reply([], nil) })
         defer { model.shutdown(library: library) }
         model.selectSubtitle(file, library: library, translate: false, provider: "jimaku")
+        await model.subtitleClassification?.value
         XCTAssertEqual(library.preferences.subtitleProvider, "kairan")
         XCTAssertEqual(model.activeSubtitleSource, "jimaku")
         XCTAssertEqual(model.subtitleLabel, "Jimaku 자막")
         XCTAssertTrue(model.translatable)
         for record in EpisodeSubtitleStore.shared.list(model.item) { EpisodeSubtitleStore.shared.remove(record.id) }
+    }
+    @MainActor func testOldSubtitleClassificationCannotChangeNewSelectionPreferences() async throws {
+        let library = LibraryStore(file: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        let model = EpisodePlayerModel(item: item(), subtitleLookup: { _, reply in reply([], nil) })
+        let korean = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".srt")
+        let japanese = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".srt")
+        try "1\n00:00:00,000 --> 00:00:01,000\n안녕하세요".write(to: korean, atomically: true, encoding: .utf8)
+        try "1\n00:00:00,000 --> 00:00:01,000\nこんにちは".write(to: japanese, atomically: true, encoding: .utf8)
+        defer { model.shutdown(library: library); try? FileManager.default.removeItem(at: korean); try? FileManager.default.removeItem(at: japanese) }
+        library.preferAI(true, animeID: model.item.anime.id)
+        model.selectSubtitle(korean, library: library, translate: false, provider: "user")
+        let old = model.subtitleClassification
+        model.selectSubtitle(japanese, library: library, translate: false, provider: "user")
+        await old?.value
+        await model.subtitleClassification?.value
+        XCTAssertEqual(model.subtitle, japanese)
+        XCTAssertEqual(library.aiSubtitleSeries[model.item.anime.id], true)
     }
     func testSiteTracksListKoreanEnglishJapaneseFirstWithLanguageOnTop() {
         let track = { (label: String, language: String) in RemoteSubtitle(label: label, url: URL(string: "https://fixture.test/" + language + ".vtt")!, language: language) }

@@ -299,7 +299,7 @@ API 키는 이 기기에만 저장되고, 각 키는 그 서비스 요청에만 
 
 ## 개발
 
-현재 소스는 앱 버전 **0.4.5**, iOS 리비전 **17**, 빌드 **47**입니다. 바뀐 점은 [릴리즈 노트](docs/release-notes.md)에 있습니다.
+현재 버전은 **0.4.5**입니다. 바뀐 점은 [릴리즈 노트](docs/release-notes.md)에 있습니다.
 
 공통 코드(Kotlin Multiplatform) 테스트는 JDK 17로 실행합니다.
 
@@ -316,7 +316,7 @@ sh iosApp/scripts/verify.sh
 
 GitHub Actions가 공통 테스트, KMP iOS 테스트, 네이티브 iOS 테스트, iPhone · iPad UI 검사, 서명하지 않은 IPA 패키징을 실행합니다. 화면 캡처는 **Run workflow → capture_previews**를 켰을 때 만들고, 로컬에서는 `CAPTURE_PREVIEWS=0 sh iosApp/scripts/verify.sh`로 생략할 수 있습니다.
 
-**릴리즈:** 앱 버전은 `iosApp/version.txt`, 빌드 번호는 Android versionCode에 `iosApp/revision.txt`를 더한 값입니다 (SideStore가 빌드 번호만 오른 업데이트를 놓치는 경우가 있어 릴리즈마다 앱 버전도 올립니다). 두 파일과 `iosApp/project.yml`, `docs/release-notes.md`의 해당 버전 항목을 맞춘 뒤 `python3 iosApp/scripts/android-version.py --check --release-tag <태그>`로 확인하고, `python3 iosApp/scripts/android-version.py --tag`가 알려 주는 태그(현재 **v0.4.5-ios.17**)를 푸시하면 모든 검사가 통과한 뒤 IPA와 SideStore `source.json`이 릴리즈에 올라갑니다.
+**릴리즈:** 버전은 `iosApp/version.txt`에 있고, 릴리즈마다 올립니다. 태그와 릴리즈 노트 제목도 버전만 씁니다(`v0.4.6`, `# 0.4.6`). SideStore가 업데이트를 알아보는 내부 빌드 번호는 Android versionCode에 `iosApp/revision.txt`를 더한 값이라 이것도 함께 1씩 올립니다. `version.txt` · `revision.txt` · `iosApp/project.yml`과 `docs/release-notes.md`의 새 항목을 맞춘 뒤 `python3 iosApp/scripts/android-version.py --check --release-tag v<버전>`으로 확인하고, 그 태그를 푸시하면 모든 검사가 통과한 뒤 IPA와 SideStore `source.json`이 릴리즈에 올라갑니다.
 
 | 경로 | 내용 |
 |---|---|

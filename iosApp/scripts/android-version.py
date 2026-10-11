@@ -20,7 +20,8 @@ if not re.fullmatch(r"\d+\.\d+\.\d+", version):
 build = re.search(r"^versionCode\s*=\s*(\d+)", module, re.M).group(1)
 revision = int((root / "iosApp/revision.txt").read_text().strip())
 build = str(int(build) + revision)
-tag = "v" + version + ("-ios." + str(revision) if revision else "")
+# Tags and release titles carry only the app version (v0.4.6); the revision only raises the build number.
+tag = "v" + version
 if args.check:
     project = (root / "iosApp/project.yml").read_text(encoding="utf-8")
     for key, expected in [("MARKETING_VERSION", version), ("CURRENT_PROJECT_VERSION", build)]:

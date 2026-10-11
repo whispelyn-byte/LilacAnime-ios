@@ -9,7 +9,8 @@ def release_notes(document, tag):
     if not match:
         raise ValueError("Invalid release tag: " + tag)
     version, revision = match.groups()
-    title = version + (" iOS 리비전 " + revision if revision else "")
+    # The heading is the version alone ("# 0.4.6"), also for an older tag that carried the iOS revision (v0.4.5-ios.17).
+    title = version
     sections = re.split(r"(?m)^# ", document)
     for section in sections[1:]:
         heading, _, body = section.partition("\n")

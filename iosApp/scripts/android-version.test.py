@@ -28,14 +28,14 @@ class ReleaseVersionTests(unittest.TestCase):
                               capture_output=True, text=True)
 
     def test_matching_release(self):
-        result = self.run_check("--release-tag", "v0.4.0-ios.9")
+        result = self.run_check("--release-tag", "v0.4.0")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("build 39", result.stdout)
 
     def test_ios_version_can_advance_without_changing_android(self):
         (self.root / "iosApp/version.txt").write_text("0.4.1\n")
         self.project.write_text(self.project.read_text().replace('"0.4.0"', '"0.4.1"'))
-        result = self.run_check("--release-tag", "v0.4.1-ios.9")
+        result = self.run_check("--release-tag", "v0.4.1")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("build 39", result.stdout)
 
@@ -53,11 +53,11 @@ class ReleaseVersionTests(unittest.TestCase):
         self.assertIn("MARKETING_VERSION mismatch", result.stderr)
 
     def test_wrong_release_tag_reports_expected_tag(self):
-        result = self.run_check("--release-tag", "v0.4.0-ios.6")
+        result = self.run_check("--release-tag", "v0.4.0-ios.9")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("expected v0.4.0-ios.9", result.stderr)
+        self.assertIn("expected v0.4.0 ", result.stderr)
 
-    def test_original_android_release_has_no_ios_suffix(self):
+    def test_release_tag_is_the_version_alone(self):
         (self.root / "iosApp/revision.txt").write_text("0\n")
         self.project.write_text(self.project.read_text().replace('"39"', '"30"'))
         result = self.run_check("--release-tag", "v0.4.0")

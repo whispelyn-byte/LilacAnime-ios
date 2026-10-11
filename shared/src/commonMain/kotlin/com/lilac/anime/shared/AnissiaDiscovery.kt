@@ -6,6 +6,9 @@ import com.lilac.anime.shared.ported.*
 import io.ktor.http.Url
 import io.ktor.http.encodeURLPathPart
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 
 /** Anissia maker discovery and linked/RSS post lookup, following Desktop's community flow. */
 data class SubtitleMaker(val name: String, val website: String, val status: String)
@@ -116,7 +119,9 @@ internal class AnissiaDiscovery(private val repository: SourceRepository, privat
                         season == null && offsets.any { own.has(number + it) }) &&
                         maxOf(DesktopCommunity.score(subject, post.title), DesktopCommunity.score(title, post.title)) >= .52
                 }.take(4)
-                for (post in likely) if (pages[post.url] == null) attempt { repository.getText(post.url) }?.let { pages[post.url] = it }
+                // The likely posts are fetched together, not one after another.
+                coroutineScope { likely.filter { pages[it.url] == null }.map { post -> async { post.url to attempt { repository.getText(post.url) } } }.awaitAll() }
+                    .forEach { (url, html) -> if (html != null) pages[url] = html }
                 val hydrated = candidates.mapNotNull { post -> pages[post.url]?.let { CommunityPost(post.title, post.url, it) } }
                 val direct = DesktopCommunity.rank(hydrated, subject, episode, offsets, number).ifEmpty { DesktopCommunity.rank(hydrated, title, episode, offsets, number) }.take(5)
                 if (direct.isNotEmpty()) {

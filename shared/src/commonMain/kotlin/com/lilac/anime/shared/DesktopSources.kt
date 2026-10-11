@@ -108,6 +108,30 @@ object DesktopSourceParser {
     // story and episodes, 100 a page); an episode is /e/<title N화>, its player in playing.body.url. It took the place of
     // www.ohli24.net, a copy no longer kept up (episodes missing, dates off).
     const val OHLI24_WEB = "https://ani.ohli24.com"
+    /** An address in a playlist or page, as the browser reads it against where it came from. */
+    fun resolveUrl(value: String, base: String): String {
+        val trimmed = value.trim()
+        if (Regex("^https?://", RegexOption.IGNORE_CASE).containsMatchIn(trimmed)) return trimmed
+        val url = Url(base)
+        val origin = url.protocol.name + "://" + url.hostWithPortIfSpecified
+        if (trimmed.startsWith("//")) return url.protocol.name + ":" + trimmed
+        if (trimmed.startsWith("/")) return origin + trimmed
+        return origin + url.encodedPath.substringBeforeLast('/') + "/" + trimmed
+    }
+    /** The best variant of an 애니24 master playlist (desktop ohliVariant). */
+    fun ohliVariant(text: String, base: String): String {
+        check(text.startsWith("#EXTM3U")) { "애니24 영상 재생목록을 받지 못했습니다." }
+        val variants = Regex("#EXT-X-STREAM-INF:([^\\r\\n]*)\\r?\\n\\s*([^\\r\\n#][^\\r\\n]*)").findAll(text).map {
+            (Regex("BANDWIDTH=(\\d+)").find(it.groupValues[1])?.groupValues?.get(1)?.toLongOrNull() ?: 0L) to resolveUrl(it.groupValues[2], base)
+        }.toList()
+        check(variants.isNotEmpty()) { "애니24 영상 화질 목록이 없습니다." }
+        return variants.maxBy { it.first }.second
+    }
+    /** The subtitle files a player page names (var playerjsSubtitle = "[뉴게임01]https://…/뉴게임01.srt,…"). */
+    fun ohliSubtitleFiles(html: String): List<String> {
+        val listed = Regex("playerjsSubtitle\\s*=\\s*\"([^\"]*)\"").find(html)?.groupValues?.get(1).orEmpty()
+        return Regex("(?:\\[[^\\]]*\\])?\\s*(https?://[^,\\s]+)").findAll(listed).map { it.groupValues[1] }.distinct().toList()
+    }
     fun ohliProps(html: String): JsonObject {
         val json = Regex("<script data-page=\"app\" type=\"application/json\">([\\s\\S]*?)</script>").find(html)?.groupValues?.get(1)
             ?: throw IllegalStateException("애니24 페이지를 읽지 못했습니다.")
@@ -288,6 +312,8 @@ object DesktopSourceParser {
 
 data class DesktopPlaybackStream(val label: String, val url: String, val referer: String, val headers: Map<String, String>, val subtitles: List<PlaybackTrack> = emptyList(), val burnedKorean: Boolean = false)
 data class DesktopPlaybackServer(val label: String, val kind: String, val url: String)
+/** An 애니24 episode read from its player directly: the best variant, its playlist, and the subtitle files named. */
+data class OhliDirectStream(val url: String, val manifest: String, val subtitles: List<String>)
 
 internal class DesktopSourceRepository(private val client: HttpClient) {
     private val nativeIDs = mutableMapOf<String, Pair<Int?, Int?>?>()
@@ -323,10 +349,14 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
         if (source == "animenosub") return DesktopSourceParser.animenosubServers(text(url), url)
         if (source != "reanime") return emptyList()
         val slug = Url(url).encodedPath.trimEnd('/').substringAfterLast('/')
-        val links = try { DesktopSourceParser.reanimeServers(Json.parseToJsonElement(text("https://reanime.to/api/watch/$slug/$number")).jsonObject) }
-            catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
-        if (links.isNotEmpty() || anilist <= 0) return links
-        return DesktopSourceParser.reanimeServers(Json.parseToJsonElement(text("https://reanime.to/api/flix/$anilist/$number")).jsonObject)
+        // The current API often serves streams only from /api/flix: both are asked at once (an empty /api/watch cost a
+        // whole request first), /api/watch's links used when it has any.
+        return coroutineScope {
+            val flix = if (anilist > 0) async { runCatching { DesktopSourceParser.reanimeServers(Json.parseToJsonElement(text("https://reanime.to/api/flix/$anilist/$number")).jsonObject) } } else null
+            val links = try { DesktopSourceParser.reanimeServers(Json.parseToJsonElement(text("https://reanime.to/api/watch/$slug/$number")).jsonObject) }
+                catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
+            if (links.isNotEmpty() || flix == null) { flix?.cancel(); links } else flix.await().getOrThrow()
+        }
     }
     private val cursors = mutableMapOf<String, MutableMap<Int, String>>()
     private suspend fun text(url: String, params: Map<String, String> = emptyMap()) = client.get(url) {
@@ -415,13 +445,44 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
         }
         val comic = props.obj("comic")
         val rows = props.obj("episodes").list("data").filterIsInstance<JsonObject>().toMutableList()
-        for (page in 2..(props.obj("episodes").number("last_page") ?: 1)) {
-            rows += DesktopSourceParser.ohliProps(text(DesktopSourceParser.ohliPath("c", comic.text("slug")), mapOf("page" to page.toString()))).obj("episodes").list("data").filterIsInstance<JsonObject>()
+        // The rest of a long series' episode pages (원피스: 13) and the AniList lookup go out together, not one by one.
+        val head = DesktopSourceParser.ohliDetail(comic, rows, summary).anime
+        return coroutineScope {
+            val lookup = async { if (head.anilistId == null) lookupNativeIDs(head.native, head.year) else null }
+            val more = (2..(props.obj("episodes").number("last_page") ?: 1)).map { page ->
+                async { DesktopSourceParser.ohliProps(text(DesktopSourceParser.ohliPath("c", comic.text("slug")), mapOf("page" to page.toString()))).obj("episodes").list("data").filterIsInstance<JsonObject>() }
+            }.awaitAll()
+            more.forEach { rows += it }
+            val detail = DesktopSourceParser.ohliDetail(comic, rows, summary)
+            val ids = if (detail.anime.anilistId == null) lookup.await() else { lookup.cancel(); null }
+            if (ids == null) detail else detail.copy(anime = detail.anime.copy(anilistId = ids.first, malId = ids.second))
         }
-        val detail = DesktopSourceParser.ohliDetail(comic, rows, summary)
-        val ids = if (detail.anime.anilistId == null) lookupNativeIDs(detail.anime.native, detail.anime.year) else null
-        return if (ids == null) detail else detail.copy(anime = detail.anime.copy(anilistId = ids.first, malId = ids.second))
     }
+    /** The player (cdndania / michealcdn, FirePlayer) read without opening it (desktop ohliStreamDirect): its page names
+     *  the episode's subtitle files, and its getVideo answer has a signed master playlist that opens without the page's
+     *  cookie. Two requests at once instead of the page loading in a hidden web view. */
+    suspend fun ohliStream(playerUrl: String, userAgent: String): OhliDirectStream = withTimeout(20_000) { coroutineScope {
+        val player = Url(playerUrl)
+        val origin = player.protocol.name + "://" + player.hostWithPortIfSpecified
+        val hash = player.encodedPath.trimEnd('/').substringAfterLast('/')
+        val page = async {
+            try { client.get(playerUrl) { header("User-Agent", userAgent); header("Referer", DesktopSourceParser.OHLI24_WEB + "/") }.body<String>() }
+            catch (error: CancellationException) { throw error } catch (_: Exception) { "" }
+        }
+        val answer = client.post("$origin/player/index.php") {
+            parameter("data", hash); parameter("do", "getVideo")
+            header("User-Agent", userAgent); header("X-Requested-With", "XMLHttpRequest"); header("Referer", playerUrl); header("Origin", origin)
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody("hash=" + hash.encodeURLParameter() + "&r=" + (DesktopSourceParser.OHLI24_WEB + "/").encodeURLParameter())
+        }.body<String>()
+        val info = Json.parseToJsonElement(answer).jsonObject
+        val hls = (info["hls"] as? JsonPrimitive)?.content.orEmpty()
+        val secured = info.text("securedLink")
+        check(hls !in listOf("", "false", "0", "null") && secured.startsWith("http")) { "애니24 플레이어가 재생목록을 주지 않았습니다." }
+        val variant = DesktopSourceParser.ohliVariant(client.get(secured) { header("User-Agent", userAgent) }.body<String>(), secured)
+        val manifest = client.get(variant) { header("User-Agent", userAgent) }.body<String>()
+        OhliDirectStream(variant, manifest, DesktopSourceParser.ohliSubtitleFiles(page.await()))
+    } }
     /** An episode's player page, from its page data (desktop resolveOhliEpisode). */
     suspend fun ohliPlayer(url: String): String =
         DesktopSourceParser.ohliProps(text(url)).obj("playing").obj("body").text("url").takeIf { it.startsWith("http") }
@@ -449,7 +510,7 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
         val date = currentCatalogDate(); val year = date.take(4)
         val quarter = listOf("WINTER", "SPRING", "SUMMER", "FALL")[(date.substring(5, 7).toInt() - 1) / 3]
         if (source == "ohli24") return if (season) ohliAiring() else emptyList()
-        if (source == "linkani") return (1..if (season) 2 else 1).flatMap { browse(source, "", it, if (season) BrowseFilter(year = year) else BrowseFilter(status = "RELEASING")) }.distinctBy { it.id }
+        if (source == "linkani") return coroutineScope { (1..if (season) 2 else 1).map { async { browse(source, "", it, if (season) BrowseFilter(year = year) else BrowseFilter(status = "RELEASING")) } }.awaitAll() }.flatten().distinctBy { it.id }
         val candidates = mutableListOf<JsonObject>(); var cursor = ""
         repeat(6) {
             if (candidates.size >= 40) return@repeat

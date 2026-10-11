@@ -8,6 +8,7 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.*
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.days
@@ -22,12 +23,34 @@ data class SourceCatalogPage(val items: List<Anime>, val hasMore: Boolean, val s
 
 data class SourceDetail(val anime: Anime, val servers: List<EpisodeServer>)
 data class PlaybackTrack(val label: String, val url: String, val referer: String = "", val language: String = "", val kind: String = "video")
-class SourceRepository(private val client: HttpClient = newSharedClient()) {
+/** A series' page is asked for again within moments (the home banner reads it, then opening the series does; the
+ *  player asks again for its next episodes): the answer is kept for 5 minutes, and a second ask while the first is on
+ *  its way waits for it. A failed one is not kept (desktop provider:detail). */
+class DetailMemory {
+    private val mutex = kotlinx.coroutines.sync.Mutex()
+    private val kept = LinkedHashMap<String, Pair<Long, Deferred<SourceDetail>>>()
+    private val scope = CoroutineScope(SupervisorJob() + kotlinWork)
+    suspend fun get(key: String, load: suspend () -> SourceDetail): SourceDetail {
+        val now = Clock.System.now().toEpochMilliseconds()
+        val answer = mutex.withLock {
+            kept[key]?.takeIf { now - it.first < 300_000 && !it.second.isCancelled }?.second ?: scope.async { load() }.also { started ->
+                kept[key] = now to started
+                started.invokeOnCompletion { error -> if (error != null) scope.launch { mutex.withLock { if (kept[key]?.second === started) kept.remove(key) } } }
+                if (kept.size > 200) kept.remove(kept.keys.first())
+            }
+        }
+        return answer.await()
+    }
+    companion object { val shared = DetailMemory() }
+}
+class SourceRepository(private val client: HttpClient, private val details: DetailMemory? = null) {
+    constructor() : this(newSharedClient(), DetailMemory.shared)
     private val linkkf = LinkkfRepository(client)
     private val desktop = DesktopSourceRepository(client)
     private val filterCache = mutableMapOf<String, Pair<Long, SourceFilters>>()
     private val updateCache = mutableMapOf<String, Pair<Long, List<Anime>>>()
     suspend fun ohliPlayer(url: String): String = desktop.ohliPlayer(url)
+    suspend fun ohliStream(playerUrl: String, userAgent: String): OhliDirectStream = desktop.ohliStream(playerUrl, userAgent)
     suspend fun browse(source: String, query: String = "", page: Int = 1, filter: BrowseFilter = BrowseFilter()): List<Anime> {
         require(page > 0)
         if (filter.sort == "updated" && source in listOf("reanime", "miruro", "ohli24")) {
@@ -66,20 +89,25 @@ class SourceRepository(private val client: HttpClient = newSharedClient()) {
                     else linkkf.home(page)
         }
     }
-    suspend fun detail(summary: Anime, source: String): SourceDetail = coroutineScope {
+    suspend fun detail(summary: Anime, source: String): SourceDetail =
+        details?.get(source + "|" + summary.detailUrl.ifBlank { summary.id }) { loadDetail(summary, source) } ?: loadDetail(summary, source)
+    private suspend fun loadDetail(summary: Anime, source: String): SourceDetail = coroutineScope {
         when (source) {
             "jikan" -> SourceDetail(DesktopMetadataFallback.parse(kotlinx.serialization.json.Json.parseToJsonElement(getText("https://api.jikan.moe/v4/anime/" + summary.id + "/full")).jsonObject).first(), emptyList())
             "miruro", "ohli24", "linkani" -> desktop.detail(summary, source)
             "reanime" -> {
                 val slug = summary.id.removePrefix("reanime:").substringBefore('/')
+                // The series route and the episode route go out together (one after the other took a whole request first).
+                val listed = async { runCatching { getText("https://reanime.to/api/v1/anime/" + slug + "/episodes", mapOf("limit" to "2000")) } }
                 try {
                     val root = kotlinx.serialization.json.Json.parseToJsonElement(getText("https://reanime.to/api/v1/anime/" + slug)).jsonObject
                     if (root.text("anime_id").isNotBlank()) {
                         val parsed = DesktopReanimeParser.detail(root, summary)
-                        val episodes = DesktopReanimeParser.episodes(kotlinx.serialization.json.Json.parseToJsonElement(getText("https://reanime.to/api/v1/anime/" + slug + "/episodes", mapOf("limit" to "2000"))).jsonObject, parsed)
+                        val episodes = DesktopReanimeParser.episodes(kotlinx.serialization.json.Json.parseToJsonElement(listed.await().getOrThrow()).jsonObject, parsed)
                         if (episodes.isNotEmpty()) return@coroutineScope SourceDetail(parsed.copy(episodes = episodes), listOf(EpisodeServer(1, "ReAnime", episodes)))
                     }
                 } catch (error: CancellationException) { throw error } catch (_: Exception) { /* Preserve the previous Svelte fallback. */ }
+                listed.cancel()
                 val detail = async { getText("https://reanime.to/anime/$slug/__data.json", mapOf("x-appkit-invalidated" to "001")) }
                 val watch = async { getText("https://reanime.to/watch/$slug/__data.json", mapOf("x-appkit-invalidated" to "001")) }
                 val detailJson = detail.await()

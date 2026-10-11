@@ -126,6 +126,25 @@ final class SubtitleSearchTests: XCTestCase {
         XCTAssertEqual(model.subtitle, japanese)
         XCTAssertEqual(library.aiSubtitleSeries[model.item.anime.id], true)
     }
+    @MainActor func testVideoReloadKeepsTranslatedSubtitleStyleAndResetsForOriginal() async throws {
+        let library = LibraryStore(file: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        let model = EpisodePlayerModel(item: item(), subtitleLookup: { _, reply in reply([], nil) })
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".ass")
+        try "[Events]\nDialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,안녕하세요".write(to: file, atomically: true, encoding: .utf8)
+        defer { model.shutdown(library: library); try? FileManager.default.removeItem(at: file) }
+        model.selectSubtitle(file, library: library, translate: false, provider: "user")
+        await model.subtitleClassification?.value
+        // Working AI output is deliberately absent from the saved index.
+        model.engine.subtitle(file, translated: true)
+        let stream = ResolvedStream(label: "other quality", url: URL(string: "https://fixture.test/other.mp4")!, referer: "", headers: [:])
+        model.reloadVideo(stream, resume: 120)
+        XCTAssertTrue(model.engine.translatedSubtitle)
+        XCTAssertEqual(model.subtitle, file)
+        model.selectSubtitle(file, library: library, translate: false, provider: "user")
+        await model.subtitleClassification?.value
+        model.reloadVideo(stream, resume: 120)
+        XCTAssertFalse(model.engine.translatedSubtitle)
+    }
     func testSiteTracksListKoreanEnglishJapaneseFirstWithLanguageOnTop() {
         let track = { (label: String, language: String) in RemoteSubtitle(label: label, url: URL(string: "https://fixture.test/" + language + ".vtt")!, language: language) }
         let tracks = [track("Chinese (Chinese (Han, Simplified) - Full Subtitles)", "zh"), track("Japanese", "ja"), track("English (Dialogue)", "en"), track("Korean", "ko")]

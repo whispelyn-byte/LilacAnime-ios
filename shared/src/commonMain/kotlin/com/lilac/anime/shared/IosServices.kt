@@ -48,6 +48,7 @@ class IosServices {
         scope.launch { call(completion) { source.desktopStreams(sourceKey, animeId, number, url) } }
     }
     fun ohliPlayer(url: String, completion: (String?, String?) -> Unit) { scope.launch { call(completion) { source.ohliPlayer(url) } } }
+    fun ohliStream(playerUrl: String, userAgent: String, completion: (OhliDirectStream?, String?) -> Unit) { scope.launch { call(completion) { source.ohliStream(playerUrl, userAgent) } } }
     fun desktopServers(sourceKey: String, url: String, number: Int, anilist: Int, completion: (List<DesktopPlaybackServer>?, String?) -> Unit) {
         scope.launch { call(completion) { source.desktopServers(sourceKey, url, number, anilist) } }
     }

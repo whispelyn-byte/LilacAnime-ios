@@ -3,6 +3,7 @@ import SwiftUI
 import AVFoundation
 import MediaPlayer
 import Libmpv
+import CoreMedia
 
 struct MediaTrack: Identifiable {
     let id: Int
@@ -35,7 +36,9 @@ final class MPVEngine: ObservableObject {
     private var fileLoaded = false { didSet { updateScreenAwake() } }
     private let screenAwake = PlaybackScreenAwake()
     private var pendingSubtitle: URL?
-    private var translatedSubtitle = false
+    private(set) var translatedSubtitle = false
+    private(set) var pictureInPictureOutput = false
+    private var softwareOutput = false
     private var mediaLayer: CAMetalLayer?
     private var preferences = AppPreferences()
     private var notifications: [NSObjectProtocol] = []
@@ -180,6 +183,68 @@ final class MPVEngine: ObservableObject {
         var pointer: UnsafeMutablePointer<CChar>? = copy
         _ = withUnsafeMutablePointer(to: &pointer) { mpv_set_property_async(handle, 0, name, MPV_FORMAT_STRING, $0) }
     }
+    /// mpv calls that wait for the core: off the main thread, one at a time, so a screenshot never overlaps the player
+    /// being stopped.
+    private static let blocking = DispatchQueue(label: "Lilac.MPV", qos: .userInitiated)
+    var canCaptureVideo: Bool { handle != nil && fileLoaded }
+    /// PiP receives software frames with mpv's subtitles already drawn into them. The normal
+    /// Metal output is stopped before PiP starts, so background playback never submits GPU work.
+    func beginPictureInPictureOutput() async throws {
+        guard let handle, fileLoaded else { throw SubtitleFiles.failure("먼저 영상을 재생하세요.") }
+        pictureInPictureOutput = true; softwareOutput = true
+        let result: Int32 = await withCheckedContinuation { continuation in
+            Self.blocking.async {
+                mpv_set_property_string(handle, "screenshot-sw", "yes")
+                mpv_set_property_string(handle, "hwdec", "videotoolbox-copy")
+                continuation.resume(returning: mpv_set_property_string(handle, "vo", "null"))
+            }
+        }
+        guard self.handle == handle, pictureInPictureOutput else { throw CancellationError() }
+        if result < 0 { endPictureInPictureOutput(); throw SubtitleFiles.failure(String(cString: mpv_error_string(result))) }
+    }
+    func pictureInPictureFrame() async throws -> CMSampleBuffer {
+        guard let handle, fileLoaded, pictureInPictureOutput else { throw SubtitleFiles.failure("PiP 영상이 준비되지 않았습니다.") }
+        let position = position
+        let result: Result<CMSampleBuffer, Error> = await withCheckedContinuation { continuation in
+            Self.blocking.async { continuation.resume(returning: Result { try PiPFrame.capture(handle, position: position) }) }
+        }
+        return try result.get()
+    }
+    func endPictureInPictureOutput() {
+        guard pictureInPictureOutput || softwareOutput else { return }
+        pictureInPictureOutput = false
+        guard let handle else { return }
+        let foreground = UIApplication.shared.applicationState != .background
+        if foreground { softwareOutput = false }
+        if !foreground && !preferences.backgroundAudio { pause() }
+        Self.blocking.async {
+            if foreground {
+                mpv_set_property_string(handle, "vo", "gpu-next")
+                mpv_set_property_string(handle, "hwdec", "videotoolbox")
+                mpv_set_property_string(handle, "vid", "auto")
+            } else {
+                // Keep the software output until the app is foreground again.
+                mpv_set_property_string(handle, "vid", "no")
+            }
+        }
+    }
+    /// 스크린샷 (desktop takeScreenshot): the frame on screen at the video's own size (1920×1080 for a 1080p episode),
+    /// without subtitles or controls, as a PNG.
+    func screenshot(to file: URL) async throws {
+        guard let handle, fileLoaded else { throw SubtitleFiles.failure("영상이 나온 뒤에 찍을 수 있어요") }
+        let path = file.path
+        let result: Int32 = await withCheckedContinuation { continuation in
+            Self.blocking.async {
+                let arguments = ["screenshot-to-file", path, "video"].map { strdup($0) }
+                defer { arguments.forEach { free($0) } }
+                var values: [UnsafePointer<CChar>?] = arguments.map { $0.map { UnsafePointer<CChar>($0) } } + [nil]
+                continuation.resume(returning: mpv_command(handle, &values))
+            }
+        }
+        guard result >= 0, FileManager.default.fileExists(atPath: path) else {
+            throw SubtitleFiles.failure(result < 0 ? String(cString: mpv_error_string(result)) : "화면을 찍지 못했습니다.")
+        }
+    }
     private func command(_ arguments: [String]) {
         guard let handle else { return }
         let allocated = arguments.map { strdup($0) }
@@ -275,18 +340,24 @@ final class MPVEngine: ObservableObject {
         ]
         notifications.append(NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
             guard let self else { return }
-            self.set("vid", "no"); if !self.preferences.backgroundAudio { self.pause() }
+            if !self.pictureInPictureOutput {
+                self.set("vid", "no"); if !self.preferences.backgroundAudio { self.pause() }
+            }
         })
         notifications.append(NotificationCenter.default.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
             self?.finishSpaceHold(); self?.screenAwake.release()
         })
         notifications.append(NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.updateScreenAwake() })
-        notifications.append(NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in self?.set("vid", "auto") })
+        notifications.append(NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
+            guard let self, !self.pictureInPictureOutput else { return }
+            self.endPictureInPictureOutput()
+        })
         notifications.append(NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
             if (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) == AVAudioSession.InterruptionType.began.rawValue { self?.pause() }
         })
     }
     func shutdown() {
+        pictureInPictureOutput = false; softwareOutput = false
         finishSpaceHold()
         timer?.invalidate(); timer = nil
         notifications.forEach(NotificationCenter.default.removeObserver); notifications = []
@@ -295,7 +366,7 @@ final class MPVEngine: ObservableObject {
             // Waits for mpv to stop, which a stalled stream can make slow: not on the main thread. mpv draws into the
             // layer until then, so the layer is kept until it has stopped.
             let layer = mediaLayer
-            DispatchQueue.global(qos: .userInitiated).async {
+            Self.blocking.async {
                 mpv_terminate_destroy(handle)
                 DispatchQueue.main.async { withExtendedLifetime(layer) {} }
             }

@@ -22,7 +22,7 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "0.4.3"
-    CURRENT_PROJECT_VERSION: "44"
+    CURRENT_PROJECT_VERSION: "45"
     ENABLE_USER_SCRIPT_SANDBOXING: NO
 targets:
   LilacAnime:
@@ -42,6 +42,7 @@ targets:
           UIApplicationSupportsMultipleScenes: false
         UIBackgroundModes: [audio]
         NSLocalNetworkUsageDescription: 같은 Wi-Fi의 Chromecast에서 영상을 재생합니다.
+        NSPhotoLibraryAddUsageDescription: 플레이어 스크린샷을 사진 앱에 저장합니다.
         NSBonjourServices: [_googlecast._tcp, _CC1AD845._googlecast._tcp]
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true

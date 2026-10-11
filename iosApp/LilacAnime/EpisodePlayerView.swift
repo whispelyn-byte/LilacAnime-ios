@@ -53,6 +53,7 @@ final class EpisodePlayerModel: ObservableObject {
     @Published var systemPlayback = false
     @Published var systemStream: ResolvedStream?
     let engine = MPVEngine()
+    lazy var pictureInPicture = PlayerPictureInPicture(engine: engine)
     let resolver = PlaybackResolver()
     let translation = TranslationCoordinator()
     let pretranslation = TranslationCoordinator()
@@ -90,6 +91,7 @@ final class EpisodePlayerModel: ObservableObject {
         } else { jimaku = DesktopJimakuCatalog() }
         preparer = DesktopSubtitlePreparer(jimaku: jimaku)
         self.item = item; previous = item.preceding; searchTitle = item.anime.title
+        pictureInPicture.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observers)
         resolver.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observers)
         translation.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observers)
         jimaku.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observers)
@@ -222,14 +224,20 @@ final class EpisodePlayerModel: ObservableObject {
                 active = stream; systemStream = playable; error = nil; systemPlayback = false
                 if item.anime.source == "miruro", let provider = stream.label.components(separatedBy: " - ").dropFirst().first?.components(separatedBy: " ").first { UserDefaults.standard.set(provider, forKey: "miruro.working-provider") }
                 configure(library)
-                engine.load(playable, resume: library.resume(item.anime, episodeID: item.episodeID))
-                if let subtitle { engine.subtitle(subtitle) }
-                else { automaticSubtitle(stream, library: library, token: token) }
+                reloadVideo(playable, resume: library.resume(item.anime, episodeID: item.episodeID))
+                if subtitle == nil { automaticSubtitle(stream, library: library, token: token) }
                 prefetchNext(library: library, token: token)
             } catch { if token == generation { self.error = error.localizedDescription } }
         }
     }
     func applyPreferences(_ library: LibraryStore) { configure(library) }
+    /// A quality/server change reloads the video, but keeps the selected subtitle's styling policy,
+    /// including a working translation that has not yet been added to the saved subtitle list.
+    func reloadVideo(_ stream: ResolvedStream, resume: Double) {
+        let translated = engine.translatedSubtitle || currentSaved?.translated == true
+        engine.load(stream, resume: resume)
+        if let subtitle { engine.subtitle(subtitle, translated: translated) }
+    }
     /// 애니24's own subtitle file can be found after the stream: the playing stream takes it and it is put on.
     func siteSubtitlesArrived(_ tracks: [RemoteSubtitle], library: LibraryStore) {
         guard item.anime.source == "ohli24", var stream = active, stream.subtitles.isEmpty, !tracks.isEmpty else { return }
@@ -245,6 +253,19 @@ final class EpisodePlayerModel: ObservableObject {
         subtitleOffset += delta
         engine.set("sub-delay", String(subtitleOffset))
         library.saveSubtitle(animeID: item.anime.id, episodeID: item.episodeID, file: sourceSubtitle, offset: subtitleOffset)
+    }
+    /// 스크린샷 (P, the camera button): what it did, for the player to say.
+    func screenshot(title: String) async -> String {
+        let name = PlayerScreenshot.name(title: title, episode: item.title, position: engine.position)
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let file = folder.appendingPathComponent("screenshot.png")
+            try await engine.screenshot(to: file)
+            try await PlayerScreenshot.save(file, name: name)
+            return "스크린샷을 사진 앱에 저장했어요"
+        } catch { return "스크린샷을 저장하지 못했어요: " + error.localizedDescription }
     }
     func castVideo() {
         guard let active else { return }
@@ -644,6 +665,7 @@ final class EpisodePlayerModel: ObservableObject {
             watchURL: item.watchURL.absoluteString, directURL: active?.url.absoluteString, position: engine.position, duration: engine.duration)
     }
     func shutdown(library: LibraryStore) {
+        pictureInPicture.stop()
         subtitleClassification?.cancel()
         resolutionTask?.cancel(); selectionTask?.cancel()
         save(library: library); stopPrefetch(); automaticTask?.cancel(); cancelSubtitleBackground(); preparer.cancel(); generation = UUID(); engine.shutdown(); resolver.cancel(); translation.shutdown(); service.cancel(); titleLookup.cancel(); proxy?.stop(); proxy = nil; cast.stop()
@@ -668,6 +690,8 @@ struct EpisodePlayerView: View {
         ZStack {
             Color.black
             PlayerVideoSurface(engine: model.engine).allowsHitTesting(false)
+            PlayerPiPSurface(pip: model.pictureInPicture)
+                .opacity(model.pictureInPicture.rendering ? 1 : 0.001).allowsHitTesting(false)
             if !UIShowcase.enabled {
                 ProviderPlayerView(resolver: model.resolver).opacity(showWeb ? 1 : 0.001).allowsHitTesting(showWeb)
             }
@@ -688,6 +712,9 @@ struct EpisodePlayerView: View {
                     chapter: model.chapters.first(where: { model.engine.position >= $0.start && model.engine.position < $0.end }),
                     skipChapter: { if let chapter = model.chapters.first(where: { model.engine.position >= $0.start && model.engine.position < $0.end }) { model.engine.seek(chapter.end) } },
                     adjustSubtitle: { model.shiftSubtitle($0, library: library) },
+                    pictureInPicture: { await model.pictureInPicture.toggle() },
+                    pipSupported: model.pictureInPicture.supported, pipActive: model.pictureInPicture.active,
+                    screenshot: { await model.screenshot(title: DesktopCatalog.shared.title(model.item.anime.anime, source: model.item.anime.source, language: library.preferences.titleLanguage)) },
                     subtitleOffset: model.subtitleOffset,
                     keyboardEnabled: !settings && !subtitleSheet && !importer)
             } else {
@@ -798,7 +825,9 @@ struct EpisodePlayerView: View {
             if let active = model.active {
                 Button("회차 다운로드") { downloads.download(model.item, stream: active, quality: library.preferences.quality) }
                 Button("Cast 재생") { model.castVideo() }
-                Button("시스템 재생 / PiP") { model.engine.pause(); model.systemPlayback = true; showWeb = false; settings = false }
+                Button("자막과 함께 PiP") { settings = false; Task { model.error = await model.pictureInPicture.toggle() } }
+                    .disabled(!model.pictureInPicture.supported || model.pictureInPicture.starting)
+                Button("시스템 재생") { model.pictureInPicture.stop(); model.engine.pause(); model.systemPlayback = true; showWeb = false; settings = false }
                 if model.systemPlayback { Button("mpv로 재생") { model.systemPlayback = false; model.play(active, library: library); settings = false } }
             }
             HStack { Text("AirPlay / Chromecast"); Spacer(); AirPlayButton().frame(width: 32, height: 32); CastButton().frame(width: 32, height: 32) }
@@ -1079,6 +1108,10 @@ struct PlayerControls: View {
     let chapter: OfflineChapter?
     let skipChapter: () -> Void
     let adjustSubtitle: (Double) -> Void
+    let pictureInPicture: () async -> String?
+    let pipSupported: Bool
+    let pipActive: Bool
+    let screenshot: () async -> String
     var subtitleOffset = 0.0
     let keyboardEnabled: Bool
     @GestureState private var holdingSpeed = false
@@ -1088,6 +1121,7 @@ struct PlayerControls: View {
     @State private var locked = false
     @State private var interaction = UUID()
     @State private var feedback = ""
+    @State private var takingScreenshot = false
     private var windowInsets: UIEdgeInsets { UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first(where: \.isKeyWindow)?.safeAreaInsets ?? .zero }
     var body: some View {
         GeometryReader { geometry in
@@ -1107,6 +1141,9 @@ struct PlayerControls: View {
                                 Text(episode).font(.system(size: 11)).foregroundStyle(.white.opacity(0.65)).lineLimit(1)
                             }.padding(.horizontal, 12).padding(.vertical, 8).background(.black.opacity(0.4), in: RoundedRectangle(cornerRadius: 14))
                             Spacer(minLength: 0)
+                            control(pipActive ? "pip.exit" : "pip.enter", label: pipActive ? "PiP 닫기" : "자막과 함께 PiP", enabled: pipSupported) {
+                                Task { if let message = await pictureInPicture() { flash(message) } }
+                            }
                             control("gearshape", label: "플레이어 설정", action: settings)
                         }
                         Spacer(minLength: 4)
@@ -1132,6 +1169,7 @@ struct PlayerControls: View {
                                 Text(clock(engine.duration)).monospacedDigit().foregroundStyle(.white.opacity(0.65))
                             }.font(.system(size: 11)).padding(.horizontal, 12).padding(.vertical, 2)
                                 .background(.black.opacity(0.52), in: RoundedRectangle(cornerRadius: 20))
+                            control("camera", label: "스크린샷", enabled: !takingScreenshot) { takeScreenshot() }
                             control("lock.fill", label: "화면 잠금") { locked = true; visible = false }
                         }
                     }.padding(.horizontal, max(24, max(geometry.safeAreaInsets.leading, max(windowInsets.left, windowInsets.right)))).padding(.top, max(14, max(geometry.safeAreaInsets.top, windowInsets.top))).padding(.bottom, max(14, max(geometry.safeAreaInsets.bottom, windowInsets.bottom)))
@@ -1160,6 +1198,7 @@ struct PlayerControls: View {
                         Button("") { shiftSubtitle(-0.5) }.keyboardShortcut("z", modifiers: [])
                         Button("") { shiftSubtitle(0.5) }.keyboardShortcut("x", modifiers: [])
                         Button("") { if chapter != nil { skipChapter() } else { flash("지금은 건너뛸 OP/ED 구간이 아니에요") } }.keyboardShortcut("s", modifiers: [])
+                        Button("") { takeScreenshot() }.keyboardShortcut("p", modifiers: [])
                         Button("") { changeSpeed(-0.25) }.keyboardShortcut("[", modifiers: [])
                         Button("") { changeSpeed(0.25) }.keyboardShortcut("]", modifiers: [])
                         Button("") { if canNext { next() } }.keyboardShortcut(.pageDown, modifiers: [])
@@ -1191,6 +1230,11 @@ struct PlayerControls: View {
         library.preferences.speed = speeds[max(0, min(speeds.count - 1, at + (delta > 0 ? 1 : -1)))]
         engine.finishSpaceHold(); engine.setSpeed(library.preferences.speed)
         flash("재생 속도 " + String(format: "%.2f", library.preferences.speed) + "x")
+    }
+    private func takeScreenshot() {
+        guard !takingScreenshot else { return }
+        takingScreenshot = true
+        Task { defer { takingScreenshot = false }; flash(await screenshot()) }
     }
     private func flash(_ text: String) {
         feedback = text

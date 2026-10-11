@@ -174,7 +174,7 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
                     guard let self, token == self.generation else { return }
                     guard let value, let player = URL(string: value) else { self.loading = false; self.error = failure ?? "이 회차의 영상 플레이어를 찾지 못했습니다."; return }
                     self.ohliPlayer = player
-                    self.loadPage(player, seconds: 45)
+                    self.ohliDirect(player, token: token)
                 }
             }
             return
@@ -272,6 +272,19 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
         let track = RemoteSubtitle(label: "애니24 한국어 자막", url: url, language: "ko", headers: headers)
         subtitles.append(track)
         for index in streams.indices { streams[index].subtitles.append(track); streams[index].burnedKorean = false }
+    }
+    /// The player read without opening it (desktop ohliStreamDirect: about 1.5 s instead of the page loading); the
+    /// subtitle files it names go on first, so the stream carries them. When that fails, the page itself as before.
+    private func ohliDirect(_ player: URL, token: UUID) {
+        desktop.ohliStream(playerUrl: player.absoluteString, userAgent: agent) { [weak self] stream, _ in
+            Task { @MainActor in
+                guard let self, token == self.generation else { return }
+                guard let stream, let url = URL(string: stream.url), OhliPlayback.isEpisodePlaylist(stream.manifest) else { self.loadPage(player, seconds: 45); return }
+                for file in stream.subtitles.compactMap(URL.init(string:)) { self.addOhliCaption(file, referer: player.absoluteString) }
+                self.verifyOhli(url, hls: true, manifest: stream.manifest)
+                if self.streams.isEmpty { self.loadPage(player, seconds: 45) }
+            }
+        }
     }
     private func verifyOhli(_ url: URL, hls: Bool, manifest: String?) {
         guard candidateTasks[url] == nil, !streams.contains(where: { $0.url == url }) else { return }

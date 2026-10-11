@@ -29,12 +29,38 @@ enum HLSData {
         if url == stream.url, let manifest = stream.hlsManifest {
             return (Data(manifest.utf8), HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/vnd.apple.mpegurl"])!)
         }
+        let (data, response) = try await URLSession.shared.data(for: request(url, stream: stream, range: range))
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw SubtitleFiles.failure("영상 요청 실패") }
+        return (data, http)
+    }
+    private static func request(_ url: URL, stream: ResolvedStream, range: String?) -> URLRequest {
         var request = URLRequest(url: url)
         for (key, value) in stream.headers where key.lowercased() != "cookie" || url.host == stream.url.host { request.setValue(value, forHTTPHeaderField: key) }
         request.setValue(stream.referer, forHTTPHeaderField: "Referer")
         if let range { request.setValue(range, forHTTPHeaderField: "Range") }
-        let (data, response) = try await URLSession.shared.data(for: request)
+        return request
+    }
+    /// When a range last had data, and whether its ask is over.
+    private final class Heard: @unchecked Sendable {
+        private let lock = NSLock(); private var at = Date(); private var over = false
+        func touch() { lock.lock(); at = Date(); lock.unlock() }
+        func finish() { lock.lock(); over = true; lock.unlock() }
+        var quiet: TimeInterval { lock.lock(); defer { lock.unlock() }; return Date().timeIntervalSince(at) }
+        var done: Bool { lock.lock(); defer { lock.unlock() }; return over }
+    }
+    /// A range read as it arrives, so a request that has gone quiet can be told from a slow one still receiving.
+    private static func watchedFetch(_ url: URL, stream: ResolvedStream, range: String, heard: Heard) async throws -> (Data, HTTPURLResponse) {
+        defer { heard.finish() }
+        let (bytes, response) = try await URLSession.shared.bytes(for: request(url, stream: stream, range: range))
+        heard.touch()
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw SubtitleFiles.failure("영상 요청 실패") }
+        var data = Data(), chunk: [UInt8] = []
+        chunk.reserveCapacity(16384)
+        for try await byte in bytes {
+            chunk.append(byte)
+            if chunk.count == 16384 { data.append(contentsOf: chunk); chunk.removeAll(keepingCapacity: true); heard.touch() }
+        }
+        data.append(contentsOf: chunk)
         return (data, http)
     }
     static func manifest(_ data: Data, key: String?) throws -> String {
@@ -85,29 +111,46 @@ enum HLSData {
 
     private enum FetchEvent {
         case timer
+        case idle
         case answer(Result<(Data, HTTPURLResponse), Error>)
     }
-    private static func hedged(_ url: URL, stream: ResolvedStream, start: Int, end: Int) async throws -> (Data, HTTPURLResponse) {
+    /// The CDN behind FlixCloud gives each file a few hundred KB/s and now and then stalls a request for a minute. A range
+    /// is asked for up to three times; another ask goes out when one fails, when one has had nothing for `stall` seconds
+    /// (a slow ask still receiving is left alone), or `hedge` seconds after the last (desktop flix-proxy fetchHedged).
+    private static func hedged(_ url: URL, stream: ResolvedStream, start: Int, end: Int, stall: TimeInterval = 3, hedge: TimeInterval = 8) async throws -> (Data, HTTPURLResponse) {
         try await withThrowingTaskGroup(of: FetchEvent.self) { group in
             var attempts = 0, active = 0
             var failure: Error = SubtitleFiles.failure("영상 조각을 받지 못했습니다.")
             func launch() {
                 guard attempts < 3 else { return }
                 attempts += 1; active += 1
+                let heard = Heard()
                 group.addTask {
                     do {
-                        let result = try await fetch(url, stream: stream, range: "bytes=\(start)-\(end)")
+                        let result = try await watchedFetch(url, stream: stream, range: "bytes=\(start)-\(end)", heard: heard)
                         if start > 0 && (result.1.statusCode != 206 || result.0.count != end - start + 1) { throw SubtitleFiles.failure("영상 조각 범위 응답 오류") }
                         return .answer(.success(result))
                     } catch { return .answer(.failure(error)) }
                 }
-                if attempts < 3 { group.addTask { try await Task.sleep(nanoseconds: 8_000_000_000); return .timer } }
+                // This ask's watch: the next ask once, when it has gone quiet or the hedge time has passed.
+                if attempts < 3 {
+                    group.addTask {
+                        let begun = Date()
+                        while !heard.done {
+                            try await Task.sleep(nanoseconds: 250_000_000)
+                            if heard.done { break }
+                            if heard.quiet >= stall || Date().timeIntervalSince(begun) >= hedge { return .timer }
+                        }
+                        return .idle
+                    }
+                }
             }
             launch()
             while let event = try await group.next() {
                 try Task.checkCancellation()
                 switch event {
                 case .timer: launch()
+                case .idle: break
                 case .answer(.success(let result)): group.cancelAll(); return result
                 case .answer(.failure(let error)):
                     active -= 1; failure = error
@@ -121,11 +164,13 @@ enum HLSData {
         var failure: Error = SubtitleFiles.failure("영상 조각을 받지 못했습니다.")
         for _ in 0..<3 {
             do {
-                let (head, response) = try await hedged(url, stream: stream, start: 0, end: 1048575)
+                // The first range only has to tell the segment's size before the rest can be split up (a whole first MB
+                // took ~3 s before anything else went out); the rest goes in half-MB ranges, six at a time.
+                let (head, response) = try await hedged(url, stream: stream, start: 0, end: 262143)
                 let total = Int(response.value(forHTTPHeaderField: "Content-Range")?.components(separatedBy: "/").last ?? "") ?? 0
                 var raw = head
                 if response.statusCode == 206 && total > head.count {
-                    let ranges = stride(from: head.count, to: total, by: 1048576).map { ($0, min($0 + 1048576, total) - 1) }
+                    let ranges = stride(from: head.count, to: total, by: 524288).map { ($0, min($0 + 524288, total) - 1) }
                     let pieces = try await withThrowingTaskGroup(of: (Int, Data).self) { group in
                         var next = 0; var result: [Int: Data] = [:]
                         func launch() {

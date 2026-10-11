@@ -134,6 +134,14 @@ final class LibraryStore: ObservableObject {
         guard position.isFinite, duration.isFinite, position >= 0 else { return }
         let id = anime.id + "#" + episodeID
         history.removeAll { $0.id == id }
+        // Only the newest entry of a series keeps its episode list: the same long list in every watched episode's entry
+        // made library.json grow without end. An older entry asks for the list again when it is played.
+        for index in history.indices where history[index].anime.id == anime.id && !history[index].anime.snapshot.contains("\"episodes\":[]") {
+            let old = history[index].anime
+            var trimmed = SavedAnime(AnimeSnapshot.shared.withEpisodes(anime: old.anime, episodes: []), source: old.source)
+            trimmed.savedAt = old.savedAt
+            history[index].anime = trimmed
+        }
         history.insert(WatchEntry(id: id, anime: anime, episodeID: episodeID, episodeTitle: title, number: number,
                                   watchURL: watchURL, directURL: directURL, position: position, duration: duration, updatedAt: Date()), at: 0)
         history = Array(history.prefix(500)); persist()

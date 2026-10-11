@@ -46,6 +46,8 @@ struct DesktopWorkspace: View {
         }.environmentObject(navigation)
             .onChange(of: sizeClass) { _ in menu = false }
             .task(id: library.preferences.source) {
+                // The saved catalog is read after launch: until then it looks empty and would be gathered again from the start.
+                if !UIShowcase.enabled { await DesktopCatalog.shared.load() }
                 if !UIShowcase.enabled && !DesktopCatalog.shared.running &&
                     ((DesktopCatalog.shared.catalogs[library.preferences.source] ?? []).isEmpty || DesktopCatalog.shared.needsRefresh(library.preferences.source)) {
                     DesktopCatalog.shared.start(library.preferences.source)

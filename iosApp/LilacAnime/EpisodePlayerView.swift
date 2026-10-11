@@ -108,6 +108,8 @@ final class EpisodePlayerModel: ObservableObject {
             let file = SubtitleFiles.root.appendingPathComponent(relative).standardizedFileURL
             if file.path.hasPrefix(SubtitleFiles.root.path + "/"), FileManager.default.fileExists(atPath: file.path) {
                 sourceSubtitle = file; subtitle = file; subtitleFiles = [file]
+                // Its language decides whether the 번역 row shows; it is read off the main thread.
+                Task { _ = await isKoreanSubtitle(file) }
             }
         }
         configure(library)

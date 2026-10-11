@@ -37,8 +37,12 @@ final class EpisodeSubtitleStore: ObservableObject {
         if let loading { await loading.value; return }
         let index = index
         let task = Task {
-            records = await Task.detached(priority: .userInitiated) { Self.read(index) }.value
+            let saved = await Task.detached(priority: .userInitiated) { Self.read(index) }.value
+            // A subtitle saved before the list was read (the player opened at once) is kept over the file's entry for it.
+            let early = Set(records.map(\.id))
+            records = saved.filter { !early.contains($0.id) } + records
             loaded = true
+            if !early.isEmpty { persist() }
         }
         loading = task
         await task.value
@@ -83,6 +87,8 @@ final class EpisodeSubtitleStore: ObservableObject {
     func clear(before date: Date) { records.removeAll { $0.date <= date }; persist() }
     /// Saved at every translated batch while a subtitle is translated: written off the main thread, the latest list.
     private func persist() {
+        // Before the list is read, writing it would replace the saved file with only what changed since launch.
+        guard loaded else { return }
         let records = records
         BackgroundWriter.shared.write(index, after: 0.5, failed: { [weak self] message in self?.error = message }) { try JSONEncoder().encode(records) }
     }

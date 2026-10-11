@@ -39,6 +39,24 @@ final class BackgroundLoadingTests: XCTestCase {
         XCTAssertTrue(store.records.isEmpty)
         BackgroundWriter.shared.waitUntilWritten()
     }
+    @MainActor func testSubtitleSavedBeforeTheIndexIsReadKeepsTheSavedOnes() async throws {
+        let folder = try folder(), file = folder.appendingPathComponent("subtitles.json")
+        let record = SavedSubtitle(id: "saved", episodeKey: "series#1", name: "이전 자막", relativeFile: "old.srt", provider: "user", translated: false, date: Date())
+        try JSONEncoder().encode([record]).write(to: file)
+        let store = EpisodeSubtitleStore(index: file, deferLoading: true)
+        let subtitle = folder.appendingPathComponent("new.srt")
+        try "1\n00:00:01,000 --> 00:00:02,000\n새 자막\n".write(to: subtitle, atomically: true, encoding: .utf8)
+        let anime = SavedAnime(AnimeSnapshot.shared.decode(content: #"{"id":"early","title":"검증","episodes":[{"id":"1","number":1,"title":"1화"}]}"#), source: "reanime")
+        store.save(subtitle, item: PlaybackItem(anime: anime, episode: anime.anime.episodes[0]), provider: "user", translated: false)
+        BackgroundWriter.shared.waitUntilWritten()
+        XCTAssertEqual(try JSONDecoder().decode([SavedSubtitle].self, from: Data(contentsOf: file)).map(\.id), ["saved"], "nothing is written before the index is read")
+        await store.load()
+        XCTAssertEqual(Set(store.records.map(\.episodeKey)), ["series#1", "reanime:early#1"])
+        BackgroundWriter.shared.waitUntilWritten()
+        XCTAssertEqual(try JSONDecoder().decode([SavedSubtitle].self, from: Data(contentsOf: file)).count, 2)
+        if let saved = store.records.first(where: { $0.episodeKey == "reanime:early#1" }) { store.remove(saved.id) }
+        BackgroundWriter.shared.waitUntilWritten()
+    }
     @MainActor func testDeferredDownloadIndexRestoresCompletedEntry() async throws {
         let file = try folder().appendingPathComponent("downloads.json")
         let anime = SavedAnime(AnimeSnapshot.shared.decode(content: "{\"id\":\"fixture\",\"title\":\"테스트\"}"), source: "linkkf")

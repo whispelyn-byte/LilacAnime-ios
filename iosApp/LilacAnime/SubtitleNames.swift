@@ -1,17 +1,52 @@
 import Foundation
 
 enum SubtitleNames {
-    // HTTP header strings may expose UTF-8 bytes as Latin-1. Repair only a
-    // reversible conversion to East Asian text; ordinary accented names stay intact.
+    // Headers and saved names can mix Latin-1 bytes, Windows-1252 punctuation
+    // and already-correct Korean. Decode byte sequences locally, never the whole
+    // filename through one legacy encoding. Keep changes only when Asian text
+    // is recovered; genuine accented filenames are left alone.
     static func readable(_ name: String) -> String {
-        guard !containsEastAsian(name) else { return name }
-        for encoding in [String.Encoding.isoLatin1, .windowsCP1252] {
-            if let bytes = name.data(using: encoding, allowLossyConversion: false),
-               let decoded = String(data: bytes, encoding: .utf8), containsEastAsian(decoded) {
-                return decoded
-            }
+        var candidate = name, result = name
+        let originalCount = eastAsianCount(name)
+        for _ in 0..<3 {
+            let decoded = repairBytes(candidate)
+            if decoded == candidate { break }
+            if eastAsianCount(decoded) > originalCount { result = decoded }
+            candidate = decoded
         }
-        return name
+        return result
+    }
+
+    // Windows-1252's printable substitutes for C1 bytes. Some responses use
+    // these and literal C1 characters together, which String.data(using:) rejects.
+    private static let windowsBytes: [UInt32: UInt8] = [
+        0x20ac: 0x80, 0x201a: 0x82, 0x0192: 0x83, 0x201e: 0x84,
+        0x2026: 0x85, 0x2020: 0x86, 0x2021: 0x87, 0x02c6: 0x88,
+        0x2030: 0x89, 0x0160: 0x8a, 0x2039: 0x8b, 0x0152: 0x8c,
+        0x017d: 0x8e, 0x2018: 0x91, 0x2019: 0x92, 0x201c: 0x93,
+        0x201d: 0x94, 0x2022: 0x95, 0x2013: 0x96, 0x2014: 0x97,
+        0x02dc: 0x98, 0x2122: 0x99, 0x0161: 0x9a, 0x203a: 0x9b,
+        0x0153: 0x9c, 0x017e: 0x9e, 0x0178: 0x9f
+    ]
+    private static func repairBytes(_ name: String) -> String {
+        let scalars = Array(name.unicodeScalars)
+        func byte(_ scalar: Unicode.Scalar) -> UInt8? {
+            scalar.value <= 0xff ? UInt8(scalar.value) : windowsBytes[scalar.value]
+        }
+        var output = "", index = 0
+        while index < scalars.count {
+            let first = byte(scalars[index]) ?? 0
+            let count = (0xc2...0xdf).contains(first) ? 2 : (0xe0...0xef).contains(first) ? 3 : (0xf0...0xf4).contains(first) ? 4 : 0
+            if count > 0, index + count <= scalars.count {
+                let bytes = scalars[index..<(index + count)].compactMap(byte)
+                if bytes.count == count, bytes.dropFirst().allSatisfy({ (0x80...0xbf).contains($0) }),
+                   let decoded = String(data: Data(bytes), encoding: .utf8) {
+                    output += decoded; index += count; continue
+                }
+            }
+            output.unicodeScalars.append(scalars[index]); index += 1
+        }
+        return output
     }
 
     static func downloadFilename(_ disposition: String?, fallback: String) -> String {
@@ -37,8 +72,8 @@ enum SubtitleNames {
 
     static func label(_ name: String, url: String = "", fallback: String = "자막 파일") -> String {
         let value = readable(name).trimmingCharacters(in: .whitespacesAndNewlines)
-        if meaningful(value) { return value }
-        if let file = URL(string: url)?.lastPathComponent, meaningful(file),
+        if displayable(value) { return value }
+        if let file = URL(string: url)?.lastPathComponent, displayable(readable(file)),
            ["ass", "ssa", "srt", "smi", "vtt", "zip", "7z", "rar", "sub", "ttml"].contains(URL(fileURLWithPath: file).pathExtension.lowercased()) {
             return readable(file)
         }
@@ -48,10 +83,13 @@ enum SubtitleNames {
     static func meaningful(_ value: String) -> Bool {
         value.unicodeScalars.contains { CharacterSet.alphanumerics.contains($0) }
     }
-    private static func containsEastAsian(_ value: String) -> Bool {
-        value.unicodeScalars.contains { scalar in
+    private static func displayable(_ value: String) -> Bool {
+        meaningful(value) && !value.unicodeScalars.contains { $0.value == 0xfffd || (0x80...0x9f).contains($0.value) }
+    }
+    private static func eastAsianCount(_ value: String) -> Int {
+        value.unicodeScalars.filter { scalar in
             (0x3040...0x30ff).contains(scalar.value) || (0x3400...0x9fff).contains(scalar.value) || (0xac00...0xd7af).contains(scalar.value)
-        }
+        }.count
     }
 }
 

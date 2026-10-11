@@ -34,6 +34,7 @@ enum SubtitleFiles {
             data = body
             name = filename ?? SubtitleNames.downloadFilename(http.value(forHTTPHeaderField: "Content-Disposition"), fallback: name)
         }
+        name = SubtitleNames.readable(name)
         let folder = root.appendingPathComponent(key(url.absoluteString))
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let ext = URL(fileURLWithPath: name).pathExtension.lowercased()

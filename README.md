@@ -18,7 +18,7 @@
   작품 탐색부터 회차 재생, 자막 검색·번역, 이어보기와 오프라인 감상까지 제공합니다.
 </p>
 
-현재 소스는 앱 버전 **0.4.2**, iOS 리비전 **11**, 빌드 **41**을 사용합니다. 배포된 버전은 위 최신 릴리즈에서 확인할 수 있습니다. 새 설치의 기본 영상 소스는 **ReAnime**이며, 기존에 선택한 소스는 유지합니다.
+현재 소스는 앱 버전 **0.4.3**, iOS 리비전 **12**, 빌드 **42**를 사용합니다. 배포된 버전은 위 최신 릴리즈에서 확인할 수 있습니다. 새 설치의 기본 영상 소스는 **ReAnime**이며, 기존에 선택한 소스는 유지합니다.
 
 데스크탑 0.5.10의 파일·API 목록을 재대조해 자막 검색·선택, 카탈로그 메타데이터·갱신, 번역 요청·재시도·부분 결과, 다운로드·HLS 복원 규칙을 보완했습니다. 리비전 8은 번역 응답 누락, 소개의 코드 노출, 메뉴 이동, 수동 자막 선택, 아이콘과 다운로드 접수 안내를 수정합니다. 리비전 9는 데스크탑 화면 동작을 화면별로 다시 대조해 플레이어 자막 칩·서버 선택, 회차 목록, 다운로드 일괄 동작, 검색을 맞췄습니다. [테스터 제보 수정 및 최신 대조](docs/tester-fixes.md), [기존 코드 대조 결과와 플랫폼 차이](docs/desktop-code-review.md)에서 범위를 확인할 수 있습니다.
 
@@ -151,7 +151,7 @@ sh iosApp/scripts/verify.sh
 
 GitHub Actions는 공통 테스트, KMP iOS 테스트, 네이티브 iOS 테스트, 시뮬레이터 캡처, unsigned arm64 IPA 패키징을 실행합니다. 릴리즈에는 실기기용 IPA와 SideStore source.json을 게시합니다. 시뮬레이터 앱은 개발·검증용 Actions 아티팩트로만 제공합니다. **App Store 배포용 서명 빌드가 아닙니다.**
 
-앱 버전은 app/module.toml의 Android versionName을 사용합니다. iOS 빌드 번호는 Android versionCode에 iosApp/revision.txt의 값을 더합니다. 배포 태그는 `python3 iosApp/scripts/android-version.py --tag`로 확인합니다(현재 **v0.4.0-ios.7**). 해당 태그를 푸시하면 모든 테스트·빌드가 성공한 뒤 IPA와 실제 메타데이터로 생성한 SideStore source.json을 릴리스에 게시합니다. 최신 소스 주소는 그대로 유지됩니다.
+앱 버전은 app/module.toml의 Android versionName을 사용합니다. iOS 빌드 번호는 Android versionCode에 iosApp/revision.txt의 값을 더합니다. 배포 태그는 `python3 iosApp/scripts/android-version.py --tag`로 확인합니다(현재 **v0.4.3-ios.12**). 해당 태그를 푸시하면 모든 테스트·빌드가 성공한 뒤 IPA와 실제 메타데이터로 생성한 SideStore source.json을 릴리스에 게시합니다. 최신 소스 주소는 그대로 유지됩니다.
 
 | 경로 | 내용 |
 |---|---|

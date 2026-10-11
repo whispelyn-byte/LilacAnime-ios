@@ -22,7 +22,7 @@ final class MPVEngine: ObservableObject {
     @Published var speedBoosted = false
     private var spaceHold: SpaceHoldSession?
     private var spaceTimer: Task<Void, Never>?
-    @Published var paused = true
+    @Published var paused = true { didSet { updateScreenAwake() } }
     @Published var buffering = false
     @Published var tracks: [MediaTrack] = []
     @Published var error: String?
@@ -32,7 +32,8 @@ final class MPVEngine: ObservableObject {
     private var timer: Timer?
     private var pendingStream: ResolvedStream?
     private var resumePosition = 0.0
-    private var fileLoaded = false
+    private var fileLoaded = false { didSet { updateScreenAwake() } }
+    private let screenAwake = PlaybackScreenAwake()
     private var pendingSubtitle: URL?
     private var mediaLayer: CAMetalLayer?
     private var preferences = AppPreferences()
@@ -247,6 +248,7 @@ final class MPVEngine: ObservableObject {
         }
         tracks = result
     }
+    private func updateScreenAwake() { screenAwake.update(playing: fileLoaded && !paused) }
     private func setupAudio() {
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [.allowAirPlay])
@@ -265,7 +267,10 @@ final class MPVEngine: ObservableObject {
             guard let self else { return }
             self.set("vid", "no"); if !self.preferences.backgroundAudio { self.pause() }
         })
-        notifications.append(NotificationCenter.default.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.finishSpaceHold() })
+        notifications.append(NotificationCenter.default.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.finishSpaceHold(); self?.screenAwake.release()
+        })
+        notifications.append(NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.updateScreenAwake() })
         notifications.append(NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in self?.set("vid", "auto") })
         notifications.append(NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
             if (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) == AVAudioSession.InterruptionType.began.rawValue { self?.pause() }

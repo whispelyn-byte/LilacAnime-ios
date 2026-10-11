@@ -91,7 +91,7 @@ final class SubtitleSearchTests: XCTestCase {
         XCTAssertEqual(callbacks, ["jimaku"])
         XCTAssertEqual(library.preferences.subtitleProvider, "csora")
     }
-    @MainActor func testPickingAJimakuFileKeepsTheCommunityDefault() throws {
+    @MainActor func testPickingAJimakuFileKeepsTheCommunityDefault() async throws {
         let library = LibraryStore()
         let previous = library.preferences.subtitleProvider
         library.preferences.subtitleProvider = "kairan"
@@ -105,8 +105,42 @@ final class SubtitleSearchTests: XCTestCase {
         XCTAssertEqual(library.preferences.subtitleProvider, "kairan")
         XCTAssertEqual(model.activeSubtitleSource, "jimaku")
         XCTAssertEqual(model.subtitleLabel, "Jimaku 자막")
+        _ = await model.isKoreanSubtitle(file)
         XCTAssertTrue(model.translatable)
         for record in EpisodeSubtitleStore.shared.list(model.item) { EpisodeSubtitleStore.shared.remove(record.id) }
+    }
+    @MainActor func testSubtitleLanguageCheckKeepsControlsResponsiveAndCachesResult() async throws {
+        let started = expectation(description: "Background language check started")
+        let gate = DispatchGroup(); gate.enter()
+        let library = LibraryStore()
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".srt")
+        try Data("1\n00:00:00,000 --> 00:00:01,000\nHello\n".utf8).write(to: file)
+        var calls = 0
+        let model = EpisodePlayerModel(item: item(), koreanCheck: { _ in
+            XCTAssertFalse(Thread.isMainThread)
+            calls += 1; started.fulfill()
+            XCTAssertEqual(gate.wait(timeout: .now() + 5), .success)
+            return false
+        })
+        defer {
+            model.shutdown(library: library)
+            for record in EpisodeSubtitleStore.shared.list(model.item) { EpisodeSubtitleStore.shared.remove(record.id) }
+            try? FileManager.default.removeItem(at: file)
+        }
+        model.selectSubtitle(file, library: library, translate: false, provider: "user")
+        await fulfillment(of: [started], timeout: 2)
+        XCTAssertEqual(model.subtitle, file)
+        XCTAssertFalse(model.translatable) // Rendering reads the cache even while parsing is blocked.
+        model.engine.toggle(); XCTAssertFalse(model.engine.paused)
+        model.engine.toggle(); XCTAssertTrue(model.engine.paused)
+        gate.leave()
+        for _ in 0..<1000 {
+            if model.translatable { break }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        XCTAssertTrue(model.translatable)
+        let korean = await model.isKoreanSubtitle(file)
+        XCTAssertFalse(korean); XCTAssertEqual(calls, 1)
     }
     func testSiteTracksListKoreanEnglishJapaneseFirstWithLanguageOnTop() {
         let track = { (label: String, language: String) in RemoteSubtitle(label: label, url: URL(string: "https://fixture.test/" + language + ".vtt")!, language: language) }

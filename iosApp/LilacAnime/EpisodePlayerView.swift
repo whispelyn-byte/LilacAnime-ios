@@ -44,7 +44,8 @@ final class EpisodePlayerModel: ObservableObject {
     @Published private(set) var selectedMaker: String?
     private var chipTask: Task<Void, Never>?
     private var chipRequest = UUID()
-    private var koreanFiles: [URL: Bool] = [:]
+    @Published private var koreanFiles: [URL: Bool] = [:]
+    private let koreanCheck: (URL) -> Bool
     private var refreshedSeries: Set<String> = []
     private var pendingFraction: Double?
     private let titleLookup = TitleLookup()
@@ -75,7 +76,8 @@ final class EpisodePlayerModel: ObservableObject {
     private var subtitleSearchCache: [String: [SubtitleAsset]] = [:]
     private let subtitleLookup: ((String, @escaping ([SubtitleAsset]?, String?) -> Void) -> Void)?
     private var observers: Set<AnyCancellable> = []
-    init(item: PlaybackItem, subtitleLookup: ((String, @escaping ([SubtitleAsset]?, String?) -> Void) -> Void)? = nil) {
+    init(item: PlaybackItem, subtitleLookup: ((String, @escaping ([SubtitleAsset]?, String?) -> Void) -> Void)? = nil, koreanCheck: @escaping (URL) -> Bool = SubtitleFiles.isKorean) {
+        self.koreanCheck = koreanCheck
         self.subtitleLookup = subtitleLookup
         if let subtitleLookup {
             jimaku = DesktopJimakuCatalog(fetch: { _ in
@@ -105,6 +107,7 @@ final class EpisodePlayerModel: ObservableObject {
             let file = SubtitleFiles.root.appendingPathComponent(relative).standardizedFileURL
             if file.path.hasPrefix(SubtitleFiles.root.path + "/"), FileManager.default.fileExists(atPath: file.path) {
                 sourceSubtitle = file; subtitle = file; subtitleFiles = [file]
+                Task { _ = await isKoreanSubtitle(file) }
             }
         }
         configure(library)
@@ -337,15 +340,20 @@ final class EpisodePlayerModel: ObservableObject {
         if !automatic {
             library.saveSubtitle(animeID: item.anime.id, episodeID: item.episodeID, file: url, offset: subtitleOffset)
             if saved?.translated == true { library.preferAI(true, animeID: item.anime.id) }
-            else if isKoreanSubtitle(url) { library.preferAI(false, animeID: item.anime.id) }
             // Jimaku is picked per episode and is never kept as the default source; the site's tracks are 자동 (app.js switchSubtitleSource).
             if ["kairan", "csora", "anissia"].contains(selectedProvider) { library.preferences.subtitleProvider = selectedProvider }
             else if selectedProvider == "reanime" && library.preferences.subtitleProvider != "manual" { library.preferences.subtitleProvider = "auto" }
         }
-        if translate && selectedProvider != "user" && saved?.translated != true && library.preferences.translationPreferences(automatic: true) != nil && !isKoreanSubtitle(url) { self.translate(library: library, manual: false) }
-        else { prepareAlongside(library: library) }
-        if automatic && saved?.translated != true && !isKoreanSubtitle(url) && !["kairan", "csora", "anissia", "user"].contains(selectedProvider) { offerKorean(library: library) }
-        prefetchNext(library: library, token: generation)
+        let token = generation, request = subtitleRequest
+        Task {
+            let korean = await isKoreanSubtitle(url)
+            guard token == generation, request == subtitleRequest, subtitle == url else { return }
+            if !automatic && saved?.translated != true && korean { library.preferAI(false, animeID: item.anime.id) }
+            if translate && selectedProvider != "user" && saved?.translated != true && library.preferences.translationPreferences(automatic: true) != nil && !korean { self.translate(library: library, manual: false) }
+            else { prepareAlongside(library: library) }
+            if automatic && saved?.translated != true && !korean && !["kairan", "csora", "anissia", "user"].contains(selectedProvider) { offerKorean(library: library) }
+            prefetchNext(library: library, token: token)
+        }
     }
     private func preferredSubtitle(_ files: [URL], asset: SubtitleAsset? = nil) -> URL? {
         if let asset, ["kairan", "csora", "anissia"].contains(asset.source) {
@@ -473,9 +481,12 @@ final class EpisodePlayerModel: ObservableObject {
     }
     // MARK: Subtitle tab (app.js switchSubtitleSource / renderSubtitleSheet)
 
-    func isKoreanSubtitle(_ url: URL) -> Bool {
+    func isKoreanSubtitle(_ url: URL) async -> Bool {
         if let known = koreanFiles[url] { return known }
-        let value = SubtitleFiles.isKorean(url); koreanFiles[url] = value; return value
+        // Reading and parsing the whole subtitle must not block player controls or a SwiftUI redraw.
+        let check = koreanCheck
+        let value = await Task.detached(priority: .userInitiated) { check(url) }.value
+        koreanFiles[url] = value; return value
     }
     var siteTracks: [RemoteSubtitle] { active?.subtitles ?? resolver.subtitles }
     /// Re:Anime / Miruro list their subtitle languages; Linkkf has its own Korean subtitle.
@@ -500,7 +511,7 @@ final class EpisodePlayerModel: ObservableObject {
         return SubtitleLabels.label(provider: selectedProvider, translated: false, name: subtitle.lastPathComponent, maker: selectedMaker)
     }
     /// One 번역 row: shown while a subtitle that is not Korean is on, a machine translation can be made again, or one runs.
-    var translatable: Bool { translation.running || currentSaved?.translated == true || (subtitle.map { !isKoreanSubtitle($0) } ?? false) }
+    var translatable: Bool { translation.running || currentSaved?.translated == true || (subtitle.map { koreanFiles[$0] == false } ?? false) }
     var retranslatable: Bool { currentSaved?.translated == true && sourceSubtitle != nil && sourceSubtitle != subtitle }
 
     private func press(_ source: String, sheet: String?) {

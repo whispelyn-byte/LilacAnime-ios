@@ -35,6 +35,13 @@ final class SubtitleNameTests: XCTestCase {
         XCTAssertEqual(SubtitleNames.label(file.lastPathComponent), expected)
         XCTAssertEqual(file.lastPathComponent, broken)
     }
+    func testDecomposedFilesystemNamesAreRepaired() {
+        let broken = "내 자막 6í™”.srt".decomposedStringWithCanonicalMapping
+        XCTAssertEqual(SubtitleNames.readable(broken), "내 자막 6화.srt")
+        XCTAssertEqual(SubtitleNames.label(broken), "내 자막 6화.srt")
+        let legitimate = "한국어 Français épisode 6.srt".decomposedStringWithCanonicalMapping
+        XCTAssertEqual(Array(SubtitleNames.readable(legitimate).unicodeScalars), Array(legitimate.unicodeScalars))
+    }
     func testMixedLegitimateAccentsRemainUntouched() {
         for name in ["한국어 Français épisode 6.srt", "日本語 café.ass", "ì è é à.smi", "Ã©.srt"] {
             XCTAssertEqual(SubtitleNames.readable(name), name)

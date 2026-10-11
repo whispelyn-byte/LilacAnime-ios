@@ -6,10 +6,13 @@ enum SubtitleNames {
     // filename through one legacy encoding. Keep changes only when Asian text
     // is recovered; genuine accented filenames are left alone.
     static func readable(_ name: String) -> String {
-        var candidate = name, result = name
-        let originalCount = eastAsianCount(name)
+        // Apple file URLs can decompose í into i + a combining acute accent.
+        // Recompose before interpreting legacy byte values, including between
+        // passes when a name was misdecoded more than once.
+        var candidate = name.precomposedStringWithCanonicalMapping, result = name
+        let originalCount = eastAsianCount(candidate)
         for _ in 0..<3 {
-            let decoded = repairBytes(candidate)
+            let decoded = repairBytes(candidate).precomposedStringWithCanonicalMapping
             if decoded == candidate { break }
             if eastAsianCount(decoded) > originalCount { result = decoded }
             candidate = decoded

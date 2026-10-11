@@ -226,6 +226,7 @@ final class HLSProxy {
     private var quality = "Auto"
     private let media = HLSMediaCache()
     func start(_ stream: ResolvedStream, quality: String = "Auto") async throws -> ResolvedStream {
+        try Task.checkCancellation()
         self.quality = quality
         self.stream = stream
         let parameters = NWParameters.tcp

@@ -235,7 +235,8 @@ final class MPVEngine: ObservableObject {
         let path = file.path
         let result: Int32 = await withCheckedContinuation { continuation in
             Self.blocking.async {
-                let arguments = ["screenshot-to-file", path, "video"].map { strdup($0) }
+                let command: [String] = ["screenshot-to-file", path, "video"]
+                let arguments = command.map { strdup($0) }
                 defer { arguments.forEach { free($0) } }
                 var values: [UnsafePointer<CChar>?] = arguments.map { $0.map { UnsafePointer<CChar>($0) } } + [nil]
                 continuation.resume(returning: mpv_command(handle, &values))

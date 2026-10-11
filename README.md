@@ -149,7 +149,9 @@ brew install xcodegen
 sh iosApp/scripts/verify.sh
 ~~~
 
-GitHub Actions는 공통 테스트, KMP iOS 테스트, 네이티브 iOS 테스트, 시뮬레이터 캡처, unsigned arm64 IPA 패키징을 실행합니다. 릴리즈에는 실기기용 IPA와 SideStore source.json을 게시합니다. 시뮬레이터 앱은 개발·검증용 Actions 아티팩트로만 제공합니다. **App Store 배포용 서명 빌드가 아닙니다.**
+GitHub Actions는 공통 테스트, KMP iOS 테스트, 네이티브 iOS 테스트, iPhone/iPad UI 검사와 unsigned arm64 IPA 패키징을 실행합니다. 릴리즈에는 실기기용 IPA와 SideStore source.json을 게시합니다. 시뮬레이터 앱은 개발·검증용 Actions 아티팩트로만 제공합니다. **App Store 배포용 서명 빌드가 아닙니다.**
+
+자동 빌드는 Xcode 컴파일 결과와 Kotlin/Native 의존성을 캐시하고, 같은 커밋에 릴리즈 태그가 있으면 태그 빌드에서 한 번만 검증합니다. 화면 캡처 13개는 Actions의 **Run workflow → capture_previews**를 켰을 때 생성합니다. 로컬 `verify.sh`는 기본으로 캡처하며, `CAPTURE_PREVIEWS=0 sh iosApp/scripts/verify.sh`로 생략할 수 있습니다. iPhone/iPad UI 검사는 캡처 여부와 관계없이 실행합니다.
 
 앱 버전은 app/module.toml의 Android versionName을 사용합니다. iOS 빌드 번호는 Android versionCode에 iosApp/revision.txt의 값을 더합니다. 배포 태그는 `python3 iosApp/scripts/android-version.py --tag`로 확인합니다(현재 **v0.4.3-ios.12**). 해당 태그를 푸시하면 모든 테스트·빌드가 성공한 뒤 IPA와 실제 메타데이터로 생성한 SideStore source.json을 릴리스에 게시합니다. 최신 소스 주소는 그대로 유지됩니다.
 

@@ -4,6 +4,11 @@ concurrency:
   cancel-in-progress: true
 on:
   workflow_dispatch:
+    inputs:
+      capture_previews:
+        description: Capture iPhone and iPad preview screenshots
+        type: boolean
+        default: false
   push:
     branches: ['main']
     tags: ['v*']
@@ -11,7 +16,27 @@ on:
   pull_request:
     paths: ['shared/**', 'iosApp/**', '*gradle*', 'gradle/**', '.github/workflows/kmp.yml']
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.plan.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: plan
+        shell: bash
+        run: |
+          build=true
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then
+            tags=$(git ls-remote --tags origin 'v*')
+            if printf '%s\n' "$tags" | awk -v sha="$GITHUB_SHA" '$1 == sha { found=1 } END { exit !found }'; then
+              echo "The release tag validates this same commit; skipping the duplicate main build."
+              build=false
+            fi
+          fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
   shared:
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,6 +58,8 @@ jobs:
           name: shared-test-results
           path: shared/build/reports/tests/
   ios:
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -42,12 +69,30 @@ jobs:
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
       - name: Select Xcode
+        id: xcode
         run: |
           if [ -d /Applications/Xcode_26.3.app ]; then
             sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
           fi
           xcodebuild -version
+          echo "version=$(xcodebuild -version | tr ' \n' '__')" >> "$GITHUB_OUTPUT"
       - run: brew install xcodegen
+      - name: Cache Kotlin Native compiler and dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.xcode.outputs.version }}-${{ hashFiles('build.gradle.kts', 'shared/build.gradle.kts', 'gradle/libs.versions.toml') }}
+      - name: Cache Xcode compilation
+        uses: actions/cache@v4
+        with:
+          path: |
+            iosApp/build/DerivedData/Build
+            iosApp/build/DerivedData/ModuleCache.noindex
+            iosApp/build/DerivedData/SDKStatCaches.noindex
+          key: xcode-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.xcode.outputs.version }}-${{ hashFiles('iosApp/Native/Package.swift', 'iosApp/project.yml') }}-${{ github.sha }}
+          restore-keys: |
+            xcode-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.xcode.outputs.version }}-${{ hashFiles('iosApp/Native/Package.swift', 'iosApp/project.yml') }}-
+            xcode-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.xcode.outputs.version }}-
       - uses: actions/cache@v4
         with:
           path: iosApp/build/DerivedData/SourcePackages
@@ -64,6 +109,8 @@ jobs:
           path: iosApp/Native/Frameworks
           key: ${{ steps.native-cache.outputs.cache-primary-key }}
       - run: sh iosApp/scripts/verify.sh
+        env:
+          CAPTURE_PREVIEWS: ${{ github.event_name == 'workflow_dispatch' && inputs.capture_previews && '1' || '0' }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -84,7 +131,7 @@ jobs:
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.capture_previews
         with:
           name: ios-ui-preview
           path: iosApp/build/screenshots/*.png

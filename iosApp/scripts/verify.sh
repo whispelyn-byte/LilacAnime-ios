@@ -34,6 +34,7 @@ xcrun simctl bootstatus "$SIMULATOR_ID" -b
 RESULT="build/Tests-$(date +%Y%m%d-%H%M%S).xcresult"
 xcodebuild -project LilacAnime.xcodeproj -scheme LilacAnime -configuration Debug -derivedDataPath build/DerivedData -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -resultBundlePath "$RESULT" CODE_SIGNING_ALLOWED=NO MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$APP_BUILD" -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 180 -maximum-test-execution-time-allowance 300 test
 mkdir -p build/screenshots
+if [ "${CAPTURE_PREVIEWS:-1}" = 1 ]; then
 xcrun simctl bootstatus "$SIMULATOR_ID" -b
 xcrun simctl install "$SIMULATOR_ID" build/DerivedData/Build/Products/Debug-iphonesimulator/LilacAnime.app
 xcrun simctl status_bar "$SIMULATOR_ID" override --time '9:41' --batteryState charged --batteryLevel 100
@@ -48,12 +49,14 @@ xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" com.lilac.anime.
 sleep 12
 xcrun simctl io "$SIMULATOR_ID" screenshot build/screenshots/home-light.png
 xcrun simctl terminate "$SIMULATOR_ID" com.lilac.anime.ios
+fi
 xcrun simctl shutdown "$SIMULATOR_ID"
 IPAD_ID="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); pads=[v for group in d["devices"].values() for v in group if v.get("isAvailable") and "iPad" in v["name"]]; print(pads[0]["udid"] if pads else "")')"
 if [ -n "$IPAD_ID" ]; then
   xcrun simctl boot "$IPAD_ID" || true
   xcrun simctl bootstatus "$IPAD_ID" -b
   xcodebuild -project LilacAnime.xcodeproj -scheme LilacAnime -configuration Debug -derivedDataPath build/DerivedData -destination "platform=iOS Simulator,id=$IPAD_ID" -resultBundlePath build/iPadMenu.xcresult CODE_SIGNING_ALLOWED=NO MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$APP_BUILD" -parallel-testing-enabled NO -only-testing:LilacAnimeUITests/PlaybackTests/testRepeatedMenuNavigationRemainsInteractive -only-testing:LilacAnimeUITests/PlaybackTests/testWorkspaceMenuCanReachCatalog -only-testing:LilacAnimeUITests/PlaybackTests/testPlayerPanelAndFitModes -only-testing:LilacAnimeUITests/PlaybackTests/testLocalModelsBackAndWorkspaceNavigation test
+  if [ "${CAPTURE_PREVIEWS:-1}" = 1 ]; then
   xcrun simctl install "$IPAD_ID" build/DerivedData/Build/Products/Debug-iphonesimulator/LilacAnime.app
   xcrun simctl ui "$IPAD_ID" appearance dark
   xcrun simctl launch --terminate-running-process "$IPAD_ID" com.lilac.anime.ios --ui-preview workspace
@@ -65,6 +68,7 @@ if [ -n "$IPAD_ID" ]; then
     xcrun simctl io "$IPAD_ID" screenshot "build/screenshots/$SCREEN-ipad-dark.png"
   done
   xcrun simctl terminate "$IPAD_ID" com.lilac.anime.ios
+  fi
   xcrun simctl shutdown "$IPAD_ID"
 fi
 xcodebuild -project LilacAnime.xcodeproj -scheme LilacAnime -configuration Debug -derivedDataPath build/DerivedData -destination "generic/platform=iOS" CODE_SIGNING_ALLOWED=NO MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$APP_BUILD" build

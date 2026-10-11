@@ -104,6 +104,9 @@ final class DownloadStore: ObservableObject {
     @Published var transferRate: [String: Double] = [:]
     private var samples: [String: (Date, Int64)] = [:]
     private var rates: [String: Double] = [:]
+    private var lastPublished: [String: Date] = [:]
+    /// Finished episodes whose own manifest (download-entry.json) may be out of date.
+    private var dirtyManifests: Set<String> = []
     private let subtitlePreparer = DesktopSubtitlePreparer()
     @Published var error: String?
     @Published var notice: String?
@@ -373,6 +376,7 @@ final class DownloadStore: ObservableObject {
                 entries[index].localFile = entries[index].rootFile; entries[index].status = "완료"; entries[index].error = nil; entries[index].retries = 0
                 prepareCompletedDownloads(); analyzeCompletedDownloads()
             }
+            dirtyManifests.insert(entries[index].id)
             persist()
         } catch { backgroundFailed(description, error: error) }
     }
@@ -420,7 +424,10 @@ final class DownloadStore: ObservableObject {
         let id = description.components(separatedBy: "|")[0]
         guard let entry = entries.first(where: { $0.id == id }), entry.status == "다운로드 중",
               DownloadIdentity.accepts(description, attempt: entry.attemptID) else { return }
-        byteProgress[id] = expected > 0 ? Double(written) / Double(expected) : 0
+        // Every few kilobytes of every segment reports here; the published values (which redraw every view that shows
+        // downloads, the player included) change at most twice a second per episode.
+        let now = Date()
+        if now.timeIntervalSince(lastPublished[id] ?? .distantPast) >= 0.5 { lastPublished[id] = now; byteProgress[id] = expected > 0 ? Double(written) / Double(expected) : 0 }
         if let sample = samples[description], Date().timeIntervalSince(sample.0) >= 1 {
             rates[description] = Double(max(0, written - sample.1)) / Date().timeIntervalSince(sample.0)
             transferRate[id] = rates.filter { $0.key.hasPrefix(id + "|") }.values.reduce(0, +)
@@ -437,6 +444,7 @@ final class DownloadStore: ObservableObject {
     func clearList() {
         let removable = Set(entries.filter { !["대기", "준비 중", "다운로드 중"].contains($0.status) && !busy($0.id) }.map(\.id))
         // Older versions only kept the central index; keep recovery metadata before hiding those entries.
+        dirtyManifests.formUnion(entries.map(\.id))
         guard persist() else { return }
         entries.removeAll { removable.contains($0.id) }
         persist()
@@ -639,7 +647,7 @@ final class DownloadStore: ObservableObject {
     func importCompleted(_ values: [DownloadEntry]) {
         for var entry in values where entry.localFile != nil {
             guard !entries.contains(where: { $0.id == entry.id }) else { continue }
-            entry.status = "완료"; entry.error = nil; entries.append(entry)
+            entry.status = "완료"; entry.error = nil; entries.append(entry); dirtyManifests.insert(entry.id)
             for name in entry.fontFiles ?? [] { _ = try? SubtitleFiles.importFont(Self.directory.appendingPathComponent(entry.id).appendingPathComponent(name)) }
             if let chapters = entry.chapters {
                 try? FileManager.default.createDirectory(at: OfflineAnalyzer.directory, withIntermediateDirectories: true)
@@ -650,14 +658,21 @@ final class DownloadStore: ObservableObject {
     }
     private func update(_ id: String, change: (inout DownloadEntry) -> Void) {
         guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
-        change(&entries[index]); persist()
+        change(&entries[index]); dirtyManifests.insert(id); persist()
     }
     @discardableResult private func persist() -> Bool {
         do {
             let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
             try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
-            try encoder.encode(entries).write(to: file, options: .atomic)
-            for entry in entries where entry.localFile != nil {
+            // The list changes with every finished segment: its index is written off the main thread, the latest one.
+            let snapshot = entries
+            BackgroundWriter.shared.write(file, after: 0.5, failed: { [weak self] message in self?.error = message }) {
+                let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
+                return try encoder.encode(snapshot)
+            }
+            // Only the episodes that changed: encoding every finished one each time a segment arrived kept the main thread busy.
+            let changed = dirtyManifests; dirtyManifests = []
+            for entry in entries where entry.localFile != nil && changed.contains(entry.id) {
                 let folder = Self.directory.appendingPathComponent(entry.id)
                 let data = try encoder.encode(entry)
                 if savedManifests[entry.id] != data && FileManager.default.fileExists(atPath: folder.path) {

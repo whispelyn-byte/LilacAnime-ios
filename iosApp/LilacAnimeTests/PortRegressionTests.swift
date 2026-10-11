@@ -131,6 +131,7 @@ final class PortRegressionTests: XCTestCase {
         let saved = store.list(item)
         XCTAssertEqual(saved.count, 20); XCTAssertTrue(saved.contains { $0.name == "20.srt" })
         XCTAssertFalse(saved.contains { $0.name == "19.srt" })
+        BackgroundWriter.shared.waitUntilWritten()
         let reloaded = EpisodeSubtitleStore(index: folder.appendingPathComponent("index.json"))
         XCTAssertEqual(reloaded.list(item).map(\.id), saved.map(\.id))
     }

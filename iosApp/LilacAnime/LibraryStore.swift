@@ -152,12 +152,11 @@ final class LibraryStore: ObservableObject {
     func deleteHistory(_ offsets: IndexSet) { history.remove(atOffsets: offsets); persist() }
     func clearHistory() { history.removeAll(); persist() }
     func deleteHistory(ids: Set<String>) { history.removeAll { ids.contains($0.id) }; persist() }
+    /// Written off the main thread: the history carries each series' snapshot and is saved every few seconds while playing.
     private func persist() {
         guard ready else { return }
-        do {
-            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try JSONEncoder().encode(State(preferences: preferences, favorites: favorites, history: history, subtitles: subtitleChoices, aiSubtitleSeries: aiSubtitleSeries)).write(to: file, options: .atomic)
-        } catch { persistenceError = "보관함 저장 실패: " + error.localizedDescription }
+        let state = State(preferences: preferences, favorites: favorites, history: history, subtitles: subtitleChoices, aiSubtitleSeries: aiSubtitleSeries)
+        BackgroundWriter.shared.write(file, after: 0.5, failed: { [weak self] message in self?.persistenceError = "보관함 저장 실패: " + message }) { try JSONEncoder().encode(state) }
     }
 }
 

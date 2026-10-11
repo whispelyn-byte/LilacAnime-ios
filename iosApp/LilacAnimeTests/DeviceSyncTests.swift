@@ -56,3 +56,24 @@ final class DeviceSyncTests: XCTestCase {
         XCTAssertEqual(DeviceSyncMapping.historyItem(entry)?["progress"] as? Double, 42)
     }
 }
+
+final class BackgroundWriterTests: XCTestCase {
+    func testChangesCloseTogetherAreWrittenOnceWithTheLatestValue() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("state.json")
+        defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+        let writer = BackgroundWriter()
+        let encoded = Counter()
+        for value in 1...50 {
+            writer.write(file, after: 0.2) { encoded.add(); return Data(String(value).utf8) }
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path), "nothing is written on the caller's thread")
+        writer.waitUntilWritten()
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "50")
+        XCTAssertEqual(encoded.value, 1)
+    }
+    private final class Counter: @unchecked Sendable {
+        private let lock = NSLock(); private var count = 0
+        func add() { lock.lock(); count += 1; lock.unlock() }
+        var value: Int { lock.lock(); defer { lock.unlock() }; return count }
+    }
+}

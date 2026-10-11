@@ -62,7 +62,11 @@ final class EpisodeSubtitleStore: ObservableObject {
         if let file, !records.contains(where: { $0.file == file || $0.original == file }) { try? FileManager.default.removeItem(at: file) }
     }
     func clear() { records.removeAll(); persist() }
-    private func persist() { do { try JSONEncoder().encode(records).write(to: index, options: .atomic) } catch { self.error = error.localizedDescription } }
+    /// Saved at every translated batch while a subtitle is translated: written off the main thread, the latest list.
+    private func persist() {
+        let records = records
+        BackgroundWriter.shared.write(index, after: 0.5, failed: { [weak self] message in self?.error = message }) { try JSONEncoder().encode(records) }
+    }
     func protectedFiles(library: LibraryStore) -> Set<URL> {
         let subtitles = records.compactMap(\.file) + records.compactMap(\.original) + library.subtitleChoices.values.compactMap { $0.relativeFile.map { SubtitleFiles.root.appendingPathComponent($0).standardizedFileURL } }
         return Set(subtitles + subtitles.map { $0.appendingPathExtension("fonts.json") } + subtitles.flatMap { SubtitleFiles.fonts(for: $0) })

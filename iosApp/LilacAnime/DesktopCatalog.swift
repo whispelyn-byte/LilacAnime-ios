@@ -129,7 +129,7 @@ final class DesktopCatalog: ObservableObject {
                     guard token == generation else { return }
                     guard !result.isEmpty, seenPages.insert(result.map(\.id).joined(separator: "|")).inserted else { break }
                     gathered = CatalogIndexMerge.merge(gathered, incoming: result.map { SavedAnime($0, source: source) }); catalogs[source] = gathered
-                    try persist(gathered, name: source + ".json")
+                    persist(gathered, name: source + ".json")
                     page += 1
                     try await Task.sleep(nanoseconds: 400_000_000)
                 }
@@ -145,11 +145,14 @@ final class DesktopCatalog: ObservableObject {
                 }
                 if let data = bulk?.data(using: .utf8), let titles = try? JSONDecoder().decode([String: String].self, from: data) {
                     let credential = SubtitleFiles.key(SecureKeys.load("tmdb"))
-                    for item in gathered where names[item.id]?.korean.isEmpty != false {
+                    // Applied together: one change of the published names instead of one per title.
+                    var updated = names
+                    for item in gathered where updated[item.id]?.korean.isEmpty != false {
                         guard let id = item.anime.anilistId, let korean = titles[String(id.intValue)] else { continue }
-                        names[item.id] = CatalogName(korean: DesktopTitleRules.shared.seasonal(title: korean, original: item.title, format: item.anime.format), english: item.anime.english,
+                        updated[item.id] = CatalogName(korean: DesktopTitleRules.shared.seasonal(title: korean, original: item.title, format: item.anime.format), english: item.anime.english,
                             overview: "", aliases: [korean], cast: [], anilist: id.intValue, mal: item.anime.malId?.intValue ?? 0, updated: Date(), credential: credential)
                     }
+                    names = updated
                     saveNames()
                 }
                 guard !SecureKeys.load("tmdb").isEmpty else {
@@ -190,11 +193,11 @@ final class DesktopCatalog: ObservableObject {
     private func knownCount(_ values: [SavedAnime]) -> Int { values.filter { names[$0.id]?.korean.isEmpty == false || TitleCandidates.shared.isKorean(title: $0.title) }.count }
     func stop() { generation = UUID(); task?.cancel(); task = nil; titleRetry?.cancel(); titleRetry = nil; running = false; status = "일시 중지" }
     func clear() { stop(); lookups.values.forEach { $0.cancel() }; lookups = [:]; nextLookup = .distantPast; names = [:]; catalogs = [:]; try? FileManager.default.removeItem(at: directory) }
-    private func persist<T: Encodable>(_ value: T, name: String) throws {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try JSONEncoder().encode(value).write(to: directory.appendingPathComponent(name), options: .atomic)
+    /// The whole catalog and the title index are large: encoded and written off the main thread, at most every 2 s.
+    private func persist<T: Encodable>(_ value: T, name: String) {
+        BackgroundWriter.shared.write(directory.appendingPathComponent(name), after: 2, failed: { [weak self] message in self?.error = message }) { try JSONEncoder().encode(value) }
     }
-    private func saveNames() { do { try persist(names, name: "names.json") } catch { self.error = error.localizedDescription } }
+    private func saveNames() { persist(names, name: "names.json") }
 }
 enum CatalogTitleRetry {
     static func delay(auth: Bool, retryAfter: Double) -> Double { max(auth ? 1800 : 60, retryAfter) }

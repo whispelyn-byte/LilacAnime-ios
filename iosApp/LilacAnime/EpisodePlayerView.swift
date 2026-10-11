@@ -227,7 +227,7 @@ final class EpisodePlayerModel: ObservableObject {
                 reloadVideo(playable, resume: library.resume(item.anime, episodeID: item.episodeID))
                 if subtitle == nil { automaticSubtitle(stream, library: library, token: token) }
                 prefetchNext(library: library, token: token)
-            } catch { if token == generation { self.error = error.localizedDescription } }
+            } catch { if token == generation, playing == playRequest { self.error = error.localizedDescription } }
         }
     }
     func applyPreferences(_ library: LibraryStore) { configure(library) }
@@ -1280,8 +1280,14 @@ struct TranslationStatus: View {
 }
 struct ProviderPlayerView: UIViewRepresentable {
     let resolver: PlaybackResolver
-    func makeUIView(context: Context) -> WKWebView { resolver.playbackWebView }
-    func updateUIView(_ view: WKWebView, context: Context) {}
+    func makeUIView(context: Context) -> UIView { UIView() }
+    func updateUIView(_ view: UIView, context: Context) {
+        let web = resolver.playbackWebView
+        guard web.superview !== view else { return }
+        view.subviews.forEach { $0.removeFromSuperview() }
+        web.frame = view.bounds; web.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(web)
+    }
 }
 struct AirPlayButton: UIViewRepresentable {
     func makeUIView(context: Context) -> AVRoutePickerView { let view = AVRoutePickerView(); view.prioritizesVideoDevices = true; return view }

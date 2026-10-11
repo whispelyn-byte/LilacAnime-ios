@@ -1,6 +1,21 @@
 import XCTest
 @testable import LilacAnime
 final class HLSDataTests: XCTestCase {
+    func testCancelledProxyStartFinishesInsteadOfLeavingTheCallerWaiting() async {
+        let proxy = HLSProxy()
+        let finished = expectation(description: "Cancelled proxy start returns")
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            do {
+                let stream = ResolvedStream(label: "test", url: URL(string: "https://example.test/video.m3u8")!, referer: "", headers: [:])
+                _ = try await proxy.start(stream)
+                XCTFail("Cancelled start should fail")
+            } catch { XCTAssertTrue(error is CancellationError) }
+            finished.fulfill()
+        }
+        await fulfillment(of: [finished], timeout: 5)
+        task.cancel(); proxy.stop()
+    }
     func testRelativeKeysMapsAndSegmentsAreRewritten() {
         let manifest = "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\"\n#EXT-X-MAP:URI=\"../init.mp4\",BYTERANGE=\"20@0\"\nsegments/1.ts\n#EXT-X-ENDLIST"
         let base = URL(string: "https://example.test/watch/index.m3u8")!

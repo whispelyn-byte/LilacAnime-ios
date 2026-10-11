@@ -233,14 +233,18 @@ final class HLSProxy {
         let listener = try NWListener(using: parameters)
         self.listener = listener
         listener.newConnectionHandler = { [weak self] connection in self?.receive(connection) }
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            var resumed = false
-            listener.stateUpdateHandler = { [weak self] state in
-                if case .ready = state, !resumed { resumed = true; self?.port = listener.port?.rawValue ?? 0; continuation.resume() }
-                if case .failed(let error) = state, !resumed { resumed = true; continuation.resume(throwing: error) }
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                var resumed = false
+                listener.stateUpdateHandler = { [weak self] state in
+                    if case .ready = state, !resumed { resumed = true; self?.port = listener.port?.rawValue ?? 0; continuation.resume() }
+                    if case .failed(let error) = state, !resumed { resumed = true; continuation.resume(throwing: error) }
+                    if case .cancelled = state, !resumed { resumed = true; continuation.resume(throwing: CancellationError()) }
+                }
+                listener.start(queue: queue)
             }
-            listener.start(queue: queue)
-        }
+        } onCancel: { listener.cancel() }
+        try Task.checkCancellation()
         let url = queue.sync { register(stream.url) }
         var proxied = stream; proxied.url = url; proxied.headers = [:]; proxied.manifestKey = nil; proxied.hlsManifest = nil
         return proxied

@@ -73,7 +73,7 @@ struct HomeView: View {
                                                 AnimeArtwork(url: entry.anime.anime.backdrop.isEmpty ? entry.anime.poster : entry.anime.anime.backdrop, width: 240, height: 132)
                                                     .clipShape(RoundedRectangle(cornerRadius: 18))
                                                     .overlay { Image(systemName: "play.circle.fill").font(.system(size: 38)).foregroundStyle(.white) }
-                                                Text(entry.anime.title).font(.subheadline.bold()).lineLimit(1)
+                                                AnimeDisplayTitle(anime: entry.anime.anime, source: entry.anime.source).font(.subheadline.bold()).lineLimit(1)
                                                 Text(entry.episodeTitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                                                 ProgressView(value: entry.duration > 0 ? min(entry.position / entry.duration, 1) : 0)
                                             }.frame(width: 240).foregroundStyle(.primary)

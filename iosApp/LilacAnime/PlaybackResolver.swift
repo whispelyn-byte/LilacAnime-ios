@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import WebKit
 import AVFoundation
 import LilacShared
@@ -64,6 +65,10 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
     private var generation = UUID()
     private var currentItem: PlaybackItem?
     private var serverCandidates: [DesktopPlaybackServer] = []
+    private var serverRace: Task<Void, Never>?
+    private var selectedResolver: PlaybackResolver?
+    private var selectedSubscriptions = Set<AnyCancellable>()
+    var playbackWebView: WKWebView { selectedResolver?.webView ?? webView }
     private var preferRaw = false
     private var ohliPlayer: URL?
     private var candidateTasks: [URL: Task<Void, Never>] = [:]
@@ -162,7 +167,8 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
                     self.servers = servers ?? []
                     func rank(_ server: DesktopPlaybackServer) -> Int { server.label == preferred ? 0 : server.kind == (preferRaw ? "raw" : "sub") ? 1 : server.kind == "sub" ? 2 : server.kind == "raw" ? 3 : 4 }
                     self.serverCandidates = item.anime.source == "animenosub" ? self.servers.sorted { rank($0) < rank($1) } : self.servers
-                    self.loadNextServer(fallback: item.watchURL)
+                    if item.anime.source == "reanime", !self.serverCandidates.isEmpty { self.raceServers(self.serverCandidates, item: item) }
+                    else { self.loadNextServer(fallback: item.watchURL) }
                 }
             }
             return
@@ -182,6 +188,8 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
         loadPage(item.watchURL, seconds: 45)
     }
     func selectServer(_ server: DesktopPlaybackServer) {
+        serverRace?.cancel(); serverRace = nil
+        clearSelectedResolver()
         generation = UUID(); webView.stopLoading(); timeout?.cancel(); streams = []; subtitles = []; error = nil; loading = true
         serverCandidates = servers.filter { $0.url != server.url }; serverLabel = server.label
         if let url = URL(string: server.url) { loadPage(url, seconds: 15) }
@@ -195,6 +203,48 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
         if let fallback { serverLabel = ""; loadPage(fallback, seconds: 45); return }
         loading = false; error = "모든 영상 서버 연결에 실패했습니다."
     }
+    private func raceServers(_ servers: [DesktopPlaybackServer], item: PlaybackItem) {
+        serverRace?.cancel()
+        serverCandidates = []
+        let token = generation
+        serverRace = Task { [weak self] in
+            let resolvers = servers.map { _ in PlaybackResolver() }
+            defer { for resolver in resolvers where resolver !== self?.selectedResolver { resolver.shutdown() } }
+            do {
+                let winner = try await StaggeredResolver.first(Array(zip(servers, resolvers))) { pair in
+                    try await Self.readServer(pair.0, item: item, resolver: pair.1)
+                }
+                guard let self, token == self.generation, !Task.isCancelled else { winner.shutdown(); return }
+                self.selectedResolver = winner
+                // Keep the winner alive: captions can arrive after the first video URL.
+                winner.$streams.sink { [weak self] in self?.streams = $0 }.store(in: &self.selectedSubscriptions)
+                winner.$subtitles.sink { [weak self] in self?.subtitles = $0 }.store(in: &self.selectedSubscriptions)
+                self.serverLabel = winner.serverLabel
+                self.loading = false; self.error = nil
+            } catch {
+                guard let self, token == self.generation, !Task.isCancelled else { return }
+                self.error = nil; self.serverLabel = ""
+                self.loadPage(item.watchURL, seconds: 45)
+            }
+        }
+    }
+    private func clearSelectedResolver() {
+        selectedSubscriptions.removeAll()
+        selectedResolver?.shutdown(); selectedResolver = nil
+    }
+    private static func readServer(_ server: DesktopPlaybackServer, item: PlaybackItem, resolver: PlaybackResolver) async throws -> PlaybackResolver {
+        guard let url = URL(string: server.url) else { throw SubtitleFiles.failure("영상 서버 주소가 올바르지 않습니다.") }
+        resolver.currentItem = item; resolver.silent = true; resolver.serverLabel = server.label; resolver.loading = true
+        resolver.loadPage(url, seconds: 30)
+        while resolver.loading {
+            try Task.checkCancellation()
+            if !resolver.streams.isEmpty { return resolver }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        try Task.checkCancellation()
+        if !resolver.streams.isEmpty { return resolver }
+        throw SubtitleFiles.failure(resolver.error ?? "영상 서버 연결에 실패했습니다.")
+    }
     private func loadPage(_ url: URL, seconds: Double) {
         let token = generation
         var request = URLRequest(url: url)
@@ -207,6 +257,8 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
         }
     }
     func cancel() {
+        serverRace?.cancel(); serverRace = nil
+        clearSelectedResolver()
         desktop.cancel(); generation = UUID(); timeout?.cancel(); timeout = nil
         candidateTasks.values.forEach { $0.cancel() }; candidateTasks.removeAll(); ohliPlayer = nil
         pendingOhli.removeAll(); lastOhliCandidate = nil

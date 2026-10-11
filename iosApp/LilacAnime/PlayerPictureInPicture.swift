@@ -7,7 +7,8 @@ import Libmpv
 /// Capture, conversion and scaling run on MPVEngine's serial worker, never the UI thread.
 enum PiPFrame {
     static func capture(_ handle: OpaquePointer, position: Double) throws -> CMSampleBuffer {
-        let arguments = ["screenshot-raw", "subtitles", "bgra"].map { strdup($0) }
+        let command: [String] = ["screenshot-raw", "subtitles", "bgra"]
+        let arguments = command.map { strdup($0) }
         defer { arguments.forEach { free($0) } }
         var values: [UnsafePointer<CChar>?] = arguments.map { $0.map { UnsafePointer<CChar>($0) } } + [nil]
         var result = mpv_node()

@@ -17,6 +17,7 @@ class ReleaseVersionTests(unittest.TestCase):
         (self.root / "app").mkdir()
         (self.root / "app/module.toml").write_text('versionName = "0.4.0"\nversionCode = 30\n')
         (self.root / "iosApp/revision.txt").write_text("9\n")
+        (self.root / "iosApp/version.txt").write_text("0.4.0\n")
         self.project = self.root / "iosApp/project.yml"
         self.project.write_text('    MARKETING_VERSION: "0.4.0"\n    CURRENT_PROJECT_VERSION: "39"\n')
         self.script = scripts / "android-version.py"
@@ -28,6 +29,13 @@ class ReleaseVersionTests(unittest.TestCase):
 
     def test_matching_release(self):
         result = self.run_check("--release-tag", "v0.4.0-ios.9")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("build 39", result.stdout)
+
+    def test_ios_version_can_advance_without_changing_android(self):
+        (self.root / "iosApp/version.txt").write_text("0.4.1\n")
+        self.project.write_text(self.project.read_text().replace('"0.4.0"', '"0.4.1"'))
+        result = self.run_check("--release-tag", "v0.4.1-ios.9")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("build 39", result.stdout)
 

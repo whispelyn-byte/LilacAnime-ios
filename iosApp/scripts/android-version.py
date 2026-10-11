@@ -1,4 +1,4 @@
-"""Read the Android version, optionally apply it to an unsigned device app."""
+"""Read iOS release metadata, retaining the Android versionCode build baseline."""
 import argparse
 from pathlib import Path
 import plistlib
@@ -14,7 +14,9 @@ parser.add_argument("--app", type=Path)
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[2]
 module = (root / "app/module.toml").read_text(encoding="utf-8")
-version = re.search(r'^versionName\s*=\s*"(\d+\.\d+\.\d+)"', module, re.M).group(1)
+version = (root / "iosApp/version.txt").read_text().strip()
+if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+    raise SystemExit("iosApp/version.txt must contain a three-part iOS app version")
 build = re.search(r"^versionCode\s*=\s*(\d+)", module, re.M).group(1)
 revision = int((root / "iosApp/revision.txt").read_text().strip())
 build = str(int(build) + revision)
@@ -40,7 +42,7 @@ elif args.app:
     info["CFBundleShortVersionString"] = version
     info["CFBundleVersion"] = build
     path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
-    print("Applied Android version:", version, "build", build)
+    print("Applied iOS version:", version, "build", build)
 elif args.tag:
     print(tag)
 elif args.version:

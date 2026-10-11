@@ -1,6 +1,6 @@
 {
-  "desktopCommit": "f38763949d9e8b3be2284bf97207a960bd642443",
-  "desktopVersion": "0.5.10",
+  "desktopCommit": "16c9a3d1631061a72831e0657434003940daf531",
+  "desktopVersion": "0.5.15",
   "files": [
     {
       "desktop": ".github/workflows/build.yml",
@@ -25,7 +25,7 @@
     },
     {
       "desktop": "electron/catalog-browser.cjs",
-      "sha256": "192fc19b3efaec6670875e60413e989099401b8be376805089faa081bd7ac21f",
+      "sha256": "3132bf88944387e3cd0059054fc56b3025f3d43bcba528822da6ec6480a1f878",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -35,7 +35,7 @@
     },
     {
       "desktop": "electron/catalog-updates.cjs",
-      "sha256": "5f70f023ceca0ff63cc063f16320b98151ec82f3aef72fbdbac4a775c1d97e86",
+      "sha256": "74dee5423a641fca0a6011616796e4ace4b2c9085bf6e26890b92602a6139040",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -66,8 +66,17 @@
       ]
     },
     {
+      "desktop": "electron/device-sync.cjs",
+      "sha256": "ca171872071c98823356c858bd8fe9ecfeed4ffa31d4e0568c06e4816d961962",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "iosApp/LilacAnime/DeviceSync.swift"
+      ]
+    },
+    {
       "desktop": "electron/download-manager.cjs",
-      "sha256": "ac24d5cac1fd8c498991801f12e3a08f5fcf36ba803736957cbab5ac89413f97",
+      "sha256": "975d1f4c35e32648a40f3feb09b00b079e01626388ad72789d9af2115b3dea75",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -88,7 +97,7 @@
     },
     {
       "desktop": "electron/flix-proxy.cjs",
-      "sha256": "20098ad01302dfed3dd3b646ec1eabd63c27a0753c74963f4da4b079e3c7f4df",
+      "sha256": "11e9982b013bca31149946d5d289d988c7e7c903ed700dad9a3fa0ebd2e92812",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -108,7 +117,7 @@
     },
     {
       "desktop": "electron/main.cjs",
-      "sha256": "92f75611568beea849d875b5e4205d521d0e198e6fb48f0cf3a534045a821c8c",
+      "sha256": "919166ce5f9c1b84af052b4ae6c02a387589a0fd6c1fe3e58bcf164dd048dc88",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -139,7 +148,7 @@
     },
     {
       "desktop": "electron/preload.cjs",
-      "sha256": "f307c306ab22035c28f865238a47353e7074d382238623df497cdc71c651aaf5",
+      "sha256": "9da6d22d958901ed38c068f0bea868700e6cae616be69fcb987a9d5ad79e56fc",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -149,7 +158,7 @@
     },
     {
       "desktop": "electron/subtitle-store.cjs",
-      "sha256": "7fb4bd0b22a8d1671584a20c84a124e2808e1e7cf0cf5f42cffefe70429e810d",
+      "sha256": "0b88ab8c8d14d3677e5e9845e4bcb8a434021371b594efb795a7592a4cdb888a",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -190,7 +199,7 @@
     },
     {
       "desktop": "package-lock.json",
-      "sha256": "3310b22ecc7bad3be9ef56ebd856d1470d55fa089a80170d06a6c811c2332452",
+      "sha256": "e8af04dfd3f84f6e74a80997bc41da022ff6f0932f120ec5f204c3ae1479f8f1",
       "uncommitted": false,
       "category": "platform-build",
       "ios": [
@@ -202,7 +211,7 @@
     },
     {
       "desktop": "package.json",
-      "sha256": "8becf31a7f989ca5dd5804cad5921150bd74011b164983162752140a77b13692",
+      "sha256": "4f685a6ea30c76816488155ff91596ea395ae9ac251ad983619e6d68e7ff158b",
       "uncommitted": false,
       "category": "platform-build",
       "ios": [
@@ -243,7 +252,7 @@
     },
     {
       "desktop": "src/app.js",
-      "sha256": "ee3449f99b2df65fcbbcc1745ed853c02d1c1ec6fb09a682334553dc23b87836",
+      "sha256": "75c3cab39ea2b8cd5114a53ebc1731a5c24c002317bed1e2bd5fe31d4a31dee0",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -288,6 +297,16 @@
       ]
     },
     {
+      "desktop": "src/device-sync.js",
+      "sha256": "5639e2464bc7f2468c1f2b876f6884e831ea900a95b0aeade3848e07b8edee96",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "iosApp/LilacAnime/DeviceSync.swift",
+        "iosApp/LilacAnime/SettingsView.swift"
+      ]
+    },
+    {
       "desktop": "src/download-port.css",
       "sha256": "7600f55647b5b31d66aace6c9c1613809ca32711bfc0c7060969faad0ef2e012",
       "uncommitted": false,
@@ -325,7 +344,7 @@
     },
     {
       "desktop": "src/index.html",
-      "sha256": "fdbd723f1ae8d00a0ecebde71f9483a73b088bd0701db7f859c8bda68e7fe968",
+      "sha256": "81f417858de1e792bf163910aae8b9109f1248924d6204696e5984cd86a995c7",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -417,7 +436,7 @@
     },
     {
       "desktop": "src/player-android.css",
-      "sha256": "cf0456b7efdde45cf8767f3223f9f33bc3cd7c2cf53383f16eee19703de8c926",
+      "sha256": "9734c2a63695f300e6518d6ffe7cb1d296d3e8b36a6f0b7c145d28420e3d0b2c",
       "uncommitted": false,
       "category": "native-layout",
       "ios": [
@@ -441,7 +460,7 @@
     },
     {
       "desktop": "src/player.js",
-      "sha256": "19a9e201d745ee299476314d3479c395fb6f4d308303ef47b53c108ffed7ed63",
+      "sha256": "0dc7c63ce0717952b8218d4faba93d09dcb7326f6511d6591b51d29a9b6f39a9",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -535,7 +554,7 @@
     },
     {
       "desktop": "tests/catalog-browser.test.cjs",
-      "sha256": "1c8247c5826ae189544c3cd4e785643498d0e1523461560e006d0c895d19f193",
+      "sha256": "2db4a774f774c9df68e9a36381c0856454e5d6e0221e4173d7a7d072f7f040eb",
       "uncommitted": false,
       "category": "validation",
       "ios": [
@@ -611,8 +630,19 @@
       ]
     },
     {
+      "desktop": "tests/device-sync.test.cjs",
+      "sha256": "f578d77415d1dab960431d851549a975473b9ab246771808c56f54c675691723",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
       "desktop": "tests/download-manager.test.cjs",
-      "sha256": "29025d069814b246eb4eaea109dcec60807f05d9423938602fb5bcd06a48ba08",
+      "sha256": "c6712b4b9df9bd29af09a24e1243567a0167f5e127f679bb2317f97d4d1e495e",
       "uncommitted": false,
       "category": "validation",
       "ios": [
@@ -624,6 +654,28 @@
     {
       "desktop": "tests/download-transfer.test.cjs",
       "sha256": "065c133700443742145c743bb34192608e33ac5445a3f56e84c0c5fc37493fec",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/episode-labels.test.cjs",
+      "sha256": "5de26de4e9dfa59970f3a63588e48e67d52b8c9818d4039638cff2b1b9ee260f",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/flix-hedge.test.cjs",
+      "sha256": "2262eddafa79c1558dad6e6858cbba79718d97aeffc3ad7ba805f4e6ab473a2b",
       "uncommitted": false,
       "category": "validation",
       "ios": [
@@ -667,7 +719,29 @@
     },
     {
       "desktop": "tests/player-interactions.test.cjs",
-      "sha256": "d4692b2fa259c8ba0e0016fc6fd4c4b69099257aa88791a99c5fd775c6d360dc",
+      "sha256": "e06262ccf2f1c407e91054eb3d7ba1740f11a334da450cfcb5208b881f2754f5",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/provider-race.test.cjs",
+      "sha256": "80a78234a420208b6405d7051015ad98cf5a0bb678ddbd87b2de3ec08286af57",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/subtitle-convert.test.cjs",
+      "sha256": "c24e6506348e5d92de33f0e0712dec37ebe451b235213fc7e5bc1d12fbbb95aa",
       "uncommitted": false,
       "category": "validation",
       "ios": [
@@ -1394,6 +1468,42 @@
         "iosApp/LilacAnime/EpisodePlayerView.swift",
         "iosApp/LilacAnime/SettingsView.swift",
         "iosApp/LilacAnime/DesktopUpdater.swift"
+      ]
+    },
+    {
+      "name": "saveScreenshot",
+      "ios": [
+        "iosApp/LilacAnime/PlayerScreenshot.swift",
+        "iosApp/LilacAnime/MPVEngine.swift",
+        "iosApp/LilacAnime/EpisodePlayerView.swift"
+      ]
+    },
+    {
+      "name": "syncStatus",
+      "ios": [
+        "iosApp/LilacAnime/DeviceSync.swift",
+        "iosApp/LilacAnime/SettingsView.swift"
+      ]
+    },
+    {
+      "name": "syncConnect",
+      "ios": [
+        "iosApp/LilacAnime/DeviceSync.swift",
+        "iosApp/LilacAnime/SettingsView.swift"
+      ]
+    },
+    {
+      "name": "syncDisconnect",
+      "ios": [
+        "iosApp/LilacAnime/DeviceSync.swift",
+        "iosApp/LilacAnime/SettingsView.swift"
+      ]
+    },
+    {
+      "name": "syncRequest",
+      "ios": [
+        "iosApp/LilacAnime/DeviceSync.swift",
+        "iosApp/LilacAnime/SettingsView.swift"
       ]
     }
   ]

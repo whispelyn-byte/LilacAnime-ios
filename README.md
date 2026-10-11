@@ -18,13 +18,13 @@
   작품 탐색부터 회차 재생, 자막 검색·번역, 이어보기와 오프라인 감상까지 제공합니다.
 </p>
 
-현재 소스는 앱 버전 **0.4.3**, iOS 리비전 **15**, 빌드 **45**를 사용합니다. 배포된 버전은 위 최신 릴리즈에서 확인할 수 있습니다. 새 설치의 기본 영상 소스는 **ReAnime**이며, 기존에 선택한 소스는 유지합니다.
+현재 소스는 앱 버전 **0.4.4**, iOS 리비전 **16**, 빌드 **46**를 사용합니다. 배포된 버전은 위 최신 릴리즈에서 확인할 수 있습니다. 새 설치의 기본 영상 소스는 **ReAnime**이며, 기존에 선택한 소스는 유지합니다.
 
 데스크탑 0.5.10의 파일·API 목록을 재대조해 자막 검색·선택, 카탈로그 메타데이터·갱신, 번역 요청·재시도·부분 결과, 다운로드·HLS 복원 규칙을 보완했습니다. 리비전 8은 번역 응답 누락, 소개의 코드 노출, 메뉴 이동, 수동 자막 선택, 아이콘과 다운로드 접수 안내를 수정합니다. 리비전 9는 데스크탑 화면 동작을 화면별로 다시 대조해 플레이어 자막 칩·서버 선택, 회차 목록, 다운로드 일괄 동작, 검색을 맞췄습니다. [테스터 제보 수정 및 최신 대조](docs/tester-fixes.md), [기존 코드 대조 결과와 플랫폼 차이](docs/desktop-code-review.md)에서 범위를 확인할 수 있습니다.
 
 ## 주요 기능
 
-[데스크탑 0.5.9](https://github.com/whispelyn-byte/LilacAnime-desktop/tree/4550d61725a8b57e6e890e97bd0f25244a8cf164)의 콘텐츠·자막·번역·다운로드 기능과 한국어 제목 검색 재시도 수정을 KMP와 SwiftUI로 이식했습니다. 홈·전체·검색·시청기록·내 목록·설정을 데스크탑 기준으로 구성했습니다. 자막 우선순위·묶음 첨부/WinPNG·번역 요청/대체·다운로드 자산·최근 회차/정렬과 OP/ED 분석을 다시 대조했고, 애니24에서 광고가 본편으로 선택되는 문제를 수정했습니다. [전체 파일·API 대응 목록](docs/desktop-audit.json)과 [이식·검증 범위](docs/desktop-port.md)를 제공합니다. 기존 즐겨찾기·시청 기록·자막 싱크·설정·수동 GGUF 가져오기는 유지하며, 이전 버전은 [기존 릴리즈](https://github.com/whispelyn-byte/LilacAnime-ios/releases)에서 받을 수 있습니다.
+[데스크탑 0.5.15](https://github.com/whispelyn-byte/LilacAnime-desktop/tree/16c9a3d1631061a72831e0657434003940daf531)의 콘텐츠·자막·번역·다운로드 기능과 한국어 제목 검색 재시도 수정을 KMP와 SwiftUI로 이식했습니다. 홈·전체·검색·시청기록·내 목록·설정을 데스크탑 기준으로 구성했습니다. 자막 우선순위·묶음 첨부/WinPNG·번역 요청/대체·다운로드 자산·최근 회차/정렬과 OP/ED 분석을 다시 대조했고, 애니24에서 광고가 본편으로 선택되는 문제를 수정했습니다. [전체 파일·API 대응 목록](docs/desktop-audit.json)과 [이식·검증 범위](docs/desktop-port.md)를 제공합니다. 기존 즐겨찾기·시청 기록·자막 싱크·설정·수동 GGUF 가져오기는 유지하며, 이전 버전은 [기존 릴리즈](https://github.com/whispelyn-byte/LilacAnime-ios/releases)에서 받을 수 있습니다.
 
 - **탐색:** Linkkf · Ohli24 · Linkani · Animenosub · ReAnime · Miruro, 소스별 검색·필터·방영표·추천, PV·극장판, 전체 카탈로그 수집·재개·한국어 검색.
 - **작품 정보:** 한국어·영어·원제 표시, TMDB → AniList → Wikidata 제목·별칭, 한국어 줄거리와 등장인물 표기, 관련 작품·서버·필러/총집편 표시.
@@ -153,7 +153,7 @@ GitHub Actions는 공통 테스트, KMP iOS 테스트, 네이티브 iOS 테스�
 
 자동 빌드는 Xcode 컴파일 결과와 Kotlin/Native 의존성을 캐시하고, 같은 커밋에 릴리즈 태그가 있으면 태그 빌드에서 한 번만 검증합니다. 화면 캡처 13개는 Actions의 **Run workflow → capture_previews**를 켰을 때 생성합니다. 로컬 `verify.sh`는 기본으로 캡처하며, `CAPTURE_PREVIEWS=0 sh iosApp/scripts/verify.sh`로 생략할 수 있습니다. iPhone/iPad UI 검사는 캡처 여부와 관계없이 실행합니다.
 
-앱 버전은 app/module.toml의 Android versionName을 사용합니다. iOS 빌드 번호는 Android versionCode에 iosApp/revision.txt의 값을 더합니다. 배포 태그는 `python3 iosApp/scripts/android-version.py --tag`로 확인합니다(현재 **v0.4.3-ios.15**). 해당 태그를 푸시하면 모든 테스트·빌드가 성공한 뒤 IPA와 실제 메타데이터로 생성한 SideStore source.json을 릴리스에 게시합니다. 최신 소스 주소는 그대로 유지됩니다.
+앱 버전은 iosApp/version.txt를 사용합니다. 일부 SideStore에서 빌드 번호만 올린 업데이트를 인식하지 못하므로 iOS 릴리스마다 앱 버전도 올립니다. Android 버전은 별도로 유지합니다. iOS 빌드 번호는 Android versionCode에 iosApp/revision.txt의 값을 더합니다. 배포 태그는 `python3 iosApp/scripts/android-version.py --tag`로 확인합니다(현재 **v0.4.4-ios.16**). 해당 태그를 푸시하면 모든 테스트·빌드가 성공한 뒤 IPA와 실제 메타데이터로 생성한 SideStore source.json을 릴리스에 게시합니다. 최신 소스 주소는 그대로 유지됩니다.
 
 | 경로 | 내용 |
 |---|---|

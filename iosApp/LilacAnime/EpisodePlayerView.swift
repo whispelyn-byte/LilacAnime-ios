@@ -1280,7 +1280,7 @@ struct TranslationStatus: View {
 }
 struct ProviderPlayerView: UIViewRepresentable {
     let resolver: PlaybackResolver
-    func makeUIView(context: Context) -> WKWebView { resolver.webView }
+    func makeUIView(context: Context) -> WKWebView { resolver.playbackWebView }
     func updateUIView(_ view: WKWebView, context: Context) {}
 }
 struct AirPlayButton: UIViewRepresentable {

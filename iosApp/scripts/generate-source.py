@@ -13,6 +13,7 @@ parser.add_argument("--repo", default="whispelyn-byte/LilacAnime-ios")
 parser.add_argument("--tag", required=True)
 parser.add_argument("--output", type=Path, required=True)
 parser.add_argument("--notes-file", type=Path)
+parser.add_argument("--previous-source", type=Path)
 args = parser.parse_args()
 if not re.fullmatch(r"v\d+\.\d+(?:\.\d+)?(?:-ios\.\d+)?", args.tag):
     raise SystemExit("Expected a release tag such as v1.0.1")
@@ -27,6 +28,18 @@ if info["CFBundleIdentifier"] != "com.lilac.anime.ios" or info.get("DTPlatformNa
     raise SystemExit("Expected the LilacAnime iPhoneOS app")
 base = "https://github.com/" + args.repo
 raw = "https://raw.githubusercontent.com/" + args.repo + "/main/"
+if args.previous_source:
+    previous = json.loads(args.previous_source.read_text(encoding="utf-8"))
+    previous_app = next((app for app in previous["apps"] if app["bundleIdentifier"] == info["CFBundleIdentifier"]), None)
+    if previous_app:
+        old = previous_app["versions"][0]
+        same_release = old["downloadURL"] == base + "/releases/download/" + args.tag + "/" + args.ipa.name
+        same_metadata = old["version"] == version and old.get("buildVersion") == info["CFBundleVersion"]
+        if not (same_release and same_metadata):
+            if tuple(map(int, version.split("."))) <= tuple(map(int, old["version"].split("."))):
+                raise SystemExit("Increase iosApp/version.txt for each release: SideStore may ignore build-only updates")
+            if int(info["CFBundleVersion"]) <= int(old.get("buildVersion", "0")):
+                raise SystemExit("iOS build number must increase for each release")
 entry = {
     "version": version,
     "buildVersion": info["CFBundleVersion"],

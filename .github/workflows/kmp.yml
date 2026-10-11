@@ -22,6 +22,9 @@ jobs:
       build: ${{ steps.plan.outputs.build }}
     steps:
       - uses: actions/checkout@v4
+      - name: Validate authored release notes
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        run: python3 iosApp/scripts/release-notes.py --tag "$GITHUB_REF_NAME" --output "$RUNNER_TEMP/release-notes.md"
       - id: plan
         shell: bash
         run: |
@@ -154,8 +157,11 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
           RELEASE_REPO: ${{ github.repository }}
         run: |
-          python3 iosApp/scripts/generate-source.py release/LilacAnime-SideStore.ipa --tag "$RELEASE_TAG" --repo "$RELEASE_REPO" --output release/source.json
+          python3 iosApp/scripts/release-notes.py --tag "$RELEASE_TAG" --output release/notes.md
+          python3 iosApp/scripts/generate-source.py release/LilacAnime-SideStore.ipa --tag "$RELEASE_TAG" --repo "$RELEASE_REPO" --notes-file release/notes.md --output release/source.json
           if ! gh release view "$RELEASE_TAG" --repo "$RELEASE_REPO" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" --repo "$RELEASE_REPO" --verify-tag --title "LilacAnime iOS $RELEASE_TAG" --generate-notes
+            gh release create "$RELEASE_TAG" --repo "$RELEASE_REPO" --verify-tag --title "LilacAnime iOS $RELEASE_TAG" --notes-file release/notes.md
+          else
+            gh release edit "$RELEASE_TAG" --repo "$RELEASE_REPO" --notes-file release/notes.md
           fi
           gh release upload "$RELEASE_TAG" release/LilacAnime-SideStore.ipa release/source.json --repo "$RELEASE_REPO" --clobber

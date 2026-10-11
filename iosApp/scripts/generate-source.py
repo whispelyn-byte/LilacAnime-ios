@@ -12,6 +12,7 @@ parser.add_argument("ipa", type=Path)
 parser.add_argument("--repo", default="whispelyn-byte/LilacAnime-ios")
 parser.add_argument("--tag", required=True)
 parser.add_argument("--output", type=Path, required=True)
+parser.add_argument("--notes-file", type=Path)
 args = parser.parse_args()
 if not re.fullmatch(r"v\d+\.\d+(?:\.\d+)?(?:-ios\.\d+)?", args.tag):
     raise SystemExit("Expected a release tag such as v1.0.1")
@@ -30,7 +31,7 @@ entry = {
     "version": version,
     "buildVersion": info["CFBundleVersion"],
     "date": datetime.now(timezone.utc).isoformat(),
-    "localizedDescription": "릴리스 페이지에서 변경 사항을 확인하세요.",
+    "localizedDescription": args.notes_file.read_text(encoding="utf-8").strip() if args.notes_file else "릴리스 페이지에서 변경 사항을 확인하세요.",
     "downloadURL": base + "/releases/download/" + args.tag + "/" + args.ipa.name,
     "size": args.ipa.stat().st_size,
     "minOSVersion": info["MinimumOSVersion"],

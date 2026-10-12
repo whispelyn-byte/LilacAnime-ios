@@ -93,27 +93,38 @@ private final class ModelDownloadDelegate: NSObject, URLSessionDownloadDelegate 
         Task { @MainActor in owner?.finished(id, staged: nil, failure: failure.code == NSURLErrorCancelled ? nil : failure.localizedDescription) }
     }
 }
+/// The models the desktop offers, to fetch, use or remove; and the token for the gated ones.
 struct DesktopModelsSection: View {
     @EnvironmentObject private var library: LibraryStore
     @ObservedObject private var installer = DesktopModelInstaller.shared
     @State private var token = ""
     var body: some View {
-        Section("데스크탑 제공 로컬 모델") {
+        SettingBlock(title: "데스크탑 제공 모델") {
             ForEach(DesktopModelPreset.all.filter { !$0.legacy || installer.installed($0) }) { model in
-                VStack(alignment: .leading) {
-                    Text(model.label); Text(model.note).font(.caption)
-                    if let value = installer.progress[model.id] { ProgressView(value: value); Button("다운로드 중단") { installer.cancel(model.id) } }
-                    else if installer.installed(model) {
-                        HStack {
-                            Button(library.preferences.selectedGGUF == model.file ? "사용 중" : "사용") { library.preferences.selectedGGUF = model.file }
-                            Button("삭제", role: .destructive) { installer.remove(model); if library.preferences.selectedGGUF == model.file { library.preferences.selectedGGUF = "" } }
-                        }.buttonStyle(.borderless)
-                    } else { Button("받기 / 이어받기") { installer.install(model) } }
-                }
+                let using = library.preferences.selectedGGUF == model.file
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(model.label).font(.system(size: 13, weight: .semibold)).foregroundStyle(LilacStyle.text)
+                    Text(model.note).font(.system(size: 12)).foregroundStyle(LilacStyle.muted).fixedSize(horizontal: false, vertical: true)
+                    if let value = installer.progress[model.id] {
+                        ProgressView(value: value).tint(LilacStyle.accent)
+                        SettingButtons { Button("다운로드 중단") { installer.cancel(model.id) } }
+                    } else if installer.installed(model) {
+                        SettingButtons {
+                            Button(using ? "사용 중" : "사용") { library.preferences.selectedGGUF = model.file }.disabled(using)
+                            Button("삭제") { installer.remove(model); if using { library.preferences.selectedGGUF = "" } }.buttonStyle(SettingButtonStyle(danger: true))
+                        }
+                    } else { SettingButtons { Button("받기 / 이어받기") { installer.install(model) } } }
+                }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(LilacStyle.background, in: RoundedRectangle(cornerRadius: LilacStyle.radius))
+                    .overlay(RoundedRectangle(cornerRadius: LilacStyle.radius).stroke(using ? LilacStyle.accent : LilacStyle.line))
             }
-            SecureField("Hugging Face 토큰 (접근 제한 모델)", text: $token)
-            Button("토큰 저장") { do { try SecureKeys.save(token, name: "huggingface"); token = "" } catch { installer.error = error.localizedDescription } }
-            if let error = installer.error { Text(error).foregroundStyle(.red) }
+            Text("Hugging Face 토큰").font(.system(size: 13, weight: .semibold)).foregroundStyle(LilacStyle.text).padding(.top, 6)
+            HStack(spacing: 6) {
+                SecureField("접근 제한 모델을 받을 때만 필요합니다", text: $token).textInputAutocapitalization(.never).autocorrectionDisabled().settingField()
+                Button("저장") { do { try SecureKeys.save(token, name: "huggingface"); token = "" } catch { installer.error = error.localizedDescription } }
+                    .buttonStyle(SettingButtonStyle())
+            }
+            if let error = installer.error { SettingNote(error, color: .red) }
         }
     }
 }

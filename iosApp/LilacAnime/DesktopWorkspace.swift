@@ -38,16 +38,30 @@ struct DesktopFullCatalog: View {
         let source = library.preferences.source
         return DesktopAnimeMetadata.shared.sortedCatalog(items: result.map(\.anime), sort: sort, today: Int32(today)).map { saved[source + ":" + $0.id] ?? SavedAnime($0, source: source) }
     }
+    @Environment(\.horizontalSizeClass) private var sizeClass
     var body: some View {
         let values = self.values
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    // ott.css .all-head: the source, and the order as the desktop's sort chips.
-                    HStack {
-                        Picker("소스", selection: $library.preferences.source) { ForEach(ContentSources.keys, id: \.self) { Text(ContentSources.name($0)).tag($0) } }
-                        Spacer()
-                        NavigationLink { CatalogIndexView() } label: { Image(systemName: "arrow.triangle.2.circlepath") }.accessibilityLabel("한국어 전체 카탈로그 · 인덱스")
+                VStack(alignment: .leading, spacing: 18) {
+                    // ott.css .all-head: the title and where the list comes from, the order as the desktop's sort chips.
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("전체 애니메이션").font(.system(size: 28, weight: .heavy)).foregroundStyle(LilacStyle.text)
+                        Text(UIShowcase.enabled ? "UI PREVIEW · 예시 데이터" : remoteSource ? "선택한 콘텐츠 소스의 작품입니다." : catalog.status)
+                            .font(.system(size: 13)).foregroundStyle(LilacStyle.muted)
+                    }
+                    HStack(spacing: 8) {
+                        CatalogSourceMenu(source: $library.preferences.source)
+                        HStack(spacing: 6) {
+                            Image(systemName: "magnifyingglass").foregroundStyle(LilacStyle.muted)
+                            TextField("한국어·원제·영어 검색", text: $query).submitLabel(.search).onSubmit { reloadRemote() }
+                                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        }.font(.system(size: 14)).padding(.horizontal, 10).frame(height: 38)
+                            .background(LilacStyle.card2, in: RoundedRectangle(cornerRadius: 7)).overlay(RoundedRectangle(cornerRadius: 7).stroke(LilacStyle.line))
+                        NavigationLink { CatalogIndexView() } label: {
+                            Image(systemName: "arrow.triangle.2.circlepath").frame(width: 38, height: 38)
+                                .overlay(RoundedRectangle(cornerRadius: 7).stroke(LilacStyle.line))
+                        }.foregroundStyle(LilacStyle.text).accessibilityLabel("한국어 전체 카탈로그 · 인덱스")
                     }
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 2) {
@@ -57,21 +71,24 @@ struct DesktopFullCatalog: View {
                         }.padding(3).background(LilacStyle.card2, in: RoundedRectangle(cornerRadius: 8))
                     }
                     filterPanel
-                    Text("\(values.count)개 · " + (UIShowcase.enabled ? "UI PREVIEW · 예시 데이터" : remoteSource ? "선택한 소스의 전체 목록" : catalog.status)).font(.caption).foregroundStyle(.secondary)
-                    if !remoteSource, let error = catalog.error { Text(error).foregroundStyle(.red) }
-                    if let error = remote.error, remoteSource { Text(error).foregroundStyle(.red); Button("다시 시도") { reloadRemote() } }
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 26) {
+                    Text("\(values.count)개").font(.system(size: 13)).foregroundStyle(LilacStyle.muted)
+                    if !remoteSource, let error = catalog.error { Text(error).font(.system(size: 13)).foregroundStyle(.red) }
+                    if let error = remote.error, remoteSource {
+                        Text(error).font(.system(size: 13)).foregroundStyle(.red)
+                        Button("다시 시도") { reloadRemote() }.buttonStyle(LilacGhostButtonStyle())
+                    }
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 30) {
                         ForEach(values) { item in NavigationLink { DetailView(summary: item.anime, source: item.source) } label: { AnimePosterCard(anime: item.anime) }.buttonStyle(.plain) }
                     }
                     if remoteSource && !UIShowcase.enabled {
-                        if remote.loading { ProgressView() }
-                        else if remote.canLoadMore { Button("더 보기") { remote.load(reset: false) } }
-                        else if values.isEmpty && remote.error == nil { Text("선택한 조건의 작품이 없습니다.").foregroundStyle(.secondary) }
+                        if remote.loading { ProgressView().tint(LilacStyle.accent).frame(maxWidth: .infinity) }
+                        else if remote.canLoadMore { Button("더 불러오기") { remote.load(reset: false) }.buttonStyle(LilacGhostButtonStyle()).frame(maxWidth: .infinity) }
+                        else if values.isEmpty && remote.error == nil { LilacEmptyState(icon: "square.grid.2x2", title: "선택한 조건의 작품이 없습니다", message: "필터를 바꾸거나 초기화해 보세요.") }
                     }
-                }.padding()
-            }.background(LilacStyle.background).navigationTitle("전체")
+                }.padding(.horizontal, LilacStyle.gutter(sizeClass)).padding(.vertical, 20)
+            }.background(LilacStyle.background).navigationTitle("전체").toolbar(.hidden, for: .navigationBar)
+                .scrollDismissesKeyboard(.interactively)
                 .onChange(of: sort) { value in UserDefaults.standard.set(value, forKey: "allSort:" + library.preferences.source); reloadRemote() }
-                .searchable(text: $query, prompt: "한국어·원제·영어 검색").onSubmit(of: .search) { reloadRemote() }
                 .task(id: library.preferences.source) {
                     draft = DesktopCatalogSelection(); applied = draft; validationError = nil
                     remote.source = library.preferences.source; remote.loadFilters()
@@ -81,30 +98,45 @@ struct DesktopFullCatalog: View {
                 }
         }
     }
+    /// .catalog-filters: 상세 필터 with each field as a labelled select, then 초기화 and 필터 적용.
     @ViewBuilder private var filterPanel: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if remote.filtersLoading { ProgressView("분류를 불러오는 중") }
+        VStack(alignment: .leading, spacing: 14) {
+            Text("상세 필터").font(.system(size: 14, weight: .bold)).foregroundStyle(LilacStyle.text)
+            if remote.filtersLoading { ProgressView("분류를 불러오는 중").tint(LilacStyle.accent).font(.system(size: 13)) }
             if let facets = remote.filters {
-                if !facets.genres.isEmpty { picker("장르", value: $draft.genre, options: facets.genres) }
-                if !facets.formats.isEmpty { picker("형태", value: $draft.format, options: facets.formats) }
-                if facets.supportsYear {
-                    if facets.years.isEmpty { TextField("방영 연도", text: $draft.year).keyboardType(.numberPad).accessibilityIdentifier("catalog-year") }
-                    else { picker("연도", value: $draft.year, options: facets.years) }
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12, alignment: .top)], alignment: .leading, spacing: 12) {
+                    if !facets.genres.isEmpty { picker("장르", value: $draft.genre, options: facets.genres) }
+                    if !facets.formats.isEmpty { picker("형태", value: $draft.format, options: facets.formats) }
+                    if facets.supportsYear {
+                        if facets.years.isEmpty {
+                            VStack(alignment: .leading, spacing: 7) {
+                                Text("연도").font(.system(size: 12)).foregroundStyle(LilacStyle.muted)
+                                TextField("전체 연도", text: $draft.year).keyboardType(.numberPad).font(.system(size: 13)).padding(.horizontal, 10).frame(height: 38)
+                                    .background(LilacStyle.card2, in: RoundedRectangle(cornerRadius: 7)).overlay(RoundedRectangle(cornerRadius: 7).stroke(LilacStyle.line))
+                                    .accessibilityIdentifier("catalog-year")
+                            }
+                        } else { picker("연도", value: $draft.year, options: facets.years) }
+                    }
+                    if facets.supportsSeason { picker("분기", value: $draft.season, options: facets.seasons) }
                 }
-                if facets.supportsSeason { picker("분기", value: $draft.season, options: facets.seasons) }
-                Text(facets.note.isEmpty ? "장르·형태·연도·분기를 함께 선택할 수 있습니다." : facets.note).font(.caption).foregroundStyle(.secondary)
+                Text(facets.note.isEmpty ? "장르·형태·연도·분기를 함께 선택할 수 있습니다." : facets.note).font(.system(size: 12)).foregroundStyle(LilacStyle.muted)
             }
-            if let error = remote.filterError { Text(error).font(.caption).foregroundStyle(.red); Button("분류 다시 불러오기") { remote.loadFilters() } }
-            if let validationError { Text(validationError).font(.caption).foregroundStyle(.red) }
-            HStack {
-                Button("초기화") { draft = DesktopCatalogSelection(); applied = draft; validationError = nil; if !sorts.contains(sort) { sort = sorts[0] }; reloadRemote() }.accessibilityIdentifier("catalog-filter-reset")
+            if let error = remote.filterError {
+                Text(error).font(.system(size: 12)).foregroundStyle(.red)
+                Button("분류 다시 불러오기") { remote.loadFilters() }.buttonStyle(LilacOutlineButtonStyle())
+            }
+            if let validationError { Text(validationError).font(.system(size: 12)).foregroundStyle(.red) }
+            HStack(spacing: 8) {
                 Spacer()
-                Button("필터 적용", action: applyFilters).buttonStyle(.borderedProminent).disabled(remote.filters == nil).accessibilityIdentifier("catalog-filter-apply")
+                Button("초기화") { draft = DesktopCatalogSelection(); applied = draft; validationError = nil; if !sorts.contains(sort) { sort = sorts[0] }; reloadRemote() }
+                    .buttonStyle(LilacGhostButtonStyle()).accessibilityIdentifier("catalog-filter-reset")
+                Button("필터 적용", action: applyFilters).buttonStyle(LilacPrimaryButtonStyle()).disabled(remote.filters == nil).accessibilityIdentifier("catalog-filter-apply")
             }
-        }.padding(16).background(LilacStyle.card, in: RoundedRectangle(cornerRadius: 16))
+        }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
+            .background(LilacStyle.card, in: RoundedRectangle(cornerRadius: 10)).overlay(RoundedRectangle(cornerRadius: 10).stroke(LilacStyle.line))
     }
     private func picker(_ name: String, value: Binding<String>, options: [String]) -> some View {
-        Picker(name, selection: value) { Text("전체 " + name).tag(""); ForEach(options, id: \.self) { Text(label($0, field: name)).tag($0) } }
+        CatalogSelect(title: name, value: value, options: [("", "전체 " + name)] + options.map { ($0, label($0, field: name)) })
     }
     private func label(_ value: String, field: String) -> String {
         if field == "장르" {
@@ -149,62 +181,6 @@ final class DesktopSourceModel: ObservableObject {
     }
     deinit { service.close() }
 }
-struct DesktopSourceView: View {
-    @EnvironmentObject private var library: LibraryStore
-    @StateObject private var model = DesktopSourceModel()
-    @State private var day = 0
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    Picker("소스", selection: $library.preferences.source) { ForEach(ContentSources.keys, id: \.self) { Text(ContentSources.name($0)).tag($0) } }
-                    if library.preferences.source == "linkkf" {
-                        Picker("요일", selection: $day) { ForEach(Array(["월", "화", "수", "목", "금", "토", "일"].enumerated()), id: \.offset) { index, text in Text(text).tag(index) } }.pickerStyle(.segmented)
-                    }
-                    if model.loading { ProgressView() }
-                    if let error = model.error { Text(error).foregroundStyle(.red) }
-                    Text("방영 중").font(.title2.bold())
-                    grid(model.airing)
-                    ForEach(Array(model.sections.enumerated()), id: \.offset) { _, section in
-                        Text(section.name).font(.title2.bold()); grid(section.items)
-                    }
-                }.padding()
-            }.background(LilacStyle.background).navigationTitle("방영·추천")
-                .task(id: library.preferences.source + String(day)) { model.load(source: library.preferences.source, day: day) }
-        }
-    }
-    private func grid(_ items: [Anime]) -> some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 26) {
-            ForEach(items, id: \.id) { anime in
-                NavigationLink { DetailView(summary: anime, source: anime.source == "jikan" ? "jikan" : library.preferences.source) } label: { AnimePosterCard(anime: anime) }.buttonStyle(.plain)
-            }
-        }
-    }
-}
-struct DesktopLibraryView: View {
-    let history: Bool
-    @EnvironmentObject private var library: LibraryStore
-    var body: some View {
-        NavigationStack {
-            List {
-                if history {
-                    ForEach(library.history) { entry in
-                        PlaybackButton(item: PlaybackItem(entry: entry)) {
-                            VStack(alignment: .leading) { AnimeDisplayTitle(anime: entry.anime.anime, source: entry.anime.source); Text(entry.episodeTitle).font(.caption)
-                                if entry.duration > 0 { ProgressView(value: min(entry.position / entry.duration, 1)) }
-                            }
-                        }
-                    }.onDelete(perform: library.deleteHistory)
-                } else {
-                    ForEach(library.favorites) { item in
-                        NavigationLink { DetailView(summary: item.anime, source: item.source) } label: { AnimeDisplayTitle(anime: item.anime, source: item.source) }
-                            .swipeActions { Button("삭제", role: .destructive) { library.toggle(item.anime, source: item.source) } }
-                    }
-                }
-            }.navigationTitle(history ? "시청 기록" : "즐겨찾기")
-        }
-    }
-}
 struct LocalVideoView: View {
     @EnvironmentObject private var playback: PlaybackRouter
     @State private var importer = false
@@ -213,12 +189,16 @@ struct LocalVideoView: View {
     @State private var copying = false
     var body: some View {
         NavigationStack {
-            VStack(spacing: 18) {
-                Image(systemName: "folder").font(.largeTitle)
-                Button("파일에서 영상 열기") { importer = true }.disabled(copying)
-                if copying { ProgressView("영상을 앱으로 복사하는 중…") }
-                if let error { Text(error).foregroundStyle(.red) }
-            }.navigationTitle("로컬 영상")
+            VStack(spacing: 16) {
+                Image(systemName: "film.stack").font(.system(size: 46, weight: .light)).foregroundStyle(LilacStyle.accent)
+                Text("내 영상 재생").font(.system(size: 24, weight: .heavy)).foregroundStyle(LilacStyle.text)
+                Text("파일 앱에 있는 영상을 앱으로 복사해 재생합니다. 같은 폴더의 자막 파일은 플레이어 설정 > 자막에서 열 수 있어요.")
+                    .font(.system(size: 14)).foregroundStyle(LilacStyle.muted).multilineTextAlignment(.center).frame(maxWidth: 420)
+                Button { importer = true } label: { Label("파일에서 영상 열기", systemImage: "folder") }.buttonStyle(LilacPrimaryButtonStyle()).disabled(copying)
+                if copying { ProgressView("영상을 앱으로 복사하는 중…").tint(LilacStyle.accent).font(.system(size: 13)) }
+                if let error { Text(error).font(.system(size: 13)).foregroundStyle(.red).multilineTextAlignment(.center) }
+            }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity).background(LilacStyle.background)
+                .navigationTitle("로컬 영상").toolbar(.hidden, for: .navigationBar)
                 .fileImporter(isPresented: $importer, allowedContentTypes: [.movie, .video, .data]) { result in
                     let url: URL
                     do { url = try result.get() } catch { self.error = error.localizedDescription; return }
@@ -249,6 +229,48 @@ struct LocalVideoView: View {
                     }
                 }
                 .onChange(of: item != nil) { ready in if ready, let item { playback.open(item); self.item = nil } }
+        }
+    }
+}
+
+/// The source as the desktop's select: its name with a chevron, the sources in a menu.
+struct CatalogSourceMenu: View {
+    @Binding var source: String
+    var body: some View {
+        Menu {
+            Picker("콘텐츠 소스", selection: $source) { ForEach(ContentSources.keys, id: \.self) { Text(ContentSources.name($0)).tag($0) } }
+        } label: {
+            HStack(spacing: 6) {
+                Text(ContentSources.name(source)).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold))
+            }.foregroundStyle(LilacStyle.text).padding(.horizontal, 12).frame(height: 38)
+                .background(LilacStyle.card2, in: RoundedRectangle(cornerRadius: 7)).overlay(RoundedRectangle(cornerRadius: 7).stroke(LilacStyle.line))
+        }.accessibilityLabel("콘텐츠 소스 " + ContentSources.name(source))
+    }
+}
+
+/// .catalog-filter-fields label: the field's name over a select of its values.
+struct CatalogSelect: View {
+    let title: String
+    @Binding var value: String
+    let options: [(String, String)]
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title).font(.system(size: 12)).foregroundStyle(LilacStyle.muted)
+            Menu {
+                ForEach(options.indices, id: \.self) { index in
+                    Button { value = options[index].0 } label: {
+                        if value == options[index].0 { Label(options[index].1, systemImage: "checkmark") } else { Text(options[index].1) }
+                    }
+                }
+            } label: {
+                HStack {
+                    Text(options.first { $0.0 == value }?.1 ?? value).font(.system(size: 13)).lineLimit(1)
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(LilacStyle.muted)
+                }.foregroundStyle(LilacStyle.text).padding(.horizontal, 10).frame(maxWidth: .infinity, minHeight: 38)
+                    .background(LilacStyle.card2, in: RoundedRectangle(cornerRadius: 7)).overlay(RoundedRectangle(cornerRadius: 7).stroke(LilacStyle.line))
+            }.accessibilityLabel(title)
         }
     }
 }

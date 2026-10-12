@@ -114,6 +114,7 @@ enum DownloadTransfer {
         (entry.subtitleTracks ?? []).allSatisfy { safeName($0.file) && ($0.translatedFile == nil || $0.translatedFile.map(safeName) == true) }
     }
 }
+/// Moving finished downloads between this device and a PC or another iPhone, in the settings' blocks.
 struct DownloadTransferView: View {
     @EnvironmentObject private var downloads: DownloadStore
     @State private var picker = false
@@ -121,13 +122,16 @@ struct DownloadTransferView: View {
     @State private var busy = false
     @State private var message: String?
     var body: some View {
-        List {
-            Text("iOS의 index.json 폴더 또는 PC의 downloads.json과 작품 폴더를 함께 넣은 폴더를 가져옵니다. PC 목록은 앱 데이터 폴더에, 영상은 Videos/LilacAnime 또는 지정한 다운로드 폴더에 있습니다. 영상·자막·글꼴·OP/ED 정보를 함께 복사해 주세요.")
-            Button("완료한 다운로드를 폴더로 내보내기") { importing = false; picker = true }.disabled(busy)
-            Button("PC·iOS 다운로드 폴더 가져오기") { importing = true; picker = true }.disabled(busy)
-            if busy { ProgressView() }
-            if let message { Text(message) }
-        }.navigationTitle("다운로드 폴더")
+        SettingsScreen(title: "다운로드 폴더") {
+            SettingBlock(title: "내보내기 · 가져오기", note: "iOS의 index.json 폴더 또는 PC의 downloads.json과 작품 폴더를 함께 넣은 폴더를 가져옵니다. PC 목록은 앱 데이터 폴더에, 영상은 Videos/LilacAnime 또는 지정한 다운로드 폴더에 있습니다. 영상·자막·글꼴·OP/ED 정보를 함께 복사해 주세요.") {
+                SettingButtons {
+                    Button("완료한 다운로드를 폴더로 내보내기") { importing = false; picker = true }
+                    Button("PC·iOS 다운로드 폴더 가져오기") { importing = true; picker = true }
+                }.disabled(busy)
+                if busy { ProgressView().tint(LilacStyle.accent) }
+                if let message { SettingNote(message, color: LilacStyle.text) }
+            }
+        }
             .fileImporter(isPresented: $picker, allowedContentTypes: [.folder]) { result in
                 do {
                     let folder = try result.get(); busy = true

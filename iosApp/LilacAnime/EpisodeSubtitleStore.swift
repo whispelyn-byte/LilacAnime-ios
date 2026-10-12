@@ -133,6 +133,7 @@ enum SubtitleCache {
         }
     }
 }
+/// The desktop's 자막 캐시 block, then the subtitles kept for each episode to export or forget.
 struct SubtitleStorageView: View {
     @EnvironmentObject private var library: LibraryStore
     @ObservedObject private var saved = EpisodeSubtitleStore.shared
@@ -141,26 +142,30 @@ struct SubtitleStorageView: View {
     @State private var error: String?
     @State private var confirm = false
     var body: some View {
-        List {
-            Section("자막 캐시") {
-                Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
-                Text("정리는 저장한 자막·현재 선택한 자막·글꼴을 보존하고 1시간 이상 지난 임시 파일을 지웁니다.").font(.caption)
-                Button("사용하지 않는 오래된 캐시 정리") { clean(false) }
-                Button("모든 자막·번역 캐시 삭제", role: .destructive) { confirm = true }
-                if let error { Text(error).foregroundStyle(.red) }
-                if cleaning { ProgressView("캐시 정리 중…") }
-            }.disabled(cleaning)
-            Section("회차별 저장 자막") {
-                ForEach(saved.records.sorted { $0.date > $1.date }) { record in
-                    VStack(alignment: .leading) {
-                        Text(record.name); Text(record.episodeKey).font(.caption).foregroundStyle(.secondary)
-                        Text(record.translated ? "번역 자막 · " + record.provider : "원본 자막 · " + record.provider).font(.caption)
-                        if let file = record.file { ShareLink(item: file) { Label("내보내기", systemImage: "square.and.arrow.up") } }
-                    }.swipeActions { Button("목록에서 삭제", role: .destructive) { saved.remove(record.id) } }
-                }
+        SettingsScreen(title: "저장 자막·캐시") {
+            SettingBlock(title: "자막 캐시", note: "안 쓰는 파일 정리는 저장한 자막·지금 쓰는 자막·글꼴을 남기고 1시간 넘게 지난 임시 파일을 지웁니다. 모두 지우기는 회차마다 저장한 자막과 번역본까지 지워서, 다음에 볼 때 자막을 다시 받고 다시 번역합니다.") {
+                SettingValueRow(title: "자막 파일이 차지하는 용량", value: ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
+                SettingButtons {
+                    Button(cleaning ? "정리하는 중…" : "안 쓰는 자막 파일 지우기") { clean(false) }
+                    Button("모든 자막 지우기") { confirm = true }.buttonStyle(SettingButtonStyle(danger: true))
+                }.disabled(cleaning)
+                if let error { SettingNote(error, color: .red) }
             }
-        }.navigationTitle("저장 자막·캐시")
-            .task { size = await SubtitleCache.bytes() }
+            Text("회차별 저장 자막").font(.system(size: 14, weight: .semibold)).foregroundStyle(LilacStyle.text).padding(.top, 12)
+            if saved.records.isEmpty { SettingNote("아직 저장한 자막이 없습니다. 자막을 찾거나 번역하면 회차마다 여기에 남습니다.") }
+            ForEach(saved.records.sorted { $0.date > $1.date }) { record in
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(SubtitleNames.label(record.name)).font(.system(size: 14, weight: .semibold)).foregroundStyle(LilacStyle.text).lineLimit(2)
+                        Text((record.translated ? "번역 자막 · " : "원본 자막 · ") + SubtitleLabels.provider(record.provider)).font(.system(size: 12)).foregroundStyle(LilacStyle.accent)
+                        Text(record.episodeKey).font(.system(size: 11)).foregroundStyle(LilacStyle.muted).lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                    if let file = record.file { ShareLink(item: file) { Image(systemName: "square.and.arrow.up") }.buttonStyle(SettingButtonStyle()).accessibilityLabel("내보내기") }
+                    Button { saved.remove(record.id) } label: { Image(systemName: "trash") }.buttonStyle(SettingButtonStyle(danger: true)).accessibilityLabel("목록에서 삭제")
+                }.settingCard()
+            }
+        }.task { size = await SubtitleCache.bytes() }
             .confirmationDialog("저장한 원본·번역 자막도 삭제합니다. 글꼴과 다운로드 폴더에 복사한 자막은 보존됩니다.", isPresented: $confirm, titleVisibility: .visible) {
                 Button("자막 캐시 전체 삭제", role: .destructive) { clean(true) }
             }

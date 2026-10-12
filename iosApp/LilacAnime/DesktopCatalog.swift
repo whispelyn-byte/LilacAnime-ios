@@ -280,20 +280,26 @@ struct AnimeDisplayTitle: View {
             }
     }
 }
+/// The Korean title index of a source, in the settings' blocks.
 struct CatalogIndexView: View {
     @EnvironmentObject private var library: LibraryStore
     @ObservedObject private var catalog = DesktopCatalog.shared
     var body: some View {
-        List {
-            Section("한국어 전체 카탈로그") {
-                Picker("소스", selection: $library.preferences.source) { ForEach(ContentSources.keys, id: \.self) { Text(ContentSources.name($0)).tag($0) } }
-                Text(catalog.status)
-                if let error = catalog.error { Text(error).foregroundStyle(.red) }
-                Button(catalog.running ? "일시 중지" : "목록·한국어 제목 이어서 수집") { if catalog.running { catalog.stop() } else { catalog.start(library.preferences.source) } }
-                Button("전체 목록 새로 수집") { catalog.start(library.preferences.source, refresh: true) }
-                Button("제목 인덱스 지우기", role: .destructive) { catalog.clear() }
-                Text("TMDB → AniList → Wikidata 순서로 찾습니다. 수집 중에도 검색할 수 있습니다. 앱을 다시 열면 저장된 목록을 사용합니다.").font(.footnote)
+        SettingsScreen(title: "한국어 제목 인덱스") {
+            SettingNote("소스의 전체 목록을 받아 TMDB → AniList → Wikidata 순서로 한국어 제목을 찾아 둡니다. 모으는 중에도 검색할 수 있고, 앱을 다시 열면 저장한 목록을 씁니다.", size: 13)
+                .padding(.bottom, 6)
+            SettingBlock(title: "소스") {
+                SettingChoices(options: ContentSources.keys.map { ($0, ContentSources.name($0)) }, selection: $library.preferences.source)
             }
-        }.navigationTitle("한국어 제목 인덱스")
+            SettingBlock(title: "수집") {
+                SettingNote(catalog.status, color: LilacStyle.text)
+                if let error = catalog.error { SettingNote(error, color: .red) }
+                SettingButtons {
+                    Button(catalog.running ? "일시 중지" : "목록·한국어 제목 이어서 모으기") { if catalog.running { catalog.stop() } else { catalog.start(library.preferences.source) } }
+                    Button("전체 목록 새로 모으기") { catalog.start(library.preferences.source, refresh: true) }
+                    Button("제목 인덱스 지우기") { catalog.clear() }.buttonStyle(SettingButtonStyle(danger: true))
+                }
+            }
+        }
     }
 }

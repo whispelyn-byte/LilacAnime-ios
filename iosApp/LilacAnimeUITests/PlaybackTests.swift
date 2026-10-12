@@ -37,7 +37,7 @@ final class PlaybackTests: XCTestCase {
         XCTAssertTrue(app.buttons["전체 작품 둘러보기"].waitForExistence(timeout: 10))
         XCTAssertFalse(list.exists)
         settings.tap()
-        XCTAssertTrue(app.staticTexts["화면과 콘텐츠"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["작품 제목 표시"].waitForExistence(timeout: 5))
         XCTAssertFalse(list.exists)
     }
     func testPlayerPanelAndFitModes() {

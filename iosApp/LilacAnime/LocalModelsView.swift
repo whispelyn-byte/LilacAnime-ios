@@ -112,64 +112,36 @@ struct LocalModelsView: View {
     @State private var address = ""
     @State private var error: String?
     var body: some View {
-        List {
+        SettingsScreen(title: "로컬 AI 모델", identifier: "local-models-list") {
+            SettingNote("인터넷 없이 이 기기에서 자막을 번역합니다. 모델 파일 크기 외에 추론 메모리가 필요하니 기기 메모리에 맞는 양자화 모델을 고르세요.", size: 13)
+                .padding(.bottom, 6)
             DesktopModelsSection()
-            Section("실행 위치") {
-                Toggle("Metal GPU 사용 (실패 시 CPU)", isOn: Binding(get: { library.preferences.localGPU ?? true }, set: { library.preferences.localGPU = $0 }))
-                Text(lastRun.text).font(.caption)
-                Text("모델 파일 크기 외에 추론 메모리가 필요합니다. 기기 메모리에 맞는 모델을 선택하세요.").font(.caption)
-            }
-            Section("GGUF 모델") {
+            SettingBlock(title: "내 GGUF 모델", note: files.isEmpty ? "가져온 모델이 없습니다. 파일 앱에서 GGUF 파일을 가져오거나 아래에서 받으세요." : nil) {
                 ForEach(files, id: \.path) { file in
-                    Button {
-                        library.preferences.selectedGGUF = file.lastPathComponent
-                    } label: {
-                        HStack { Text(file.lastPathComponent); Spacer(); if library.preferences.selectedGGUF == file.lastPathComponent { Image(systemName: "checkmark") } }
-                    }
-                }.onDelete { offsets in
-                    for index in offsets {
-                        let file = files[index]
-                        do {
-                            try FileManager.default.removeItem(at: file)
-                            if library.preferences.selectedGGUF == file.lastPathComponent { library.preferences.selectedGGUF = "" }
-                        } catch { self.error = error.localizedDescription }
-                    }
-                    refresh()
+                    let using = library.preferences.selectedGGUF == file.lastPathComponent
+                    HStack(spacing: 10) {
+                        Text(file.lastPathComponent).font(.system(size: 13, weight: .semibold)).foregroundStyle(LilacStyle.text).lineLimit(2)
+                        Spacer(minLength: 0)
+                        Button(using ? "사용 중" : "사용") { library.preferences.selectedGGUF = file.lastPathComponent }.disabled(using)
+                        Button { remove(file) } label: { Image(systemName: "trash") }.buttonStyle(SettingButtonStyle(danger: true)).accessibilityLabel("삭제")
+                    }.buttonStyle(SettingButtonStyle()).padding(10)
+                        .background(LilacStyle.background, in: RoundedRectangle(cornerRadius: LilacStyle.radius))
+                        .overlay(RoundedRectangle(cornerRadius: LilacStyle.radius).stroke(using ? LilacStyle.accent : LilacStyle.line))
                 }
-                Button("파일 가져오기") { importing = true }
-                    .disabled(copyingModel)
-                if copyingModel { ProgressView("모델 가져오는 중…") }
+                SettingButtons { Button(copyingModel ? "모델 가져오는 중…" : "GGUF 파일 가져오기") { importing = true }.disabled(copyingModel) }
             }
-            Section("모델 다운로드") {
-                Button("Hugging Face에서 찾기") { modelSearch = true }
-                TextField("HTTPS GGUF URL", text: $address).textInputAutocapitalization(.never).keyboardType(.URL)
-                Button("다운로드") {
-                    guard let url = URL(string: address), url.scheme == "https" else { error = "HTTPS 주소를 입력하세요."; return }
-                    downloading = true
-                    Task {
-                        do {
-                            let (temporary, response) = try await URLSession.shared.download(from: url)
-                            defer { try? FileManager.default.removeItem(at: temporary) }
-                            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw SubtitleFiles.failure("모델 다운로드 실패") }
-                            try FileManager.default.createDirectory(at: LocalModelFiles.directory, withIntermediateDirectories: true)
-                            let name = response.suggestedFilename ?? url.lastPathComponent
-                            guard name.lowercased().hasSuffix(".gguf") else { throw SubtitleFiles.failure("응답 파일이 GGUF가 아닙니다.") }
-                            try LocalModelFiles.validate(temporary, requireExtension: false)
-                            let destination = LocalModelFiles.directory.appendingPathComponent(URL(fileURLWithPath: name).lastPathComponent)
-                            try FileManager.default.moveItem(at: temporary, to: destination)
-                            library.preferences.selectedGGUF = destination.lastPathComponent; refresh()
-                        } catch { self.error = error.localizedDescription }
-                        downloading = false
-                    }
-                }.disabled(downloading)
-                if downloading { ProgressView() }
-                Text("iPhone 메모리에 맞는 양자화 모델을 사용하세요. 모델 파일은 앱 내부에 저장됩니다.").font(.footnote)
+            SettingBlock(title: "주소로 받기", note: "Hugging Face에서 모델을 찾거나, GGUF 파일의 HTTPS 주소를 넣으세요. 모델 파일은 앱 안에 저장됩니다.") {
+                HStack(spacing: 6) {
+                    TextField("https://…/model.gguf", text: $address).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL).settingField()
+                    Button(downloading ? "받는 중…" : "받기", action: download).buttonStyle(SettingButtonStyle()).disabled(downloading)
+                }
+                SettingButtons { Button("Hugging Face에서 찾기") { modelSearch = true } }
             }
-            if let error { Text(error).foregroundStyle(.red) }
-        }.accessibilityIdentifier("local-models-list")
-            .navigationTitle("로컬 AI 모델").navigationBarTitleDisplayMode(.inline)
-            .navigationBarBackButtonHidden(false)
-            .toolbar(.visible, for: .navigationBar).onAppear(perform: refresh)
+            SettingSwitch(title: "Metal GPU 사용", detail: "그래픽 칩으로 빠르게 번역하고, 안 되면 CPU로 돌아갑니다. " + lastRun.text,
+                          isOn: Binding(get: { library.preferences.localGPU ?? true }, set: { library.preferences.localGPU = $0 }))
+            if let error { SettingNote(error, color: .red) }
+        }
+            .onAppear(perform: refresh)
             .onChange(of: modelInstaller.revision) { _ in refresh() }
             .sheet(isPresented: $modelSearch) { HuggingFaceSearchView { address = $0 } }
             .fileImporter(isPresented: $importing, allowedContentTypes: [.data]) { result in
@@ -180,6 +152,32 @@ struct LocalModelsView: View {
                     catch { self.error = error.localizedDescription }
                 }
             }
+    }
+    private func remove(_ file: URL) {
+        do {
+            try FileManager.default.removeItem(at: file)
+            if library.preferences.selectedGGUF == file.lastPathComponent { library.preferences.selectedGGUF = "" }
+        } catch { self.error = error.localizedDescription }
+        refresh()
+    }
+    private func download() {
+        guard let url = URL(string: address), url.scheme == "https" else { error = "HTTPS 주소를 입력하세요."; return }
+        downloading = true
+        Task {
+            do {
+                let (temporary, response) = try await URLSession.shared.download(from: url)
+                defer { try? FileManager.default.removeItem(at: temporary) }
+                guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw SubtitleFiles.failure("모델 다운로드 실패") }
+                try FileManager.default.createDirectory(at: LocalModelFiles.directory, withIntermediateDirectories: true)
+                let name = response.suggestedFilename ?? url.lastPathComponent
+                guard name.lowercased().hasSuffix(".gguf") else { throw SubtitleFiles.failure("응답 파일이 GGUF가 아닙니다.") }
+                try LocalModelFiles.validate(temporary, requireExtension: false)
+                let destination = LocalModelFiles.directory.appendingPathComponent(URL(fileURLWithPath: name).lastPathComponent)
+                try FileManager.default.moveItem(at: temporary, to: destination)
+                library.preferences.selectedGGUF = destination.lastPathComponent; refresh()
+            } catch { self.error = error.localizedDescription }
+            downloading = false
+        }
     }
     private func refresh() { files = ((try? FileManager.default.contentsOfDirectory(at: LocalModelFiles.directory, includingPropertiesForKeys: nil)) ?? []).filter { $0.pathExtension.lowercased() == "gguf" } }
 }

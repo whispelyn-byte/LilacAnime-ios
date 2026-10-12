@@ -109,7 +109,7 @@ struct DesktopSavedView: View {
                 Button { tab = 1 } label: { LilacChip(text: "다운로드 완료 \(downloads.entries.filter { $0.localFile != nil }.count)", selected: tab == 1) }.buttonStyle(.plain)
             }.padding(3).background(LilacStyle.card2, in: RoundedRectangle(cornerRadius: 8))
                 .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, LilacStyle.gutter(sizeClass)).padding(.vertical, 12)
-            if tab == 1 { DownloadsView() }
+            if tab == 1 { NavigationStack { DownloadsView().toolbar(.hidden, for: .navigationBar) } }
             else {
                 NavigationStack {
                     ScrollView {

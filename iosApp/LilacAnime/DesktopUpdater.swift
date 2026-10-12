@@ -90,19 +90,20 @@ final class DesktopUpdater: ObservableObject {
         }
     }
 }
+/// The desktop's 업데이트 · 정보 blocks: the installed and latest version, how to update, what changed and the sources.
 struct DesktopUpdateView: View {
     @ObservedObject private var updater = DesktopUpdater.shared
     @State private var copied = false
     var body: some View {
-        List {
-            Section("업데이트 · 정보") {
-                // Both as the app version (0.4.5), so an installed update reads the same as the latest release.
-                LabeledContent("설치 버전", value: updater.current)
-                LabeledContent("최신 릴리즈", value: updater.release?.version ?? (updater.busy ? "확인 중…" : "-"))
-                Text(updater.status)
-                if updater.busy { ProgressView() }
-                // Up to date: nothing to fetch, check or register.
-                if !updater.upToDate {
+        SettingBlock(title: "앱 업데이트") {
+            // Both as the app version (0.4.5), so an installed update reads the same as the latest release.
+            SettingValueRow(title: "설치 버전", value: updater.current)
+            SettingValueRow(title: "최신 릴리즈", value: updater.release?.version ?? (updater.busy ? "확인 중…" : "-"))
+            SettingNote(updater.status)
+            if updater.busy { ProgressView().tint(LilacStyle.accent) }
+            // Up to date: nothing to fetch, check or register.
+            if !updater.upToDate {
+                SettingButtons {
                     Button("새 버전 확인") { updater.check() }.disabled(updater.busy)
                     if updater.release != nil { Button("릴리즈 IPA 받기") { updater.download() }.disabled(updater.busy) }
                     if let file = updater.downloaded { ShareLink(item: file) { Label("IPA 공유·저장", systemImage: "square.and.arrow.up") } }
@@ -110,22 +111,26 @@ struct DesktopUpdateView: View {
                     Button(copied ? "소스 주소를 복사했어요" : "SideStore 소스 주소 복사") {
                         UIPasteboard.general.string = DesktopUpdater.sourceAddress; copied = true
                     }
-                    if copied { Text("SideStore의 Sources → +에 붙여 넣으세요.").font(.caption) }
-                    Text("iOS에서 앱이 자기 자신을 재서명해 설치할 수는 없습니다. 같은 Bundle ID·Apple 계정으로 SideStore에서 업데이트하면 보관함과 설정을 유지합니다.").font(.caption)
+                }
+                if copied { SettingNote("SideStore의 Sources → +에 붙여 넣으세요.", color: LilacStyle.text) }
+                SettingNote("iOS에서 앱이 자기 자신을 재서명해 설치할 수는 없습니다. 같은 Bundle ID·Apple 계정으로 SideStore에서 업데이트하면 보관함과 설정을 유지합니다.")
+            }
+        }.task { updater.check() }
+        if let release = updater.release {
+            SettingBlock(title: release.version + " 변경 사항") {
+                ReleaseNotesText(notes: release.body).font(.system(size: 13)).foregroundStyle(LilacStyle.text).lineSpacing(3).textSelection(.enabled)
+                if let url = URL(string: release.html_url) {
+                    Link("릴리즈 페이지 →", destination: url).font(.system(size: 13, weight: .semibold)).foregroundStyle(LilacStyle.accent)
                 }
             }
-            if let release = updater.release {
-                Section(release.version + " 변경 사항") {
-                    ReleaseNotesText(notes: release.body).textSelection(.enabled)
-                    if let url = URL(string: release.html_url) { Link("릴리즈 페이지", destination: url) }
-                }
-            }
-            Section("원본·크레딧") {
+        }
+        SettingBlock(title: "원본 · 크레딧") {
+            SettingButtons {
                 Link("Android", destination: URL(string: "https://github.com/dream150/LilacAnime")!)
                 Link("Desktop", destination: URL(string: "https://github.com/whispelyn-byte/LilacAnime-desktop")!)
                 Link("iOS 소스", destination: URL(string: "https://github.com/whispelyn-byte/LilacAnime-ios")!)
             }
-        }.navigationTitle("업데이트").task { updater.check() }
+        }
     }
 }
 

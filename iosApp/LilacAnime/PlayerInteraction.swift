@@ -51,30 +51,6 @@ struct SpaceHoldSession {
     func restoredSpeed(current: Double) -> Double { boosted && current == 2 ? originalSpeed : current }
 }
 
-struct SubtitleSyncInput: View {
-    let value: Double
-    let update: (Double) -> Void
-    @State private var input = ""
-    @State private var invalid = false
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                TextField("자막 싱크 (ms)", text: $input).keyboardType(.numbersAndPunctuation)
-                    .textInputAutocapitalization(.never).autocorrectionDisabled()
-                    .accessibilityIdentifier("subtitle-sync-input")
-                Text("ms").foregroundStyle(.secondary)
-                Button("적용") {
-                    guard let milliseconds = Double(input.trimmingCharacters(in: .whitespacesAndNewlines)), milliseconds.isFinite else { invalid = true; return }
-                    update(milliseconds.rounded() / 1000); invalid = false
-                }.accessibilityIdentifier("subtitle-sync-apply")
-            }
-            if invalid { Text("유효한 숫자를 입력하세요.").font(.caption).foregroundStyle(.red) }
-            Text("양수는 늦게, 음수는 빠르게 표시합니다.").font(.caption).foregroundStyle(.secondary)
-        }.onAppear { refresh() }.onChange(of: value) { _ in refresh() }
-    }
-    private func refresh() { input = String(format: "%.0f", value * 1000); invalid = false }
-}
-
 struct SpaceHoldKeyboard: UIViewRepresentable {
     let enabled: Bool
     let began: () -> Void

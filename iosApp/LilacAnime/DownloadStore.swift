@@ -724,8 +724,11 @@ final class DownloadStore: ObservableObject {
         } catch { self.error = error.localizedDescription; return false }
     }
 }
+/// The desktop's downloads (app.js renderDownloads, download-port.css): the tools on top, then a card per series with its
+/// cover, how far it got and actions for all of it, and its episodes under it when opened.
 struct DownloadsView: View {
     @EnvironmentObject private var downloads: DownloadStore
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var confirmClear = false
     @State private var analyzing = false
     @State private var analysisMessage: String?
@@ -734,90 +737,166 @@ struct DownloadsView: View {
     private var groups: [String] { Dictionary(grouping: downloads.entries, by: { $0.anime.id }).keys.sorted { left, right in
         (downloads.entries.filter { $0.anime.id == left }.map(\.date).max() ?? .distantPast) > (downloads.entries.filter { $0.anime.id == right }.map(\.date).max() ?? .distantPast)
     } }
+    private let danger = Color(uiColor: UIColor(rgb: 0xD86B75))
     var body: some View {
-        NavigationStack {
-            List {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                toolRow
                 if downloads.pendingResolution > 0 {
                     VStack(alignment: .leading, spacing: 8) {
-                        ProgressView("영상 준비 · \(downloads.pendingResolution)개 남음")
-                        Text(downloads.resolvingTitle).font(.caption).foregroundStyle(.secondary)
-                        Button("준비 중단") { downloads.stopResolving() }
+                        ProgressView("영상 준비 · \(downloads.pendingResolution)개 남음").tint(LilacStyle.accent).font(.system(size: 13))
+                        Text(downloads.resolvingTitle).font(.system(size: 12)).foregroundStyle(LilacStyle.muted)
+                        Button("준비 중단") { downloads.stopResolving() }.buttonStyle(LilacOutlineButtonStyle())
+                    }.frame(maxWidth: .infinity, alignment: .leading).downloadCard()
+                }
+                if downloads.entries.isEmpty {
+                    LilacEmptyState(icon: "arrow.down.circle", title: "다운로드한 회차가 없어요", message: "작품 상세 화면의 저장 버튼으로 오프라인 회차를 추가하세요.")
+                }
+                ForEach(groups, id: \.self) { key in
+                    groupCard(key)
+                    if !collapsed.contains(key) {
+                        ForEach(downloads.entries.filter { $0.anime.id == key }.sorted { $0.number < $1.number }) { entry in
+                            episodeCard(entry).padding(.leading, sizeClass == .regular ? 28 : 14)
+                        }
                     }
                 }
-                Section("다운로드 관리") {
-                    HStack { Button("모두 일시 중지") { downloads.pauseAll() }; Button("모두 이어받기") { downloads.resumeAll() } }.buttonStyle(.borderless)
-                    NavigationLink("다운로드 폴더 내보내기·가져오기") { DownloadTransferView() }
+                analysis
+                if let error = downloads.error { Text(error).font(.system(size: 13)).foregroundStyle(.red) }
+            }.padding(.horizontal, LilacStyle.gutter(sizeClass)).padding(.vertical, 16)
+        }.background(LilacStyle.background).navigationTitle("다운로드")
+            .confirmationDialog("다운로드한 영상·자막과 대기 목록을 모두 삭제할까요?", isPresented: $confirmClear, titleVisibility: .visible) {
+                Button("전체 삭제", role: .destructive) { Task { await downloads.clearAll() } }
+            }
+            .confirmationDialog(removingGroup.map { (downloads.entries(group: $0).first?.anime.title ?? "") + "의 다운로드 \(downloads.entries(group: $0).count)개를 모두 삭제할까요? 저장한 영상과 자막도 함께 삭제됩니다." } ?? "",
+                isPresented: Binding(get: { removingGroup != nil }, set: { if !$0 { removingGroup = nil } }), titleVisibility: .visible) {
+                Button("전체 삭제", role: .destructive) { if let key = removingGroup { Task { await downloads.removeGroup(key) } }; removingGroup = nil }
+            }
+    }
+    /// .download-toolbar: how much is saved on the left, the tools on the right.
+    private var toolRow: some View {
+        let saved = downloads.entries.filter { $0.localFile != nil }
+        let bytes = saved.compactMap(\.bytes).reduce(0, +)
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("저장한 회차 \(saved.count)개" + (bytes > 0 ? " · " + ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file) : ""))
+                .font(.system(size: 13)).foregroundStyle(LilacStyle.muted)
+            PSFlow(spacing: 6) {
+                Button { downloads.pauseAll() } label: { Label("모두 일시 중지", systemImage: "pause") }
+                Button { downloads.resumeAll() } label: { Label("모두 이어받기", systemImage: "arrow.clockwise") }
+                NavigationLink { DownloadTransferView() } label: { Label("폴더 내보내기·가져오기", systemImage: "folder") }
+                Menu {
                     Button("목록 비우기 · 파일 보존") { downloads.clearList() }
                     Button("보존한 다운로드 다시 찾기") { downloads.restoreList() }
                     Button("다운로드 전체 삭제", role: .destructive) { confirmClear = true }.disabled(downloads.clearing)
-                    if downloads.clearing { ProgressView("중단 후 삭제 중") }
-                }
-                ForEach(groups, id: \.self) { key in
-                  DisclosureGroup(isExpanded: Binding(get: { !collapsed.contains(key) }, set: { if $0 { collapsed.remove(key) } else { collapsed.insert(key) } })) {
-                    ForEach(downloads.entries.filter { $0.anime.id == key }.sorted { $0.number < $1.number }) { entry in
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(entry.anime.title).font(.headline); Text(entry.title)
-                        Text(entry.status).foregroundStyle(.secondary)
-                        if let bytes = entry.bytes { Text(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)).font(.caption) }
-                        if entry.status == "다운로드 중", let rate = downloads.transferRate[entry.id] {
-                            Text(ByteCountFormatter.string(fromByteCount: Int64(rate), countStyle: .file) + "/s").font(.caption)
-                        }
-                        if entry.total > 0 && entry.status == "다운로드 중" { ProgressView(value: Double(entry.completed), total: Double(max(entry.total, 1))) }
-                        if let error = entry.error { Text(error).foregroundStyle(.red) }
-                        HStack {
-                            if entry.localFile != nil { PlaybackButton(item: entry.playback) { Text("재생") } }
-                            if entry.status == "다운로드 중" { Button("중단") { downloads.cancel(entry.id) } }
-                            else if entry.localFile == nil { Button("다시 시도") { downloads.retry(entry) } }
-                            Button("삭제", role: .destructive) { downloads.delete(entry.id) }
-                        }.buttonStyle(.borderless)
-                    }
-                }
-                  } label: { groupHeader(key) }
-                }
-                if let status = downloads.analysisStatus { ProgressView(status) }
-                if let status = downloads.translationStatus { ProgressView(status) }
-                if let error = downloads.error { Text(error).foregroundStyle(.red) }
-                if let analysisMessage { Text(analysisMessage) }
-                Button("다운로드 회차 OP/ED 분석") {
-                    analyzing = true
-                    let entries = downloads.entries.filter { $0.localFile != nil }
-                    Task {
-                        do { let count = try await OfflineAnalyzer.analyze(entries); analysisMessage = "\(count)개 회차 분석 완료" }
-                        catch { analysisMessage = error.localizedDescription }
-                        analyzing = false
-                    }
-                }.disabled(analyzing)
-                if analyzing { ProgressView() }
-            }.navigationTitle("다운로드")
-                .confirmationDialog("다운로드한 영상·자막과 대기 목록을 모두 삭제할까요?", isPresented: $confirmClear, titleVisibility: .visible) {
-                    Button("전체 삭제", role: .destructive) { Task { await downloads.clearAll() } }
-                }
-                .confirmationDialog(removingGroup.map { (downloads.entries(group: $0).first?.anime.title ?? "") + "의 다운로드 \(downloads.entries(group: $0).count)개를 모두 삭제할까요? 저장한 영상과 자막도 함께 삭제됩니다." } ?? "",
-                    isPresented: Binding(get: { removingGroup != nil }, set: { if !$0 { removingGroup = nil } }), titleVisibility: .visible) {
-                    Button("전체 삭제", role: .destructive) { if let key = removingGroup { Task { await downloads.removeGroup(key) } }; removingGroup = nil }
-                }
+                } label: { Label("정리", systemImage: "ellipsis") }
+            }.buttonStyle(LilacOutlineButtonStyle()).labelStyle(.titleAndIcon)
+            if downloads.clearing { ProgressView("중단 후 삭제 중").tint(LilacStyle.accent).font(.system(size: 13)) }
         }
     }
     /// One series (app.js downloadGroupCard): its episodes as ranges, what is saved, running or stopped, and actions for all of them.
-    private func groupHeader(_ key: String) -> some View {
+    private func groupCard(_ key: String) -> some View {
         let jobs = downloads.entries(group: key)
         let done = jobs.filter { $0.localFile != nil }.count
         let active = jobs.filter { $0.localFile == nil && ["대기", "준비 중", "다운로드 중"].contains($0.status) }.count
         let stopped = jobs.filter { $0.localFile == nil && ["중단됨", "실패"].contains($0.status) }.count
         let summary = [DownloadStore.episodeRanges(jobs.map(\.number)) + "화", done > 0 ? "\(done)개 저장됨" : "", active > 0 ? "\(active)개 받는 중" : "", stopped > 0 ? "\(stopped)개 멈춤" : ""].filter { !$0.isEmpty }.joined(separator: " · ")
         let progress = jobs.isEmpty ? 0 : jobs.reduce(0.0) { $0 + ($1.localFile != nil ? 1 : $1.total > 0 ? Double($1.completed) / Double($1.total) : 0) } / Double(jobs.count)
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(jobs.first?.anime.title ?? key).font(.headline).lineLimit(2)
-                Text("\(jobs.count)개 회차").font(.caption).foregroundStyle(.secondary)
-            }
-            Text(summary).font(.caption).foregroundStyle(.secondary)
-            ProgressView(value: progress)
+        let open = !collapsed.contains(key)
+        let cover: CGFloat = sizeClass == .regular ? 112 : 80
+        return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 14) {
-                if active > 0 { Button("전체 중지") { downloads.stopGroup(key) } }
-                if stopped > 0 { Button("이어 받기") { downloads.resumeGroup(key) } }
-                Button("전체 삭제", role: .destructive) { removingGroup = key }
-            }.font(.caption).buttonStyle(.borderless)
-        }.padding(.vertical, 4)
+                AnimeArtwork(url: jobs.first?.anime.poster ?? "", width: cover, height: cover * 66 / 112).clipShape(RoundedRectangle(cornerRadius: 9))
+                VStack(alignment: .leading, spacing: 5) {
+                    (Text(jobs.first?.anime.title ?? key).font(.system(size: 15, weight: .bold)).foregroundColor(LilacStyle.text)
+                        + Text("  \(jobs.count)개 회차").font(.system(size: 12)).foregroundColor(LilacStyle.muted)).lineLimit(2)
+                    Text(summary).font(.system(size: 12)).foregroundStyle(LilacStyle.muted).lineLimit(2)
+                    DownloadBar(progress: progress).padding(.top, 5)
+                }
+                Spacer(minLength: 0)
+                Button { if open { collapsed.insert(key) } else { collapsed.remove(key) } } label: {
+                    Image(systemName: "chevron.down").font(.system(size: 15, weight: .semibold)).rotationEffect(.degrees(open ? 180 : 0))
+                        .foregroundStyle(LilacStyle.muted).frame(width: 36, height: 36).contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityLabel(open ? "회차 목록 접기" : "회차 목록 펼치기")
+            }
+            HStack(spacing: 7) {
+                if active > 0 { Button { downloads.stopGroup(key) } label: { Label("전체 중지", systemImage: "xmark") } }
+                if stopped > 0 { Button { downloads.resumeGroup(key) } label: { Label("이어 받기", systemImage: "arrow.clockwise") } }
+                Button { removingGroup = key } label: { Label("전체 삭제", systemImage: "trash").foregroundStyle(danger) }
+            }.buttonStyle(DownloadActionStyle())
+        }.downloadCard()
+    }
+    /// One episode under its series (.download-card.nested): its state, how far it got, and play, stop or retry, delete.
+    private func episodeCard(_ entry: DownloadEntry) -> some View {
+        let running = entry.status == "다운로드 중"
+        let detail = [entry.status, entry.bytes.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "",
+                      running ? downloads.transferRate[entry.id].map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) + "/s" } ?? "" : ""]
+            .filter { !$0.isEmpty }.joined(separator: " · ")
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(entry.title).font(.system(size: 14, weight: .semibold)).foregroundStyle(LilacStyle.text).lineLimit(2)
+                    Text(detail).font(.system(size: 12)).foregroundStyle(entry.localFile != nil ? LilacStyle.accent : LilacStyle.muted).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                HStack(spacing: 7) {
+                    if entry.localFile != nil { PlaybackButton(item: entry.playback) { Label("재생", systemImage: "play.fill") } }
+                    if running { Button { downloads.cancel(entry.id) } label: { Label("중단", systemImage: "xmark") } }
+                    else if entry.localFile == nil { Button { downloads.retry(entry) } label: { Label("다시 시도", systemImage: "arrow.clockwise") } }
+                    Button { downloads.delete(entry.id) } label: { Image(systemName: "trash").foregroundStyle(danger) }.accessibilityLabel("삭제")
+                }.buttonStyle(DownloadActionStyle())
+            }
+            if entry.total > 0 && running { DownloadBar(progress: Double(entry.completed) / Double(max(entry.total, 1))) }
+            if let error = entry.error { Text(error).font(.system(size: 12)).foregroundStyle(.red) }
+        }.downloadCard()
+    }
+    private var analysis: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("OP/ED 분석").font(.system(size: 14, weight: .semibold)).foregroundStyle(LilacStyle.text)
+            Text("받은 회차의 오디오를 서로 비교해 오프닝·엔딩 구간을 찾아 둡니다.").font(.system(size: 12.5)).foregroundStyle(LilacStyle.muted)
+            if let status = downloads.analysisStatus { ProgressView(status).tint(LilacStyle.accent).font(.system(size: 12)) }
+            if let status = downloads.translationStatus { ProgressView(status).tint(LilacStyle.accent).font(.system(size: 12)) }
+            if let analysisMessage { Text(analysisMessage).font(.system(size: 12.5)).foregroundStyle(LilacStyle.text) }
+            Button(analyzing ? "분석하는 중…" : "다운로드 회차 OP/ED 분석") {
+                analyzing = true
+                let entries = downloads.entries.filter { $0.localFile != nil }
+                Task {
+                    do { let count = try await OfflineAnalyzer.analyze(entries); analysisMessage = "\(count)개 회차 분석 완료" }
+                    catch { analysisMessage = error.localizedDescription }
+                    analyzing = false
+                }
+            }.buttonStyle(LilacOutlineButtonStyle()).disabled(analyzing || downloads.entries.allSatisfy { $0.localFile == nil })
+        }.frame(maxWidth: .infinity, alignment: .leading).downloadCard().padding(.top, 10)
+    }
+}
+
+/// .download-progress: a thin bar, lilac as far as it got.
+struct DownloadBar: View {
+    let progress: Double
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                Capsule().fill(LilacStyle.line)
+                Capsule().fill(LilacStyle.accent).frame(width: geometry.size.width * min(max(progress, 0), 1))
+            }
+        }.frame(height: 4)
+    }
+}
+
+/// .download-actions button: a small bordered button with its icon.
+struct DownloadActionStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.font(.system(size: 12, weight: .semibold)).lineLimit(1).labelStyle(.titleAndIcon)
+            .padding(.horizontal, 11).frame(minHeight: 34)
+            .foregroundStyle(LilacStyle.text)
+            .background(configuration.isPressed ? LilacStyle.line : LilacStyle.card2, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(LilacStyle.line))
+    }
+}
+
+private extension View {
+    /// .download-card: the panel colour with a hairline border.
+    func downloadCard() -> some View {
+        padding(10).frame(maxWidth: .infinity, alignment: .leading)
+            .background(LilacStyle.card, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(LilacStyle.line))
     }
 }

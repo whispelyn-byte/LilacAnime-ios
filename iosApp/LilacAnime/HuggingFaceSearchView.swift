@@ -23,31 +23,34 @@ final class ModelSearch: ObservableObject {
     }
     deinit { services.close() }
 }
+/// Finding a GGUF model on Hugging Face: the repositories that match, then the files of the one picked.
 struct HuggingFaceSearchView: View {
     @StateObject private var model = ModelSearch()
     @Environment(\.dismiss) private var dismiss
     let onSelect: (String) -> Void
     var body: some View {
         NavigationStack {
-            List {
-                if model.loading { ProgressView() }
-                if let error = model.error { Text(error).foregroundStyle(.red) }
-                if let repo = model.repo {
-                    Button("검색 결과로") { model.repo = nil }
-                    Text(repo).font(.headline)
-                    ForEach(model.files, id: \.name) { file in
-                        Button { onSelect(file.url); dismiss() } label: {
-                            VStack(alignment: .leading) {
-                                Text(file.name); Text(ByteCountFormatter.string(fromByteCount: file.size, countStyle: .file)).font(.caption)
-                            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    if model.loading { ProgressView().tint(LilacStyle.accent).frame(maxWidth: .infinity).padding(.vertical, 20) }
+                    if let error = model.error { SettingNote(error, color: .red) }
+                    if let repo = model.repo {
+                        Button { model.repo = nil } label: { Label("검색 결과로", systemImage: "chevron.left") }.buttonStyle(SettingButtonStyle())
+                        Text(repo).font(.system(size: 17, weight: .bold)).foregroundStyle(LilacStyle.text).padding(.vertical, 6)
+                        ForEach(model.files, id: \.name) { file in
+                            Button { onSelect(file.url); dismiss() } label: {
+                                SettingLinkLabel(title: file.name, detail: ByteCountFormatter.string(fromByteCount: file.size, countStyle: .file))
+                            }.buttonStyle(.plain)
+                        }
+                    } else {
+                        if model.models.isEmpty && !model.loading { SettingNote("모델 이름을 검색하세요. 예: gemma, qwen, exaone", size: 13) }
+                        ForEach(model.models, id: \.id) { repo in
+                            Button { model.select(repo.id) } label: { SettingLinkLabel(title: repo.id) }.buttonStyle(.plain)
                         }
                     }
-                } else {
-                    ForEach(model.models, id: \.id) { repo in
-                        Button(repo.id) { model.select(repo.id) }
-                    }
-                }
-            }.navigationTitle("Hugging Face")
+                }.padding(16)
+            }.background(LilacStyle.background)
+                .navigationTitle("Hugging Face").navigationBarTitleDisplayMode(.inline)
                 .searchable(text: $model.query, prompt: "GGUF 모델 검색")
                 .onSubmit(of: .search) { model.search() }
                 .toolbar { Button("닫기") { dismiss() } }

@@ -135,51 +135,98 @@ final class CatalogModel: ObservableObject {
     }
     deinit { service.close(); filterService.close() }
 }
+/// The desktop's search (index.html #searchView): a heading, the big search box, the tag filters behind 태그 필터, the posters.
 struct CatalogView: View {
     @EnvironmentObject private var library: LibraryStore
     @StateObject private var model = CatalogModel()
     @EnvironmentObject private var navigation: DesktopNavigation
-    @State private var filters = true
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @State private var filters = false
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 16) {
-                    Picker("소스", selection: $model.source) {
-                        ForEach(ContentSources.keys, id: \.self) { Text(ContentSources.name($0)).tag($0) }
-                    }.pickerStyle(.menu).onChange(of: model.source) { source in library.preferences.source = source; model.mode = "browse"; model.genre = ""; model.year = ""; model.format = ""; model.status = ""; model.season = ""; model.studio = ""; model.load(); model.loadFilters() }
-                    if filters {
-                        VStack(spacing: 12) {
-                            filterInput("장르", text: $model.genre, values: model.filters?.genres ?? [])
-                            filterInput("연도", text: $model.year, values: model.filters?.years ?? [])
-                            filterInput("형식", text: $model.format, values: model.filters?.formats ?? [])
-                            if ["reanime", "miruro", "animenosub"].contains(model.source) {
-                                filterInput("상태", text: $model.status, values: model.filters?.statuses ?? ["RELEASING", "FINISHED"])
-                                filterInput("시즌", text: $model.season, values: model.filters?.seasons ?? ["WINTER", "SPRING", "SUMMER", "FALL"])
-                            }
-                            if model.source == "reanime" { filterInput("스튜디오", text: $model.studio, values: model.filters?.studios ?? []) }
-                            HStack { Button("초기화") { model.genre = ""; model.year = ""; model.format = ""; model.status = ""; model.season = ""; model.studio = ""; model.mode = "browse"; model.load() }; Spacer(); Button("필터 적용") { model.load() }.buttonStyle(.borderedProminent) }
-                        }.padding(16).background(LilacStyle.card, in: RoundedRectangle(cornerRadius: 16))
+                VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("어떤 이야기를 찾고 있나요?").font(.system(size: sizeClass == .regular ? 34 : 26, weight: .heavy)).foregroundStyle(LilacStyle.text)
+                        Text("제목을 검색해 작품 정보와 평점을 확인하세요.").font(.system(size: 14)).foregroundStyle(LilacStyle.muted)
                     }
-                    if let error = model.error { Text(error).foregroundStyle(.red); Button("다시 시도") { model.load() } }
-                    if let note = model.searchNote { Text(note).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading) }
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 26) {
+                    // .big-search: one wide field with the button inside its end.
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass").foregroundStyle(LilacStyle.muted)
+                        TextField("애니메이션 제목 입력", text: $model.query).submitLabel(.search).onSubmit(search)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("search-field")
+                        Button("검색", action: search).buttonStyle(LilacPrimaryButtonStyle())
+                    }.font(.system(size: 16)).padding(.leading, 14).padding(.trailing, 5).padding(.vertical, 5)
+                        .background(LilacStyle.card, in: RoundedRectangle(cornerRadius: 8)).overlay(RoundedRectangle(cornerRadius: 8).stroke(LilacStyle.line))
+                    HStack(spacing: 8) {
+                        CatalogSourceMenu(source: $model.source)
+                        Button { withAnimation(.easeOut(duration: 0.18)) { filters.toggle() } } label: {
+                            Label("태그 필터", systemImage: filters ? "chevron.up" : "line.3.horizontal.decrease")
+                        }.buttonStyle(LilacOutlineButtonStyle())
+                    }
+                    if filters { filterPanel }
+                    if let error = model.error {
+                        Text(error).font(.system(size: 13)).foregroundStyle(.red)
+                        Button("다시 시도") { model.load() }.buttonStyle(LilacGhostButtonStyle())
+                    }
+                    if let note = model.searchNote { Text(note).font(.system(size: 13)).foregroundStyle(LilacStyle.muted) }
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 30) {
                         ForEach(model.items, id: \.id) { anime in
                             NavigationLink { DetailView(summary: anime, source: model.source) } label: {
                                 AnimePosterCard(anime: anime)
                             }.buttonStyle(.plain)
                         }
                     }
-                    if model.loading { ProgressView() }
+                    if model.loading { ProgressView().tint(LilacStyle.accent).frame(maxWidth: .infinity) }
                     else if model.items.isEmpty && model.error == nil { LilacEmptyState(icon: "magnifyingglass", title: "검색 결과가 없습니다", message: "검색어나 필터를 바꿔서 다시 찾아보세요.") }
-                    else if model.canLoadMore { Button("더 보기") { model.load(reset: false) } }
-                }.padding()
-            }.background(LilacStyle.background).navigationTitle("검색")
+                    else if model.canLoadMore { Button("더 불러오기") { model.load(reset: false) }.buttonStyle(LilacGhostButtonStyle()).frame(maxWidth: .infinity) }
+                }.padding(.horizontal, LilacStyle.gutter(sizeClass)).padding(.vertical, 20)
+            }.background(LilacStyle.background).navigationTitle("검색").toolbar(.hidden, for: .navigationBar)
+                .scrollDismissesKeyboard(.interactively)
+                .onChange(of: model.source) { source in library.preferences.source = source; model.mode = "browse"; clearFilters(); model.load(); model.loadFilters() }
                 .onChange(of: navigation.query) { _ in applyNavigation() }
                 .onChange(of: navigation.listMode) { _ in applyNavigation() }
-                .searchable(text: $model.query, prompt: "애니메이션 검색").onSubmit(of: .search) { navigation.search(model.query); model.mode = "browse"; model.load() }
-                .toolbar { Button { filters.toggle() } label: { Image(systemName: "line.3.horizontal.decrease.circle") } }
                 .task { if model.items.isEmpty { model.source = library.preferences.source; applyNavigation(); model.loadFilters() } }
                 .onChange(of: library.preferences.source) { source in if model.source != source { model.source = source } }
+        }
+    }
+    private func search() { navigation.search(model.query); model.mode = "browse"; model.load() }
+    private func clearFilters() { model.genre = ""; model.year = ""; model.format = ""; model.status = ""; model.season = ""; model.studio = "" }
+    /// .filter-panel: each tag group as a row of chips, then 초기화 and 적용.
+    private var filterPanel: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            filterGroup("시즌 타입", text: $model.format, values: model.filters?.formats ?? [])
+            filterGroup("장르", text: $model.genre, values: model.filters?.genres ?? [])
+            filterGroup("연도", text: $model.year, values: model.filters?.years ?? [])
+            if ["reanime", "miruro", "animenosub"].contains(model.source) {
+                filterGroup("상태", text: $model.status, values: model.filters?.statuses ?? ["RELEASING", "FINISHED"])
+                filterGroup("분기", text: $model.season, values: model.filters?.seasons ?? ["WINTER", "SPRING", "SUMMER", "FALL"])
+            }
+            if model.source == "reanime" { filterGroup("스튜디오", text: $model.studio, values: model.filters?.studios ?? []) }
+            HStack(spacing: 8) {
+                Spacer()
+                Button("초기화") { clearFilters(); model.mode = "browse"; model.load() }.buttonStyle(LilacGhostButtonStyle())
+                Button("적용") { model.load() }.buttonStyle(LilacPrimaryButtonStyle())
+            }
+        }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
+            .background(LilacStyle.card, in: RoundedRectangle(cornerRadius: 10)).overlay(RoundedRectangle(cornerRadius: 10).stroke(LilacStyle.line))
+    }
+    /// .filter-group: its name, then 전체 and its values as chips (typed in when the source lists none).
+    @ViewBuilder private func filterGroup(_ title: String, text: Binding<String>, values: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.system(size: 13, weight: .bold)).foregroundStyle(LilacStyle.text)
+            if values.isEmpty {
+                TextField(title, text: text).font(.system(size: 13)).padding(.horizontal, 10).frame(height: 36)
+                    .background(LilacStyle.card2, in: RoundedRectangle(cornerRadius: 7)).overlay(RoundedRectangle(cornerRadius: 7).stroke(LilacStyle.line))
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach([""] + values, id: \.self) { value in
+                            Button { text.wrappedValue = value } label: { LilacChip(text: value.isEmpty ? "전체" : value, selected: text.wrappedValue == value) }.buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
         }
     }
     private func applyNavigation() {
@@ -192,18 +239,6 @@ struct CatalogView: View {
         if model.source == "linkkf" { model.format = ["pv": "5086", "movie": "5061", "adult": "5085"][model.mode] ?? "" }
         if UIShowcase.enabled { model.items = UIShowcase.items; model.canLoadMore = false } else { model.load() }
     }
-    private func filterInput(_ title: String, text: Binding<String>, values: [String]) -> some View {
-        HStack {
-            TextField(title, text: text)
-            if !values.isEmpty {
-                Menu("선택") {
-                    Button("전체") { text.wrappedValue = "" }
-                    ForEach(values, id: \.self) { value in Button(value) { text.wrappedValue = value } }
-                }
-            }
-        }
-    }
-
 }
 @MainActor
 final class DetailModel: ObservableObject {

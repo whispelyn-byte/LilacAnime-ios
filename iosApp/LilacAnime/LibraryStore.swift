@@ -246,28 +246,3 @@ enum SecureKeys {
     }
 }
 
-struct LibraryView: View {
-    @EnvironmentObject private var store: LibraryStore
-    var body: some View {
-        NavigationStack {
-            List {
-                Section("즐겨찾기") {
-                    ForEach(store.favorites) { item in
-                        NavigationLink(item.title) { DetailView(summary: item.anime, source: item.source) }
-                    }
-                }
-                Section("이어 보기") {
-                    ForEach(store.history) { entry in
-                        PlaybackButton(item: PlaybackItem(entry: entry)) {
-                            VStack(alignment: .leading) {
-                                Text(entry.anime.title); Text(entry.episodeTitle).foregroundStyle(.secondary)
-                                if entry.duration > 0 { ProgressView(value: min(entry.position / entry.duration, 1)) }
-                            }
-                        }
-                    }.onDelete(perform: store.deleteHistory)
-                }
-                if store.favorites.isEmpty && store.history.isEmpty { Text("즐겨찾기와 시청 기록이 여기에 표시됩니다.") }
-            }.navigationTitle("보관함")
-        }
-    }
-}

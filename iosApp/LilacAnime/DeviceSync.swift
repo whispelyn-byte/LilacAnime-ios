@@ -398,6 +398,7 @@ enum DeviceSyncMapping {
     }
 }
 
+/// The desktop's 기기 동기화 page (index.html data-settings-pane="sync"): the server, the password, then where it stands.
 struct DeviceSyncView: View {
     @ObservedObject private var sync = DeviceSync.shared
     @State private var address = DeviceSync.shared.server
@@ -405,29 +406,28 @@ struct DeviceSyncView: View {
     @State private var working = false
     @State private var message: String?
     var body: some View {
-        Form {
-            Section {
-                Text("직접 만든 LilacAnime 서버(Vercel)를 거쳐 내 목록과 시청 기록을 데스크탑 앱과 맞춥니다. 서버는 lilacanimeserver를 Vercel에 배포하고 Upstash Redis와 비밀번호(LILAC_PASSWORD)를 설정해 만듭니다.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Link("서버 만드는 방법", destination: URL(string: "https://github.com/whispelyn-byte/LilacAnime-server")!)
+        SettingNote("직접 만든 LilacAnime 서버(Vercel)를 거쳐 내 목록과 시청 기록을 데스크탑 앱과 맞춥니다. 서버는 lilacanimeserver를 Vercel에 배포하고 Upstash Redis와 비밀번호(LILAC_PASSWORD)를 설정해 만듭니다.", size: 13)
+            .padding(.bottom, 6)
+        SettingBlock(title: "서버 주소") {
+            TextField("https://내-서버.vercel.app", text: $address).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL).settingField()
+            Text("비밀번호").font(.system(size: 14, weight: .semibold)).foregroundStyle(LilacStyle.text).padding(.top, 6)
+            HStack(spacing: 6) {
+                SecureField("Vercel에 설정한 LILAC_PASSWORD", text: $password).textInputAutocapitalization(.never).autocorrectionDisabled().onSubmit(connect).settingField()
+                Button(working ? "연결 중…" : sync.connected ? "다시 연결" : "연결", action: connect).buttonStyle(SettingButtonStyle()).disabled(working)
             }
-            Section("서버") {
-                TextField("서버 주소 (https://내-서버.vercel.app)", text: $address).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
-                SecureField("비밀번호", text: $password).textInputAutocapitalization(.never).autocorrectionDisabled().onSubmit(connect)
-                Button(sync.connected ? "다시 연결" : "연결", action: connect).disabled(working)
-                if working { ProgressView("서버에 연결하는 중...") }
-                if let message { Text(message).font(.caption).foregroundStyle(.red) }
-            }
-            Section("상태") {
-                Text(sync.state).font(.caption)
-                if sync.connected {
-                    Button("지금 동기화") { Task { await sync.run() } }.disabled(sync.running)
-                    Button("연결 끊기", role: .destructive) { sync.disconnect() }
+            if let message { SettingNote(message, color: .red) }
+            SettingNote(sync.state, color: LilacStyle.text)
+            if sync.connected {
+                SettingButtons {
+                    Button(sync.running ? "동기화 중…" : "지금 동기화") { Task { await sync.run() } }.disabled(sync.running)
+                    Button("연결 끊기") { sync.disconnect() }.buttonStyle(SettingButtonStyle(danger: true))
                 }
-                Text("비밀번호는 연결할 때 한 번만 보내고, 서버가 준 토큰만 이 기기의 Keychain에 둡니다. 이 기기의 파일로 본 기록은 보내지 않습니다. 같은 항목을 두 기기에서 바꾸면 나중에 바꾼 쪽이 남습니다.")
-                    .font(.caption).foregroundStyle(.secondary)
             }
-        }.scrollContentBackground(.hidden).background(LilacStyle.background).navigationTitle("기기 동기화")
+        }
+        SettingNote("비밀번호는 연결할 때 한 번만 보내고, 서버가 준 토큰만 이 기기의 Keychain에 둡니다. 이 기기의 파일로 본 기록은 보내지 않습니다. 같은 항목을 두 기기에서 바꾸면 나중에 바꾼 쪽이 남습니다.")
+            .padding(.top, 4)
+        Link("서버 만드는 방법 →", destination: URL(string: "https://github.com/whispelyn-byte/LilacAnime-server")!)
+            .font(.system(size: 13, weight: .semibold)).foregroundStyle(LilacStyle.accent)
     }
     private func connect() {
         working = true; message = nil

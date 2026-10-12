@@ -74,7 +74,7 @@ struct HomeView: View {
                 .task(id: "\(featured)/\(heroItems.count)") {
                     guard !UIShowcase.enabled, !reduceMotion, heroItems.count > 1 else { return }
                     do { try await Task.sleep(nanoseconds: 9_000_000_000) } catch { return }
-                    withAnimation { featured = (min(featured, heroItems.count - 1) + 1) % heroItems.count }
+                    featured = (min(featured, heroItems.count - 1) + 1) % heroItems.count
                 }
                 .task(id: library.preferences.source + homeOrder) { if homeOrder == "updated" && !UIShowcase.enabled { await recent.loadHome(library.preferences.source) } }
                 .task { if !UIShowcase.enabled && model.items.isEmpty { model.source = library.preferences.source; model.load() } }

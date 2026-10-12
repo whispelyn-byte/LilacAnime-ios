@@ -1086,6 +1086,7 @@ private extension SubtitleAsset {
     var subtitleResultID: String { source + ":" + url }
 }
 struct PlayerControls: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var library: LibraryStore
     @ObservedObject var engine: MPVEngine
     let seek: Double
@@ -1206,7 +1207,7 @@ struct PlayerControls: View {
             .task(id: interaction) {
                 guard !UIShowcase.enabled, !engine.paused, !locked, !dragging else { return }
                 do { try await Task.sleep(nanoseconds: 2_000_000_000) } catch { return }
-                if !dragging { withAnimation { visible = false } }
+                if !dragging { withAnimation(LilacMotion.animation(reduced: reduceMotion)) { visible = false } }
             }
             .onChange(of: engine.paused) { paused in if paused { visible = true }; touch() }
     }
@@ -1238,7 +1239,7 @@ struct PlayerControls: View {
             if delta == 0 { engine.toggle() } else { engine.skip(delta); feedback = "\(delta > 0 ? "+" : "−")\(Int(abs(delta)))초" }
             touch()
             Task { try? await Task.sleep(nanoseconds: 700_000_000); feedback = "" }
-        }.onTapGesture { guard !locked else { return }; withAnimation { visible.toggle() }; touch() }
+        }.onTapGesture { guard !locked else { return }; withAnimation(LilacMotion.animation(reduced: reduceMotion)) { visible.toggle() }; touch() }
             .simultaneousGesture(LongPressGesture(minimumDuration: 0.4, maximumDistance: 24)
                 .sequenced(before: DragGesture(minimumDistance: 0))
                 .updating($holdingSpeed) { value, state, _ in if case .second(true, _) = value { state = true } }

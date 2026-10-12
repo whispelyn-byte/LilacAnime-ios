@@ -102,7 +102,7 @@ struct SettingsView: View {
             }.frame(maxWidth: 860, alignment: .leading).frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, sizeClass == .regular ? 0 : gutter).padding(.trailing, sizeClass == .regular ? gutter : 0)
                 .padding(.top, sizeClass == .regular ? 30 : 20).padding(.bottom, 40)
-        }.id(category).scrollDismissesKeyboard(.interactively).accessibilityIdentifier("settings-form")
+        }.id(category).modifier(LilacAppearMotion()).scrollDismissesKeyboard(.interactively).accessibilityIdentifier("settings-form")
     }
     private var general: some View {
         SettingsPage(title: "일반") {

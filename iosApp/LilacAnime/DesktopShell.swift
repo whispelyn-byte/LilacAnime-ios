@@ -14,7 +14,7 @@ struct DesktopWorkspace: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            page.id(navigation.section).frame(maxWidth: .infinity, maxHeight: .infinity)
+            page.id(navigation.section).modifier(LilacAppearMotion()).frame(maxWidth: .infinity, maxHeight: .infinity)
         }.background(LilacStyle.background)
             .environmentObject(navigation)
             .task(id: library.preferences.source) {
@@ -35,7 +35,7 @@ struct DesktopWorkspace: View {
         HStack(spacing: sizeClass == .regular ? 24 : 4) {
             Button { navigation.section = "home" } label: {
                 Text("LiLac").font(.system(size: sizeClass == .regular ? 24 : 19, weight: .heavy)).foregroundStyle(LilacStyle.accent)
-            }.buttonStyle(.plain).accessibilityLabel("홈")
+            }.buttonStyle(LilacPressButtonStyle()).accessibilityLabel("홈")
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 0) {
                     ForEach(destinations, id: \.0) { key, title in
@@ -44,7 +44,7 @@ struct DesktopWorkspace: View {
                             Text(title).font(.system(size: 14, weight: active ? .bold : .medium))
                                 .foregroundStyle(active ? LilacStyle.text : LilacStyle.muted)
                                 .padding(.horizontal, sizeClass == .regular ? 12 : 5).padding(.vertical, 8).fixedSize()
-                        }.buttonStyle(.plain).accessibilityIdentifier("workspace-route-" + key)
+                        }.buttonStyle(LilacPressButtonStyle()).accessibilityIdentifier("workspace-route-" + key)
                     }
                 }
             }.padding(.leading, sizeClass == .regular ? 0 : 4)
@@ -78,7 +78,7 @@ struct DesktopWorkspace: View {
         Button(action: action) {
             Image(systemName: name).font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(active ? LilacStyle.accent : LilacStyle.text.opacity(0.85)).frame(width: 34, height: 36)
-        }.buttonStyle(.plain).accessibilityLabel(label)
+        }.buttonStyle(LilacPressButtonStyle()).accessibilityLabel(label)
     }
     @ViewBuilder private var page: some View {
         switch navigation.section {

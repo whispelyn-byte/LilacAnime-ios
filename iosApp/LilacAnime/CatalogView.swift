@@ -137,6 +137,7 @@ final class CatalogModel: ObservableObject {
 }
 /// The desktop's search (index.html #searchView): a heading, the big search box, the tag filters behind 태그 필터, the posters.
 struct CatalogView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var library: LibraryStore
     @StateObject private var model = CatalogModel()
     @EnvironmentObject private var navigation: DesktopNavigation
@@ -160,7 +161,7 @@ struct CatalogView: View {
                         .background(LilacStyle.card, in: RoundedRectangle(cornerRadius: 8)).overlay(RoundedRectangle(cornerRadius: 8).stroke(LilacStyle.line))
                     HStack(spacing: 8) {
                         CatalogSourceMenu(source: $model.source)
-                        Button { withAnimation(.easeOut(duration: 0.18)) { filters.toggle() } } label: {
+                        Button { withAnimation(LilacMotion.animation(reduced: reduceMotion)) { filters.toggle() } } label: {
                             Label("태그 필터", systemImage: filters ? "chevron.up" : "line.3.horizontal.decrease")
                         }.buttonStyle(LilacOutlineButtonStyle())
                     }

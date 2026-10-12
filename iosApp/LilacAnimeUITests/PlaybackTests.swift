@@ -8,7 +8,7 @@ final class PlaybackTests: XCTestCase {
         XCTAssertTrue(menu.waitForExistence(timeout: 15))
         for route in ["settings", "history", "favorites", "catalog", "home", "settings", "home"] {
             let target = route == "settings" ? app.buttons["workspace-settings"] : app.buttons["workspace-route-" + route]
-            XCTAssertTrue(target.waitForExistence(timeout: 5)); XCTAssertTrue(target.isHittable); target.tap()
+            XCTAssertTrue(waitForHittable(target)); target.tap()
             // XCUITest gives a SwiftUI Menu no hit point (-1, -1) even on screen; the gear beside it stands for the header.
             XCTAssertTrue(menu.exists); XCTAssertTrue(app.buttons["workspace-settings"].isHittable)
         }
@@ -21,20 +21,24 @@ final class PlaybackTests: XCTestCase {
         let settings = app.buttons["workspace-settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 15)); settings.tap()
         let category = app.buttons["settings-category-translate"]
-        for _ in 0..<3 { if category.isHittable { break }; app.scrollViews["settings-categories"].swipeLeft(velocity: .slow) }
-        XCTAssertTrue(category.isHittable); category.tap()
+        XCTAssertTrue(category.waitForExistence(timeout: 5))
+        let categories = app.scrollViews["settings-categories"]
+        if categories.exists {
+            for _ in 0..<3 { if category.isHittable { break }; categories.swipeLeft(velocity: .slow) }
+        }
+        XCTAssertTrue(waitForHittable(category)); category.tap()
         let models = app.buttons["settings-local-models"]
         let form = app.descendants(matching: .any)["settings-form"].firstMatch
         for _ in 0..<6 { if models.exists && models.isHittable { break }; dragUp(form) }
-        XCTAssertTrue(models.isHittable); models.tap()
+        XCTAssertTrue(waitForHittable(models)); models.tap()
         let list = app.descendants(matching: .any)["local-models-list"].firstMatch
         XCTAssertTrue(list.waitForExistence(timeout: 5))
         let back = app.navigationBars.buttons.matching(NSPredicate(format: "label == %@ OR label == %@ OR label == %@", "설정", "Back", "뒤로")).firstMatch
-        XCTAssertTrue(back.waitForExistence(timeout: 5)); XCTAssertTrue(back.isHittable); back.tap()
+        XCTAssertTrue(waitForHittable(back)); back.tap()
         XCTAssertTrue(models.waitForExistence(timeout: 5)); XCTAssertFalse(list.exists)
-        models.tap(); XCTAssertTrue(list.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForHittable(models)); models.tap(); XCTAssertTrue(list.waitForExistence(timeout: 5))
         let home = app.buttons["workspace-route-home"]
-        XCTAssertTrue(home.waitForExistence(timeout: 5)); XCTAssertTrue(home.isHittable); home.tap()
+        XCTAssertTrue(waitForHittable(home)); home.tap()
         XCTAssertTrue(app.buttons["전체 작품 둘러보기"].waitForExistence(timeout: 10))
         XCTAssertFalse(list.exists)
         settings.tap()
@@ -90,6 +94,11 @@ final class PlaybackTests: XCTestCase {
         app.windows.allElementsBoundByIndex.map { $0.frame }
             .max { $0.width * $0.height < $1.width * $1.height } ?? .zero
     }
+    private func waitForHittable(_ element: XCUIElement) -> Bool {
+        // The new page can exist during its 280 ms entrance. Wait until its controls accept a tap.
+        let visible = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in element.exists && element.isHittable }, object: element)
+        return XCTWaiter.wait(for: [visible], timeout: 5) == .completed
+    }
     private func dragUp(_ element: XCUIElement) {
         element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8)).press(forDuration: 0.05,
             thenDragTo: element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)),
@@ -107,7 +116,7 @@ final class PlaybackTests: XCTestCase {
     func testHeaderCanReachCatalog() {
         let app = XCUIApplication(); app.launchArguments = ["--ui-preview", "workspace"]; app.launch()
         let catalog = app.buttons["workspace-route-catalog"]
-        XCTAssertTrue(catalog.waitForExistence(timeout: 15)); XCTAssertTrue(catalog.isHittable); catalog.tap()
+        XCTAssertTrue(catalog.waitForExistence(timeout: 15)); XCTAssertTrue(waitForHittable(catalog)); catalog.tap()
         XCTAssertTrue(app.buttons["catalog-filter-apply"].waitForExistence(timeout: 10))
     }
     func testEpisodeOpensFullscreenAndBackReturnsToDetail() {

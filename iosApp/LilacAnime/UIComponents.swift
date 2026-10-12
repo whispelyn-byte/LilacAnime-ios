@@ -31,6 +31,7 @@ struct LilacPrimaryButtonStyle: ButtonStyle {
             .padding(.horizontal, 20).padding(.vertical, 11)
             .foregroundStyle(scheme == .light ? Color.white : Color(white: 0.08))
             .background((scheme == .light ? LilacStyle.onAccent : Color.white).opacity(configuration.isPressed ? 0.8 : 1), in: RoundedRectangle(cornerRadius: LilacStyle.radius))
+            .modifier(LilacPressFeedback(pressed: configuration.isPressed))
     }
 }
 /// The desktop's grey see-through button beside it (.ghost: 내 목록).
@@ -42,6 +43,7 @@ struct LilacGhostButtonStyle: ButtonStyle {
             .foregroundStyle(scheme == .light ? LilacStyle.text : Color.white)
             .background(scheme == .light ? Color.black.opacity(configuration.isPressed ? 0.16 : 0.1) : Color(white: 0.43).opacity(configuration.isPressed ? 0.5 : 0.7),
                         in: RoundedRectangle(cornerRadius: LilacStyle.radius))
+            .modifier(LilacPressFeedback(pressed: configuration.isPressed))
     }
 }
 /// The desktop's small bordered tool button (오래된화순 · 전체 저장).
@@ -52,6 +54,7 @@ struct LilacOutlineButtonStyle: ButtonStyle {
             .foregroundStyle(LilacStyle.text)
             .background(configuration.isPressed ? LilacStyle.card2 : Color.clear, in: RoundedRectangle(cornerRadius: LilacStyle.radius))
             .overlay(RoundedRectangle(cornerRadius: LilacStyle.radius).stroke(LilacStyle.line))
+            .modifier(LilacPressFeedback(pressed: configuration.isPressed))
     }
 }
 /// A row's title with the desktop's lilac bar in front and 전체 보기 → on the right (ott.css .section-title).
@@ -118,12 +121,13 @@ struct AnimePosterCard: View {
             if !DesktopAnimeMetadata.shared.episodeLabel(anime: anime).isEmpty {
                 Text(DesktopAnimeMetadata.shared.episodeLabel(anime: anime)).font(.system(size: 11, weight: .semibold)).foregroundStyle(LilacStyle.accent).padding(.top, 2)
             }
-        }.frame(width: width)
+        }.frame(width: width).modifier(LilacAppearMotion())
     }
 }
 /// The desktop home's spotlight (ott.css #homeView .hero): across the whole width, the shown poster blurred into the
 /// background under a lilac glow, the copy on the left, and on a wide screen the picks on the right.
 struct HomeHero: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let picks: [Anime]
     @Binding var index: Int
     let source: String
@@ -139,17 +143,18 @@ struct HomeHero: View {
     private var ink: Color { scheme == .light ? LilacStyle.text : .white }
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            backdrop
+            ZStack { backdrop.id(anime.id).transition(.opacity) }
             HStack(alignment: .bottom, spacing: 24) {
-                copy
+                ZStack(alignment: .bottomLeading) { copy.id(anime.id).transition(.opacity) }
                 if wide && picks.count > 1 { Spacer(minLength: 0); picksRow }
             }.padding(.horizontal, LilacStyle.gutter(sizeClass)).padding(.bottom, wide ? 52 : 24)
         }.frame(height: height).frame(maxWidth: .infinity).clipped()
+            .animation(LilacMotion.animation(reduced: reduceMotion, duration: 0.28), value: anime.id)
             .contentShape(Rectangle())
             .simultaneousGesture(DragGesture(minimumDistance: 30).onEnded { value in
                 // The picks by swiping on a phone, where they are not shown (desktop: hidden below 860px).
                 guard picks.count > 1, abs(value.translation.width) > abs(value.translation.height) * 1.5, abs(value.translation.width) > 50 else { return }
-                withAnimation { index = (index + (value.translation.width < 0 ? 1 : picks.count - 1)) % picks.count }
+                index = (index + (value.translation.width < 0 ? 1 : picks.count - 1)) % picks.count
             })
             .task(id: saved.id) { if !UIShowcase.enabled { await names.enrich(anime, source: saved.source, cast: true) } }
     }
@@ -216,7 +221,7 @@ struct HomeHero: View {
         HStack(alignment: .bottom, spacing: 12) {
             ForEach(Array(picks.enumerated()), id: \.element.id) { offset, candidate in
                 let active = offset == min(index, picks.count - 1)
-                Button { withAnimation(.easeOut(duration: 0.4)) { index = offset } } label: {
+                Button { index = offset } label: {
                     AnimeArtwork(url: candidate.poster, width: active ? 200 : 92, height: active ? 300 : 138)
                         .clipShape(RoundedRectangle(cornerRadius: LilacStyle.radius))
                         .overlay(RoundedRectangle(cornerRadius: LilacStyle.radius).stroke(.white.opacity(active ? 0.12 : 0)))

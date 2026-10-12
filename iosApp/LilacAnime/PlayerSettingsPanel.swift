@@ -52,12 +52,13 @@ struct PlayerSettingsPanel<Content: View>: View {
                         VStack(alignment: .leading, spacing: 0) { content() }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, 18).padding(.top, 4).padding(.bottom, 14)
-                    }.id(tab).accessibilityIdentifier("player-settings-scroll")
+                    }.id(tab).modifier(LilacAppearMotion(y: 4)).accessibilityIdentifier("player-settings-scroll")
                 }.frame(width: min(380, max(0, geometry.size.width - right - max(16, insets.left + 12))))
                     .frame(maxHeight: max(0, geometry.size.height - top - bottom))
                     .background(Color(red: 0.067, green: 0.067, blue: 0.086).opacity(0.97), in: RoundedRectangle(cornerRadius: 22))
                     .overlay(RoundedRectangle(cornerRadius: 22).stroke(.white.opacity(0.1), lineWidth: 1))
                     .shadow(color: .black.opacity(0.7), radius: 30, y: 12)
+                    .modifier(LilacAppearMotion(x: 18, y: 0))
                     .padding(.top, top).padding(.trailing, right).padding(.bottom, bottom)
                     .accessibilityElement(children: .contain).accessibilityAddTraits(.isModal)
                     .accessibilityIdentifier("player-settings-panel")
@@ -155,7 +156,7 @@ struct PSButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity, minHeight: 38).padding(.horizontal, 10)
             .background(.white.opacity(configuration.isPressed ? 0.1 : 0.05), in: RoundedRectangle(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white.opacity(0.13), lineWidth: 1))
-            .foregroundStyle(.white).scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .foregroundStyle(.white).modifier(LilacPressFeedback(pressed: configuration.isPressed))
     }
 }
 

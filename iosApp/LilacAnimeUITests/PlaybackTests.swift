@@ -9,7 +9,8 @@ final class PlaybackTests: XCTestCase {
         for route in ["settings", "history", "favorites", "catalog", "home", "settings", "home"] {
             let target = route == "settings" ? app.buttons["workspace-settings"] : app.buttons["workspace-route-" + route]
             XCTAssertTrue(target.waitForExistence(timeout: 5)); XCTAssertTrue(target.isHittable); target.tap()
-            XCTAssertTrue(menu.isHittable)
+            // XCUITest gives a SwiftUI Menu no hit point (-1, -1) even on screen; the gear beside it stands for the header.
+            XCTAssertTrue(menu.exists); XCTAssertTrue(app.buttons["workspace-settings"].isHittable)
         }
         XCTAssertTrue(app.buttons["전체 작품 둘러보기"].waitForExistence(timeout: 5))
         menu.tap()

@@ -9,6 +9,7 @@ struct MediaTrack: Identifiable {
     let id: Int
     let type: String
     let title: String
+    var selected = false
 }
 @MainActor
 final class MPVEngine: ObservableObject {
@@ -309,18 +310,19 @@ final class MPVEngine: ObservableObject {
         for index in 0..<Int(list.pointee.num) {
             let entry = values[index]
             guard entry.format == MPV_FORMAT_NODE_MAP, let map = entry.u.list, let keys = map.pointee.keys, let fields = map.pointee.values else { continue }
-            var id = 0; var type = ""; var title = ""
+            var id = 0; var type = ""; var title = ""; var selected = false
             for field in 0..<Int(map.pointee.num) {
                 guard let keyPointer = keys[field] else { continue }
                 let key = String(cString: keyPointer)
                 let value = fields[field]
                 if key == "id" && value.format == MPV_FORMAT_INT64 { id = Int(value.u.int64) }
+                if key == "selected" && value.format == MPV_FORMAT_FLAG { selected = value.u.flag != 0 }
                 if value.format == MPV_FORMAT_STRING, let string = value.u.string {
                     if key == "type" { type = String(cString: string) }
                     if key == "title" || (title.isEmpty && key == "lang") { title = String(cString: string) }
                 }
             }
-            if type == "audio" || type == "sub" { result.append(MediaTrack(id: id, type: type, title: title.isEmpty ? type + " \(id)" : title)) }
+            if type == "audio" || type == "sub" { result.append(MediaTrack(id: id, type: type, title: title.isEmpty ? type + " \(id)" : title, selected: selected)) }
         }
         tracks = result
     }

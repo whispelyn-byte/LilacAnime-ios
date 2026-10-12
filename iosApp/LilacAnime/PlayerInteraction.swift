@@ -3,7 +3,7 @@ import UIKit
 
 enum PlayerAspect: String, CaseIterable {
     case original, widescreen = "16:9", ultrawide = "21:9", standard = "4:3", fill
-    var title: String { switch self { case .original: return "원본"; case .fill: return "화면 채움"; default: return rawValue } }
+    var title: String { switch self { case .original: return "원본"; case .fill: return "화면 채우기"; default: return rawValue } }
     var ratio: CGFloat? { switch self { case .widescreen: return 16 / 9; case .ultrawide: return 21 / 9; case .standard: return 4 / 3; default: return nil } }
     func stageSize(in size: CGSize) -> CGSize {
         PlayerPresentation(aspect: self, fit: .contain).stageSize(in: size)

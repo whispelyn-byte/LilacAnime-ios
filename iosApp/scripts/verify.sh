@@ -38,7 +38,7 @@ if [ "${CAPTURE_PREVIEWS:-1}" = 1 ]; then
 xcrun simctl bootstatus "$SIMULATOR_ID" -b
 xcrun simctl install "$SIMULATOR_ID" build/DerivedData/Build/Products/Debug-iphonesimulator/LilacAnime.app
 xcrun simctl status_bar "$SIMULATOR_ID" override --time '9:41' --batteryState charged --batteryLevel 100
-for SCREEN in home detail player player-settings catalog models settings; do
+for SCREEN in home detail player player-settings player-settings-1 player-settings-2 catalog models settings; do
   xcrun simctl ui "$SIMULATOR_ID" appearance dark
   xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" com.lilac.anime.ios --ui-preview "$SCREEN"
   sleep 12
@@ -57,14 +57,14 @@ if [ -n "$IPAD_ID" ]; then
   xcrun simctl bootstatus "$IPAD_ID" -b
   # The iPhone run built these universal simulator bundles for this commit.
   # Reuse them on iPad instead of rebuilding the app and KMP framework again.
-  xcodebuild -project LilacAnime.xcodeproj -scheme LilacAnime -configuration Debug -derivedDataPath build/DerivedData -destination "platform=iOS Simulator,id=$IPAD_ID" -resultBundlePath build/iPadMenu.xcresult CODE_SIGNING_ALLOWED=NO MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$APP_BUILD" -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 180 -maximum-test-execution-time-allowance 300 -only-testing:LilacAnimeUITests/PlaybackTests/testRepeatedMenuNavigationRemainsInteractive -only-testing:LilacAnimeUITests/PlaybackTests/testWorkspaceMenuCanReachCatalog -only-testing:LilacAnimeUITests/PlaybackTests/testPlayerPanelAndFitModes -only-testing:LilacAnimeUITests/PlaybackTests/testLocalModelsBackAndWorkspaceNavigation test-without-building
+  xcodebuild -project LilacAnime.xcodeproj -scheme LilacAnime -configuration Debug -derivedDataPath build/DerivedData -destination "platform=iOS Simulator,id=$IPAD_ID" -resultBundlePath build/iPadMenu.xcresult CODE_SIGNING_ALLOWED=NO MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$APP_BUILD" -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 180 -maximum-test-execution-time-allowance 300 -only-testing:LilacAnimeUITests/PlaybackTests/testRepeatedHeaderNavigationRemainsInteractive -only-testing:LilacAnimeUITests/PlaybackTests/testHeaderCanReachCatalog -only-testing:LilacAnimeUITests/PlaybackTests/testPlayerPanelAndFitModes -only-testing:LilacAnimeUITests/PlaybackTests/testLocalModelsBackAndWorkspaceNavigation test-without-building
   if [ "${CAPTURE_PREVIEWS:-1}" = 1 ]; then
   xcrun simctl install "$IPAD_ID" build/DerivedData/Build/Products/Debug-iphonesimulator/LilacAnime.app
   xcrun simctl ui "$IPAD_ID" appearance dark
   xcrun simctl launch --terminate-running-process "$IPAD_ID" com.lilac.anime.ios --ui-preview workspace
   sleep 12
   xcrun simctl io "$IPAD_ID" screenshot build/screenshots/workspace-ipad-dark.png
-  for SCREEN in player-settings player-fit-contain player-fit-cover player-fit-stretch; do
+  for SCREEN in player-settings player-settings-1 player-settings-2 player-fit-contain player-fit-cover player-fit-stretch; do
     xcrun simctl launch --terminate-running-process "$IPAD_ID" com.lilac.anime.ios --ui-preview "$SCREEN"
     sleep 12
     xcrun simctl io "$IPAD_ID" screenshot "build/screenshots/$SCREEN-ipad-dark.png"

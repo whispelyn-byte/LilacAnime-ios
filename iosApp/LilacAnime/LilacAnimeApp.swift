@@ -16,7 +16,7 @@ struct LilacAnimeApp: App {
                     ProgressView("저장된 목록 불러오는 중…")
                 } else if UIShowcase.enabled && UIShowcase.screen == "detail" {
                     NavigationStack { DetailView(summary: UIShowcase.anime, source: "linkkf") }
-                } else if UIShowcase.enabled && ["player", "player-settings", "player-fit-contain", "player-fit-cover", "player-fit-stretch"].contains(UIShowcase.screen) {
+                } else if UIShowcase.enabled && ["player", "player-settings", "player-settings-1", "player-settings-2", "player-fit-contain", "player-fit-cover", "player-fit-stretch"].contains(UIShowcase.screen) {
                     NavigationStack { EpisodePlayerView(item: PlaybackItem(anime: SavedAnime(UIShowcase.anime, source: "linkkf"), episode: UIShowcase.anime.episodes[0])) }
                 } else if UIShowcase.enabled && UIShowcase.screen == "models" {
                     NavigationStack { LocalModelsView() }

@@ -785,7 +785,7 @@ struct EpisodePlayerView: View {
                 if UIShowcase.enabled {
                     if UIShowcase.screen.hasPrefix("player-fit-"), let fit = PlayerFit(rawValue: String(UIShowcase.screen.dropFirst("player-fit-".count))) { library.preferences.selectPlayerFit(fit) }
                     model.applyPreferences(library); model.engine.position = 183; model.engine.duration = 1440
-                    if UIShowcase.screen == "player-settings" { settingsTab = 0; settings = true }
+                    if UIShowcase.screen.hasPrefix("player-settings") { settingsTab = Int(UIShowcase.screen.dropFirst("player-settings-".count)) ?? 0; settings = true }
                 } else { model.begin(library: library) }
             }
             .onDisappear { model.shutdown(library: library); OrientationController.restore(originalOrientation) }

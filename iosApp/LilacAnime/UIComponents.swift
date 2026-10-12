@@ -197,7 +197,7 @@ struct HomeHero: View {
         }.frame(maxWidth: wide ? 540 : .infinity, alignment: .leading)
     }
     private var overview: String? {
-        let text = DisplayText.shared.plain(value: names.record(saved)?.overview.isEmpty == false ? names.record(saved)!.overview : anime.description)
+        let text = DisplayText.shared.plain(value: names.record(saved)?.overview.isEmpty == false ? names.record(saved)!.overview : anime.description_)
         return text.isEmpty ? nil : text
     }
     private var meta: some View {

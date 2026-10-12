@@ -32,9 +32,9 @@ struct DesktopWorkspace: View {
             } message: { Text(downloads.notice ?? "") }
     }
     private var header: some View {
-        HStack(spacing: sizeClass == .regular ? 24 : 10) {
+        HStack(spacing: sizeClass == .regular ? 24 : 4) {
             Button { navigation.section = "home" } label: {
-                Text("LiLac").font(.system(size: sizeClass == .regular ? 24 : 20, weight: .heavy)).foregroundStyle(LilacStyle.accent)
+                Text("LiLac").font(.system(size: sizeClass == .regular ? 24 : 19, weight: .heavy)).foregroundStyle(LilacStyle.accent)
             }.buttonStyle(.plain).accessibilityLabel("홈")
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 0) {
@@ -43,11 +43,11 @@ struct DesktopWorkspace: View {
                         Button { navigation.section = key } label: {
                             Text(title).font(.system(size: 14, weight: active ? .bold : .medium))
                                 .foregroundStyle(active ? LilacStyle.text : LilacStyle.muted)
-                                .padding(.horizontal, sizeClass == .regular ? 12 : 8).padding(.vertical, 8)
+                                .padding(.horizontal, sizeClass == .regular ? 12 : 5).padding(.vertical, 8).fixedSize()
                         }.buttonStyle(.plain).accessibilityIdentifier("workspace-route-" + key)
                     }
                 }
-            }
+            }.padding(.leading, sizeClass == .regular ? 0 : 4)
             if sizeClass == .regular {
                 HStack(spacing: 9) {
                     Image(systemName: "magnifyingglass").foregroundStyle(LilacStyle.muted)
@@ -68,7 +68,7 @@ struct DesktopWorkspace: View {
                     ForEach(ContentSources.keys, id: \.self) { Text(ContentSources.name($0)).tag($0) }
                 }
             } label: {
-                Image(systemName: "ellipsis").font(.system(size: 18, weight: .semibold)).foregroundStyle(LilacStyle.text.opacity(0.85)).frame(width: 36, height: 36)
+                Image(systemName: "ellipsis").font(.system(size: 18, weight: .semibold)).foregroundStyle(LilacStyle.text.opacity(0.85)).frame(width: 34, height: 36)
             }.accessibilityLabel("더보기").accessibilityIdentifier("workspace-menu")
         }.padding(.horizontal, LilacStyle.gutter(sizeClass)).frame(height: 54)
             .background(LilacStyle.background)
@@ -77,7 +77,7 @@ struct DesktopWorkspace: View {
     private func headerIcon(_ name: String, label: String, active: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: name).font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(active ? LilacStyle.accent : LilacStyle.text.opacity(0.85)).frame(width: 36, height: 36)
+                .foregroundStyle(active ? LilacStyle.accent : LilacStyle.text.opacity(0.85)).frame(width: 34, height: 36)
         }.buttonStyle(.plain).accessibilityLabel(label)
     }
     @ViewBuilder private var page: some View {

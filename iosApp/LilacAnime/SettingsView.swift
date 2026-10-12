@@ -34,7 +34,7 @@ struct SettingsView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("설정").font(.system(size: 28, weight: .heavy)).foregroundStyle(LilacStyle.text).padding(.horizontal, 12).padding(.bottom, 16)
                             ForEach(categories.indices, id: \.self) { navButton($0, wide: true) }
-                        }.frame(width: 210, alignment: .leading).padding(.top, 30).accessibilityIdentifier("settings-categories")
+                        }.frame(width: 210, alignment: .leading).padding(.top, 30).accessibilityElement(children: .contain).accessibilityIdentifier("settings-categories")
                         page
                     }.padding(.leading, gutter)
                 } else {

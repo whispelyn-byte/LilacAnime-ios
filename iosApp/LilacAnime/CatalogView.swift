@@ -323,7 +323,7 @@ struct DetailView: View {
                             }
                         }
                     }
-                    let overview = DisplayText.shared.plain(value: names.record(anime, source: source)?.overview.isEmpty == false ? names.record(anime, source: source)!.overview : anime.description)
+                    let overview = DisplayText.shared.plain(value: names.record(anime, source: source)?.overview.isEmpty == false ? names.record(anime, source: source)!.overview : anime.description_)
                     if !overview.isEmpty {
                         Text(overview).font(.system(size: 14)).lineSpacing(5).foregroundStyle(LilacStyle.muted).lineLimit(4)
                     }
@@ -494,7 +494,7 @@ struct DetailView: View {
     private var information: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("작품 소개").font(.title3.bold())
-            let overview = DisplayText.shared.plain(value: names.record(anime, source: source)?.overview.isEmpty == false ? names.record(anime, source: source)!.overview : anime.description)
+            let overview = DisplayText.shared.plain(value: names.record(anime, source: source)?.overview.isEmpty == false ? names.record(anime, source: source)!.overview : anime.description_)
             Text(overview.isEmpty ? "등록된 소개가 없습니다." : overview)
                 .font(.subheadline).lineSpacing(6).foregroundStyle(.secondary)
             Divider()

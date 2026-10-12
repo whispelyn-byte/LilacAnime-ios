@@ -267,7 +267,7 @@ struct DetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 ZStack(alignment: .bottomLeading) {
-                    AnimeArtwork(url: anime.backdrop.isEmpty ? anime.poster : anime.backdrop, height: 310)
+                    AnimeArtwork(url: names.banner(anime, source: source), height: 310)
                     LinearGradient(colors: [.black.opacity(0.1), .black.opacity(0.9)], startPoint: .top, endPoint: .bottom)
                     HStack(alignment: .bottom, spacing: 16) {
                         AnimeArtwork(url: anime.poster, width: 96, height: 140).clipShape(RoundedRectangle(cornerRadius: 16))

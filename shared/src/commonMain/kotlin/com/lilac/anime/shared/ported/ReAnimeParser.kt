@@ -181,12 +181,7 @@ object ReAnimeParser {
             format = anime.optString("format").ifBlank { item.optString("format") },
             native = nativeTitle,
             poster = poster,
-            backdrop = firstNonBlank(
-                extractImage(anime.opt("banner_image")),
-                extractImage(anime.opt("bannerImage")),
-                extractImage(item.opt("banner_image")),
-                extractImage(item.opt("bannerImage"))
-            ) ?: poster,
+            backdrop = poster,
             genres = genres,
             description = description,
             detailUrl = detailUrl

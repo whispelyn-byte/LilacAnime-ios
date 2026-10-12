@@ -7,10 +7,17 @@ enum LilacStyle {
     static let card = Color(uiColor: .secondarySystemGroupedBackground)
     static let muted = Color.secondary
 }
+extension VerticalAlignment {
+    /// 22% from the top, as the desktop's `background-position: center 22%`: a cropped poster keeps its upper part.
+    private struct PosterFocus: AlignmentID { static func defaultValue(in context: ViewDimensions) -> CGFloat { context.height * 0.22 } }
+    static let posterFocus = VerticalAlignment(PosterFocus.self)
+}
+extension Alignment { static let posterFocus = Alignment(horizontal: .center, vertical: .posterFocus) }
 struct AnimeArtwork: View {
     let url: String
     var width: CGFloat? = nil
     var height: CGFloat = 210
+    var alignment: Alignment = .center
     var body: some View {
         GeometryReader { geometry in
             ZStack {
@@ -21,7 +28,7 @@ struct AnimeArtwork: View {
                 } else {
                     AsyncImage(url: URL(string: url)) { image in image.resizable().scaledToFill() } placeholder: { Color.clear }
                 }
-            }.frame(width: geometry.size.width, height: geometry.size.height).clipped()
+            }.frame(width: geometry.size.width, height: geometry.size.height, alignment: alignment).clipped()
         }.frame(width: width, height: height).clipped().accessibilityHidden(true)
     }
 }
@@ -63,7 +70,9 @@ struct FeaturedAnimeCard: View {
     private var saved: SavedAnime { SavedAnime(anime, source: anime.source.isEmpty ? library.preferences.source : anime.source) }
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            AnimeArtwork(url: names.banner(anime, source: saved.source), height: 320)
+            // The desktop hero (ott.css .hero-backdrop): the poster, blurred into a dim colour field behind the text.
+            AnimeArtwork(url: anime.poster, height: 320)
+                .blur(radius: 22, opaque: true).saturation(1.35).colorMultiply(Color(white: 0.62)).scaleEffect(1.06)
             LinearGradient(colors: [.clear, .black.opacity(0.25), .black.opacity(0.92)], startPoint: .top, endPoint: .bottom)
             VStack(alignment: .leading, spacing: 10) {
                 Text("이번 시즌 추천").font(.caption.weight(.heavy)).foregroundStyle(LilacStyle.accent)

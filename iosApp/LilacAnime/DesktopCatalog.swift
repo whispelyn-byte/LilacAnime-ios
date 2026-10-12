@@ -11,7 +11,6 @@ struct CatalogName: Codable {
     var anilist: Int; var mal: Int; var updated: Date; var credential: String
     var titleLookupRevision: Int? = nil
     var castPrepared: Bool? = nil
-    var bannerImage: String? = nil
     func isFresh(credential: String, cast: Bool, bulk: Bool = false, now: Date = Date()) -> Bool {
         self.credential == credential && (!korean.isEmpty || titleLookupRevision == 1) &&
             now.timeIntervalSince(updated) < (bulk ? 30 : 7) * 86400 && (!cast || castPrepared == true || !self.cast.isEmpty)
@@ -72,20 +71,15 @@ final class DesktopCatalog: ObservableObject {
     }
     func record(_ anime: SavedAnime) -> CatalogName? { names[anime.id] }
     func record(_ anime: Anime, source: String) -> CatalogName? { names[source + ":" + anime.id] }
-    func banner(_ anime: Anime, source: String) -> String {
-        if !anime.backdrop.isEmpty, anime.backdrop != anime.poster { return anime.backdrop }
-        if let banner = record(anime, source: source)?.bannerImage, !banner.isEmpty { return banner }
-        return anime.poster
-    }
     @discardableResult
     func enrich(_ anime: Anime, source: String, cast: Bool = false, force: Bool = false, bulk: Bool = false) async -> Bool {
         await load()
         let key = source + ":" + anime.id
         let credential = SubtitleFiles.key(SecureKeys.load("tmdb"))
-        if !force, let name = names[key], name.isFresh(credential: credential, cast: cast, bulk: bulk), !cast || name.bannerImage != nil { return true }
+        if !force, let name = names[key], name.isFresh(credential: credential, cast: cast, bulk: bulk) { return true }
         if let pending = lookups[key] {
             let success = await pending.value
-            if !success || !cast || (names[key]?.bannerImage != nil && (names[key]?.castPrepared == true || !(names[key]?.cast.isEmpty ?? true))) { return success }
+            if !success || !cast || names[key]?.castPrepared == true || !(names[key]?.cast.isEmpty ?? true) { return success }
         }
         let delay = bulk ? 0 : max(0, nextLookup.timeIntervalSinceNow)
         if !bulk { nextLookup = Date().addingTimeInterval(delay + 1) }
@@ -107,8 +101,7 @@ final class DesktopCatalog: ObservableObject {
             names[key] = CatalogName(korean: result.korean.isEmpty ? (old?.korean ?? "") : result.korean, english: result.english, overview: result.overview.isEmpty ? (old?.overview ?? "") : result.overview, aliases: result.aliases,
                 cast: result.characters.isEmpty ? (old?.cast ?? []) : result.characters.map { CastCharacter(name: $0.name, native: $0.native, first: $0.first, last: $0.last, gender: $0.gender) },
                 anilist: Int(result.anilistId), mal: Int(result.malId), updated: Date(), credential: credential,
-                titleLookupRevision: 1, castPrepared: cast || old?.castPrepared == true,
-                bannerImage: result.bannerImage.isEmpty ? (old?.bannerImage ?? (cast ? "" : nil)) : result.bannerImage)
+                titleLookupRevision: 1, castPrepared: cast || old?.castPrepared == true)
             saveNames()
             return true
         }

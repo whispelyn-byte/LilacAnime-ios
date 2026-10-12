@@ -6,8 +6,8 @@ import Libmpv
 /// Like the desktop canvas PiP: video and the currently selected subtitles form one frame.
 /// Capture, conversion and scaling run on MPVEngine's serial worker, never the UI thread.
 enum PiPFrame {
-    static func capture(_ handle: OpaquePointer, position: Double) throws -> CMSampleBuffer {
-        let command: [String] = ["screenshot-raw", "subtitles", "bgra"]
+    static func capture(_ handle: OpaquePointer, position: Double, mode: String = "subtitles", maximumWidth: Int = 960) throws -> CMSampleBuffer {
+        let command: [String] = ["screenshot-raw", mode, "bgra"]
         let arguments = command.map { strdup($0) }
         defer { arguments.forEach { free($0) } }
         var values: [UnsafePointer<CChar>?] = arguments.map { $0.map { UnsafePointer<CChar>($0) } } + [nil]
@@ -34,14 +34,14 @@ enum PiPFrame {
         // The UI observes time at 4 Hz; frame timestamps need the current core time for smooth PiP.
         var current = position
         if mpv_get_property(handle, "time-pos", MPV_FORMAT_DOUBLE, &current) < 0 || !current.isFinite { current = position }
-        return try make(width: width, height: height, stride: stride, bytes: data, count: bytes.size, position: current)
+        return try make(width: width, height: height, stride: stride, bytes: data, count: bytes.size, position: current, maximumWidth: maximumWidth)
     }
-    static func make(width: Int, height: Int, stride: Int, bytes: UnsafeMutableRawPointer, count: Int, position: Double) throws -> CMSampleBuffer {
+    static func make(width: Int, height: Int, stride: Int, bytes: UnsafeMutableRawPointer, count: Int, position: Double, maximumWidth: Int = 960) throws -> CMSampleBuffer {
         guard width > 0, width <= 8192, height > 0, height <= 8192,
               stride >= width * 4, stride <= 65536, count >= stride * height else {
             throw SubtitleFiles.failure("PiP 영상 크기가 올바르지 않습니다.")
         }
-        let outputWidth = min(width, 960), outputHeight = max(1, Int((Double(height) * Double(outputWidth) / Double(width)).rounded()))
+        let outputWidth = min(width, maximumWidth), outputHeight = max(1, Int((Double(height) * Double(outputWidth) / Double(width)).rounded()))
         var pixel: CVPixelBuffer?
         let attributes: [CFString: Any] = [kCVPixelBufferIOSurfacePropertiesKey: [:]]
         guard CVPixelBufferCreate(kCFAllocatorDefault, outputWidth, outputHeight, kCVPixelFormatType_32BGRA, attributes as CFDictionary, &pixel) == kCVReturnSuccess,

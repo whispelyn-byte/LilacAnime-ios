@@ -4,6 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/whispelyn-byte/LilacAnime-ios/releases/latest"><img src="https://img.shields.io/github/v/release/whispelyn-byte/LilacAnime-ios?label=%EC%B5%9C%EC%8B%A0%20%EB%B2%84%EC%A0%84&color=b98fd6" alt="최신 버전"></a>
+  <a href="https://github.com/whispelyn-byte/LilacAnime-ios/actions/workflows/kmp.yml"><img src="https://img.shields.io/github/actions/workflow/status/whispelyn-byte/LilacAnime-ios/kmp.yml?branch=main&event=workflow_dispatch&label=iOS%20%EB%B9%8C%EB%93%9C" alt="iOS 빌드와 테스트 상태"></a>
   <img src="https://img.shields.io/badge/iOS-16%2B-555555?logo=apple" alt="iOS 16 이상">
   <img src="https://img.shields.io/badge/iPhone%20%C2%B7%20iPad-SideStore-555555" alt="iPhone · iPad, SideStore">
 </p>
@@ -35,9 +36,9 @@
 - [문제 해결](#문제-해결) · [저장 위치](#저장-위치) · [개발](#개발) · [크레딧](#크레딧)
 
 <p align="center">
-  <img src="docs/screenshots/home-dark.png" width="230" alt="홈">
+  <img src="docs/screenshots/workspace-iphone-dark.png" width="230" alt="iPhone 홈과 상단 탐색 메뉴">
   <img src="docs/screenshots/detail-dark.png" width="230" alt="작품 상세">
-  <img src="docs/screenshots/player-dark.png" width="230" alt="플레이어">
+  <img src="docs/screenshots/catalog-dark.png" width="230" alt="전체 작품과 상세 필터">
 </p>
 
 ## 주요 기능
@@ -53,13 +54,23 @@
 
 | | |
 |---|---|
-| <img src="docs/screenshots/catalog-dark.png" width="260" alt="전체"> | <img src="docs/screenshots/models-dark.png" width="260" alt="로컬 AI 모델"> |
-| **전체** · 소스의 전체 작품, 한국어 검색과 상세 필터 | **설정 > 자막 자동 번역 > 로컬 GGUF 모델** |
+| <img src="docs/screenshots/settings-dark.png" width="260" alt="설정 분류와 일반 설정"> | <img src="docs/screenshots/models-dark.png" width="260" alt="로컬 AI 모델"> |
+| **설정** · 분류를 고르고 항목별로 변경 | **설정 > 자막 자동 번역 > 로컬 GGUF 모델** |
 
 <p align="center"><img src="docs/screenshots/workspace-ipad-dark.png" width="700" alt="iPad 홈"></p>
-<p align="center"><b>iPad</b> · 왼쪽 메뉴와 본문을 함께 표시</p>
+<p align="center"><b>iPad</b> · 상단 탐색 메뉴와 검색창, 넓은 홈 화면</p>
 
-화면은 시뮬레이터에서 예시 데이터로 찍은 것입니다 (실제 작품 이미지가 아닙니다).
+<p align="center"><img src="docs/screenshots/player-dark.png" width="700" alt="가로 전체 화면 플레이어"></p>
+
+| 탭 | 설정 화면 |
+|---|---|
+| **재생** | <img src="docs/screenshots/player-settings-dark.png" width="600" alt="플레이어 재생 설정"> |
+| **자막** | <img src="docs/screenshots/player-settings-1-dark.png" width="600" alt="플레이어 자막 선택과 번역"> |
+| **자막 모양** | <img src="docs/screenshots/player-settings-2-dark.png" width="600" alt="플레이어 자막 글꼴과 모양"> |
+
+플레이어 설정은 화면 오른쪽 패널에서 **재생 · 자막 · 자막 모양** 탭으로 나뉩니다. 영상을 보면서 화질·배속·화면 맞춤, 자막 선택·번역, 글꼴·크기·싱크를 바꿀 수 있습니다.
+
+화면은 `main` 브랜치의 앱을 iPhone · iPad 시뮬레이터에서 예시 데이터로 찍은 것입니다. 실제 작품 이미지가 아니며, 아직 릴리즈되지 않은 UI 변경이 포함될 수 있습니다. [캡처 기준과 다시 찍는 방법](docs/screenshots/README.md)
 
 ## 설치
 
@@ -86,7 +97,9 @@ https://github.com/whispelyn-byte/LilacAnime-ios/releases/latest/download/source
 
 ## 처음 쓸 때
 
-화면 위쪽 검색창 왼쪽의 **메뉴** 버튼(iPad는 왼쪽 목록)으로 홈 · 전체 · 검색 · 시청기록 · 내 목록 · 설정을 오갑니다. 설정은 검색창 오른쪽의 톱니바퀴로도 열 수 있고, 위쪽에서 분류를 고르면 그 설정이 나옵니다.
+화면 위쪽의 **홈 · 전체 · 시청기록 · 내 목록**으로 이동합니다. iPhone은 돋보기 버튼으로 검색 화면을 열고, iPad는 상단 검색창에 바로 입력합니다. **톱니바퀴**는 설정, **더보기(···)**는 로컬 영상 열기와 영상 소스 선택입니다. iPhone에서 상단 항목이 다 보이지 않으면 가로로 밀어 볼 수 있습니다.
+
+설정의 분류는 iPhone에서는 위쪽 가로 목록, iPad에서는 왼쪽 세로 목록에 표시됩니다. **자막 자동 번역 > 로컬 GGUF 모델**에서 돌아올 때는 화면 위의 뒤로 가기를 누릅니다.
 
 1. **설정 > 재생 > 영상 소스**에서 볼 사이트를 고릅니다. 처음엔 RE:Anime입니다.
 2. **설정 > 일반 > 작품 제목 표시**에서 한국어 / 영어 / 원래 제목을 고릅니다.
@@ -98,7 +111,7 @@ https://github.com/whispelyn-byte/LilacAnime-ios/releases/latest/download/source
 ### 애니 보기
 
 1. 위쪽 검색창에 제목을 한국어로 입력하고 검색합니다.
-2. 또는 홈 맨 위의 **이번 시즌 추천**에서 고릅니다. 아래 작은 포스터를 누르면 그 작품으로 바뀌고, **자세히 보기**를 누르면 작품 화면이 열립니다. 이번 시즌 신작 · 인기 작품 · 방영 중을 둘러보다가 작품을 눌러도 됩니다.
+2. 또는 홈 맨 위의 **이번 시즌 추천**에서 고릅니다. iPhone에서는 추천 화면을 좌우로 밀고, 넓은 화면에서는 오른쪽 포스터를 눌러 작품을 바꿉니다. **자세히 보기**를 누르면 작품 화면이 열립니다. 이번 시즌 신작 · 인기 작품 · 방영 중을 둘러보다가 작품을 눌러도 됩니다.
 3. **전체**에서는 소스의 모든 작품을 한국어 · 원제 · 영어로 검색하고, 장르 · 형태 · 연도 · 분기 필터와 인기순 · 최신순 · 회차 업데이트순 · 평점순 정렬로 찾아봅니다. 소스가 제공하는 분류만 나옵니다.
 4. 홈의 **최근 업데이트**와 내 목록의 **회차 업데이트순**은 RE:Anime · Miruro · Animenosub · 애니24 · 링크애니에서 쓸 수 있습니다.
 
@@ -108,6 +121,8 @@ https://github.com/whispelyn-byte/LilacAnime-ios/releases/latest/download/source
 2. 보고 싶은 회차를 골라 눌러도 됩니다. 회차가 많으면 위쪽 범위 버튼으로 넘기고, **최신화순 / 오래된화순**으로 순서를 바꿉니다.
 3. 회차 옆 버튼은 그 회차만 내려받고, **전체 저장**은 모든 회차를 내려받습니다. → [오프라인으로 보기](#오프라인으로-보기)
 4. 하트를 누르면 **내 목록**에 담깁니다.
+
+작품 화면의 **회차 · 작품 정보 · 관련 작품** 탭에서 회차 목록, 줄거리·작품 정보, 관련 작품을 나눠 볼 수 있습니다.
 
 재생을 누르면 가로 전체 화면으로 바뀝니다. 자막은 앱이 알아서 찾아 입힙니다. 보다가 나가도 홈의 **계속 시청하기**나 **시청기록**에서 누르면 멈춘 곳부터 이어집니다.
 
@@ -265,7 +280,7 @@ https://github.com/whispelyn-byte/LilacAnime-ios/releases/latest/download/source
 ## 문제 해결
 
 **영상이 안 나오거나 계속 불러오기만 해요**
-- 사이트 서버가 멈춘 경우가 많습니다. **다시 시도**를 누르거나, 메뉴에서 **설정 > 재생 > 영상 소스**를 바꿔 다른 사이트에서 찾아봅니다.
+- 사이트 서버가 멈춘 경우가 많습니다. **다시 시도**를 누르거나, **설정 > 재생 > 콘텐츠 / 영상 소스**를 바꿔 다른 사이트에서 찾아봅니다. 상단 **더보기(···) > 영상 소스**에서도 바꿀 수 있습니다.
 - 플레이어 설정 > 재생 > **영상 서버 · 화질**에서 다른 서버나 낮은 화질을 골라 봅니다. **웹 플레이어 열기**로 사이트 화면에서 재생할 수도 있습니다.
 
 **한국어 자막을 못 찾아요**

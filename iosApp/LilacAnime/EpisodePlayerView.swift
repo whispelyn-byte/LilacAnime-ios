@@ -774,6 +774,29 @@ struct EpisodePlayerView: View {
                     Button("닫기") { model.dismissKoreanOffer() }
                 }.padding(16).background(.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 16)).padding(.bottom, 100) }.foregroundStyle(.white).padding(.horizontal, 24).zIndex(9)
             }
+            if model.pictureInPicture.active {
+                // Keep the PiP source attached underneath; covering it does not alter its frames.
+                ZStack {
+                    Color.black
+                    VStack(spacing: 16) {
+                        Image(systemName: "pip")
+                            .font(.system(size: 40))
+                            .accessibilityHidden(true)
+                        Text("PiP 모드로 재생 중입니다")
+                            .font(.headline)
+                        Text("작은 화면에서 영상을 계속 시청할 수 있어요.")
+                            .font(.subheadline)
+                            .foregroundStyle(.white.opacity(0.7))
+                        Button("전체 화면으로 돌아가기") { model.pictureInPicture.stop() }
+                            .buttonStyle(.bordered)
+                    }
+                    .multilineTextAlignment(.center)
+                    .padding(24)
+                    .foregroundStyle(.white)
+                }
+                .accessibilityIdentifier("pip-playback-placeholder")
+                .zIndex(20)
+            }
         }.frame(maxWidth: .infinity, maxHeight: .infinity).background(.black).ignoresSafeArea(.container)
             .background(PlayerOrientationView().allowsHitTesting(false))
             .accessibilityElement(children: .contain)

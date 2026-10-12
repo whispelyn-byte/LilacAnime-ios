@@ -43,16 +43,24 @@ struct DesktopFullCatalog: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
+                    // ott.css .all-head: the source, and the order as the desktop's sort chips.
                     HStack {
                         Picker("소스", selection: $library.preferences.source) { ForEach(ContentSources.keys, id: \.self) { Text(ContentSources.name($0)).tag($0) } }
-                        Picker("정렬", selection: $sort) { ForEach(sorts, id: \.self) { Text($0 == "popular" ? "인기순" : $0 == "year" ? "최신순" : $0 == "score" ? "평점순" : $0 == "updated" ? "회차 업데이트순" : "기본 순서").tag($0) } }
-                        NavigationLink { CatalogIndexView() } label: { Image(systemName: "arrow.triangle.2.circlepath") }
+                        Spacer()
+                        NavigationLink { CatalogIndexView() } label: { Image(systemName: "arrow.triangle.2.circlepath") }.accessibilityLabel("한국어 전체 카탈로그 · 인덱스")
+                    }
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 2) {
+                            ForEach(sorts, id: \.self) { value in
+                                Button { sort = value } label: { LilacChip(text: value == "popular" ? "인기순" : value == "year" ? "최신순" : value == "score" ? "평점순" : value == "updated" ? "회차 업데이트순" : "기본 순서", selected: sort == value) }.buttonStyle(.plain)
+                            }
+                        }.padding(3).background(LilacStyle.card2, in: RoundedRectangle(cornerRadius: 8))
                     }
                     filterPanel
                     Text("\(values.count)개 · " + (UIShowcase.enabled ? "UI PREVIEW · 예시 데이터" : remoteSource ? "선택한 소스의 전체 목록" : catalog.status)).font(.caption).foregroundStyle(.secondary)
                     if !remoteSource, let error = catalog.error { Text(error).foregroundStyle(.red) }
                     if let error = remote.error, remoteSource { Text(error).foregroundStyle(.red); Button("다시 시도") { reloadRemote() } }
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 145))], spacing: 18) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 26) {
                         ForEach(values) { item in NavigationLink { DetailView(summary: item.anime, source: item.source) } label: { AnimePosterCard(anime: item.anime) }.buttonStyle(.plain) }
                     }
                     if remoteSource && !UIShowcase.enabled {
@@ -166,7 +174,7 @@ struct DesktopSourceView: View {
         }
     }
     private func grid(_ items: [Anime]) -> some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 145))], spacing: 18) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 26) {
             ForEach(items, id: \.id) { anime in
                 NavigationLink { DetailView(summary: anime, source: anime.source == "jikan" ? "jikan" : library.preferences.source) } label: { AnimePosterCard(anime: anime) }.buttonStyle(.plain)
             }

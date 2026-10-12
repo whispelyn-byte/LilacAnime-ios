@@ -1,12 +1,14 @@
 import SwiftUI
 import LilacShared
 
+/// The desktop home (ott.css #homeView): the spotlight across the top, then rows of posters that scroll sideways.
 struct HomeView: View {
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var navigation: DesktopNavigation
     @StateObject private var model = CatalogModel()
     @StateObject private var home = DesktopSourceModel()
     @ObservedObject private var recent = DesktopRecentUpdates.shared
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var homeOrder = "season"
     @State private var featured = 0
     @State private var day = (Calendar.current.component(.weekday, from: Date()) + 5) % 7
@@ -20,6 +22,7 @@ struct HomeView: View {
     var workspace = false
     let browse: () -> Void
     private var items: [Anime] { UIShowcase.enabled ? UIShowcase.items : model.items }
+    private var gutter: CGFloat { LilacStyle.gutter(sizeClass) }
     private var continuing: [WatchEntry] {
         var seen: Set<String> = []
         return Array(library.history.filter { seen.insert($0.anime.id).inserted }.prefix(6))
@@ -27,66 +30,18 @@ struct HomeView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 26) {
-                    if let anime = heroItems.isEmpty ? nil : heroItems[min(featured, heroItems.count - 1)] {
-                        VStack(alignment: .leading, spacing: 12) {
-                            FeaturedAnimeCard(anime: anime)
-                            HStack {
-                                NavigationLink { DetailView(summary: anime, source: anime.source == "jikan" ? "jikan" : model.source) } label: { Label("자세히 보기", systemImage: "play.fill") }.buttonStyle(.borderedProminent)
-                                Button { library.toggle(anime, source: model.source) } label: { Label(library.contains(anime, source: model.source) ? "내 목록에서 제거" : "내 목록", systemImage: library.contains(anime, source: model.source) ? "checkmark" : "plus") }.buttonStyle(.bordered)
-                            }.padding(.horizontal, 6)
-                        }.padding(.horizontal, 16)
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 12) {
-                                ForEach(Array(heroItems.enumerated()), id: \.element.id) { index, candidate in
-                                    Button { featured = index } label: {
-                                        AnimeArtwork(url: candidate.poster, width: 55, height: 78)
-                                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(featured == index ? LilacStyle.accent : Color.clear, lineWidth: 2))
-                                    }.accessibilityLabel(candidate.title)
-                                }
-                            }.padding(.horizontal, 20)
-                        }
+                VStack(alignment: .leading, spacing: 30) {
+                    if !heroItems.isEmpty {
+                        HomeHero(picks: heroItems, index: $featured, source: model.source)
                     } else if model.loading {
-                        RoundedRectangle(cornerRadius: 28).fill(LilacStyle.accent.opacity(0.1)).frame(height: 320)
-                            .overlay { ProgressView("작품을 불러오는 중…") }.padding(.horizontal, 16)
+                        Rectangle().fill(LilacStyle.card).frame(height: 420).overlay { ProgressView("작품을 불러오는 중…") }
                     }
-                    if model.source == "linkkf" {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("방영 일정").font(.title3.bold()).padding(.horizontal, 20)
-                            ScrollView(.horizontal, showsIndicators: false) { HStack {
-                                ForEach(Array(["UP", "월", "화", "수", "목", "금", "토", "일"].enumerated()), id: \.offset) { index, title in
-                                    Button { day = index - 1 } label: { LilacChip(text: title, selected: day == index - 1) }.buttonStyle(.plain)
-                                }
-                            }.padding(.horizontal, 20) }
-                            AnimeRail(title: day < 0 ? "최신 업데이트" : "오늘의 애니메이션", items: day < 0 ? items : home.airing, source: model.source)
-                        }
-                    }
-                    if !library.history.isEmpty {
-                        VStack(alignment: .leading, spacing: 14) {
-                            HStack { Text("계속 시청하기").font(.title3.bold()); Spacer(); Button("전체 보기") { navigation.section = "history" } }.padding(.horizontal, 20)
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                LazyHStack(spacing: 14) {
-                                    ForEach(continuing) { entry in
-                                        PlaybackButton(item: PlaybackItem(entry: entry)) {
-                                            VStack(alignment: .leading, spacing: 8) {
-                                                AnimeArtwork(url: entry.anime.anime.backdrop.isEmpty ? entry.anime.poster : entry.anime.anime.backdrop, width: 240, height: 132)
-                                                    .clipShape(RoundedRectangle(cornerRadius: 18))
-                                                    .overlay { Image(systemName: "play.circle.fill").font(.system(size: 38)).foregroundStyle(.white) }
-                                                AnimeDisplayTitle(anime: entry.anime.anime, source: entry.anime.source).font(.subheadline.bold()).lineLimit(1)
-                                                Text(entry.episodeTitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                                                ProgressView(value: entry.duration > 0 ? min(entry.position / entry.duration, 1) : 0)
-                                            }.frame(width: 240).foregroundStyle(.primary)
-                                        }.buttonStyle(.plain)
-                                    }
-                                }.padding(.horizontal, 20)
-                            }
-                        }
-                    }
+                    if model.source == "linkkf" { schedule }
+                    if !library.history.isEmpty { continueWatching }
                     if DesktopRecentUpdates.supported.contains(library.preferences.source) {
-                        Picker("홈 목록", selection: $homeOrder) { Text("이번 시즌 신작").tag("season"); Text("최근 업데이트").tag("updated") }.pickerStyle(.segmented).padding(.horizontal, 20)
+                        orderChips
                         if homeOrder == "updated" {
-                            Text(recent.homeNote).font(.caption).foregroundStyle(.secondary).padding(.horizontal, 20)
+                            Text(recent.homeNote).font(.caption).foregroundStyle(LilacStyle.muted).padding(.horizontal, gutter)
                             AnimeRail(title: "최근 업데이트", items: recent.home, source: model.source) {
                                 UserDefaults.standard.set("updated", forKey: "allSort:" + library.preferences.source); navigation.section = "catalog"
                             }
@@ -98,36 +53,21 @@ struct HomeView: View {
                     if model.source == "linkkf" && !items.isEmpty { AnimeRail(title: "최신 애니메이션", items: items, source: model.source) { navigation.section = "catalog" } }
                     if model.source != "linkkf" && !home.airing.isEmpty { AnimeRail(title: "방영 중", items: home.airing, source: model.source) { navigation.browse("schedule") } }
                     if UIShowcase.enabled { AnimeRail(title: "이번 시즌 신작", items: items, source: model.source) { navigation.browse("season") }; AnimeRail(title: "인기 작품", items: Array(items.reversed()), source: model.source) { navigation.browse("top") } }
-                    if !library.favorites.isEmpty {
-                        VStack(alignment: .leading, spacing: 14) {
-                            Text("내 목록").font(.title3.bold()).padding(.horizontal, 20)
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                LazyHStack(spacing: 14) {
-                                    ForEach(Array(library.favorites.prefix(10))) { saved in
-                                        NavigationLink { DetailView(summary: saved.anime, source: saved.source) } label: {
-                                            AnimePosterCard(anime: saved.anime, width: 135, height: 190)
-                                        }.buttonStyle(.plain)
-                                    }
-                                }.padding(.horizontal, 20)
-                            }
-                        }
-                    }
+                    if !library.favorites.isEmpty { favorites }
                     if let error = model.error {
                         VStack(spacing: 12) {
                             LilacEmptyState(icon: "wifi.exclamationmark", title: "작품을 불러오지 못했어요", message: error)
-                            Button("다시 시도") { model.load() }.buttonStyle(.borderedProminent)
-                        }.padding(.horizontal, 20)
+                            Button("다시 시도") { model.load() }.buttonStyle(LilacPrimaryButtonStyle())
+                        }.padding(.horizontal, gutter)
                     } else if items.isEmpty && !model.loading {
                         LilacEmptyState(icon: "sparkles", title: "새로운 작품을 찾아보세요", message: "다른 영상 소스를 선택하거나 탐색에서 검색해 보세요.")
                     }
-                    Button(action: browse) { Label("전체 작품 둘러보기", systemImage: "square.grid.2x2").font(.subheadline.bold()).frame(maxWidth: .infinity).padding(18) }
-                        .background(LilacStyle.card, in: RoundedRectangle(cornerRadius: 20)).padding(.horizontal, 20)
-                    if UIShowcase.enabled { Text("UI PREVIEW · 예시 데이터").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 20) }
-                }.padding(.top, 16).padding(.bottom, 28)
+                    Button(action: browse) { Label("전체 작품 둘러보기", systemImage: "square.grid.2x2").frame(maxWidth: .infinity) }
+                        .buttonStyle(LilacOutlineButtonStyle()).padding(.horizontal, gutter)
+                    if UIShowcase.enabled { Text("UI PREVIEW · 예시 데이터").font(.caption).foregroundStyle(LilacStyle.muted).padding(.horizontal, gutter) }
+                }.padding(.bottom, 40)
             }.background(LilacStyle.background)
-                .toolbar(workspace ? .visible : .hidden, for: .navigationBar)
-                .navigationTitle(workspace ? "홈" : "")
-                .navigationBarTitleDisplayMode(.inline)
+                .toolbar(.hidden, for: .navigationBar)
                 .refreshable { if !UIShowcase.enabled { model.load(); home.load(source: model.source, day: max(day, 0)) } }
                 .onChange(of: day) { value in if !UIShowcase.enabled { home.load(source: model.source, day: max(value, 0)) } }
                 .task(id: library.preferences.source) { if !UIShowcase.enabled { featured = 0; home.load(source: library.preferences.source, day: max(day, 0)) } }
@@ -141,7 +81,69 @@ struct HomeView: View {
                 .onChange(of: library.preferences.source) { source in if !UIShowcase.enabled && model.source != source { model.source = source; model.load() } }
         }
     }
-    private func sourceName(_ source: String) -> String {
-        ContentSources.name(source)
+    /// Linkkf's weekday schedule: UP is the newest updates.
+    private var schedule: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            LilacSectionTitle(title: "방영 일정").padding(.horizontal, gutter)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(Array(["UP", "월", "화", "수", "목", "금", "토", "일"].enumerated()), id: \.offset) { index, title in
+                        Button { day = index - 1 } label: { LilacChip(text: title, selected: day == index - 1) }.buttonStyle(.plain)
+                    }
+                }.padding(.horizontal, gutter)
+            }
+            AnimeRail(title: day < 0 ? "최신 업데이트" : "오늘의 애니메이션", items: day < 0 ? items : home.airing, source: model.source)
+        }
+    }
+    /// 이번 시즌 신작 / 최근 업데이트 as the desktop's sort chips.
+    private var orderChips: some View {
+        HStack(spacing: 2) {
+            ForEach([("season", "이번 시즌 신작"), ("updated", "최근 업데이트")], id: \.0) { value, title in
+                Button { homeOrder = value } label: { LilacChip(text: title, selected: homeOrder == value) }.buttonStyle(.plain)
+            }
+        }.padding(3).background(LilacStyle.card2, in: RoundedRectangle(cornerRadius: 8)).padding(.horizontal, gutter)
+    }
+    /// Continue watching (ott.css .continue-card): wide stills with the progress inside them, the title and episode under.
+    private var continueWatching: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            LilacSectionTitle(title: "계속 시청하기") { navigation.section = "history" }.padding(.horizontal, gutter)
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(alignment: .top, spacing: 10) {
+                    ForEach(continuing) { entry in
+                        let width: CGFloat = sizeClass == .regular ? 300 : 230
+                        let progress = entry.duration > 0 ? min(entry.position / entry.duration, 1) : (entry.progressPercent ?? 0) / 100
+                        PlaybackButton(item: PlaybackItem(entry: entry)) {
+                            VStack(alignment: .leading, spacing: 0) {
+                                AnimeArtwork(url: entry.anime.anime.backdrop.isEmpty ? entry.anime.poster : entry.anime.anime.backdrop, width: width, height: width * 9 / 16, alignment: .posterFocus)
+                                    .clipShape(RoundedRectangle(cornerRadius: LilacStyle.radius))
+                                    .overlay { Image(systemName: "play.fill").font(.system(size: 18)).foregroundStyle(.white).frame(width: 44, height: 44).background(.black.opacity(0.6), in: Circle()) }
+                                    .overlay(alignment: .bottom) {
+                                        ZStack(alignment: .leading) {
+                                            Capsule().fill(.white.opacity(0.36))
+                                            Capsule().fill(LilacStyle.accent).frame(width: max(0, (width - 16) * progress))
+                                        }.frame(height: 4).padding(8)
+                                    }
+                                AnimeDisplayTitle(anime: entry.anime.anime, source: entry.anime.source).font(.system(size: 14, weight: .semibold)).foregroundStyle(LilacStyle.text).lineLimit(1).padding(.top, 8)
+                                Text(entry.episodeTitle).font(.system(size: 12)).foregroundStyle(LilacStyle.accent).lineLimit(1).padding(.top, 3)
+                            }.frame(width: width)
+                        }.buttonStyle(.plain)
+                    }
+                }.padding(.horizontal, gutter)
+            }
+        }
+    }
+    private var favorites: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            LilacSectionTitle(title: "내 목록") { navigation.section = "favorites" }.padding(.horizontal, gutter)
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(alignment: .top, spacing: 10) {
+                    ForEach(Array(library.favorites.prefix(10))) { saved in
+                        NavigationLink { DetailView(summary: saved.anime, source: saved.source) } label: {
+                            AnimePosterCard(anime: saved.anime, width: sizeClass == .regular ? 170 : 130, height: sizeClass == .regular ? 255 : 195)
+                        }.buttonStyle(.plain)
+                    }
+                }.padding(.horizontal, gutter)
+            }
+        }
     }
 }

@@ -27,7 +27,7 @@ struct SettingsView: View {
             VStack(spacing: 0) {
             ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 8) {
                 ForEach(Array(categories.enumerated()), id: \.offset) { index, key in
-                    Button(categoryNames[index]) { category = key }.buttonStyle(.bordered).tint(category == key ? LilacStyle.accent : .secondary)
+                    Button { category = key } label: { LilacChip(text: categoryNames[index], selected: category == key) }.buttonStyle(.plain)
                         .accessibilityIdentifier("settings-category-" + key)
                 }
             }.padding(16) }.accessibilityIdentifier("settings-categories")
@@ -196,7 +196,7 @@ struct SettingsView: View {
                 }
                 if let error { Text(error).foregroundStyle(.red) }
                 if let error = store.persistenceError { Text(error).foregroundStyle(.red) }
-            }.accessibilityIdentifier("settings-form")
+            }.scrollContentBackground(.hidden).background(LilacStyle.background).accessibilityIdentifier("settings-form")
             }.navigationTitle("설정")
             .toolbar(.visible, for: .navigationBar)
             .navigationDestination(for: Destination.self) { _ in LocalModelsView() }

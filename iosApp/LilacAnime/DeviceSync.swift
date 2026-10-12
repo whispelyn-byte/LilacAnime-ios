@@ -427,7 +427,7 @@ struct DeviceSyncView: View {
                 Text("비밀번호는 연결할 때 한 번만 보내고, 서버가 준 토큰만 이 기기의 Keychain에 둡니다. 이 기기의 파일로 본 기록은 보내지 않습니다. 같은 항목을 두 기기에서 바꾸면 나중에 바꾼 쪽이 남습니다.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-        }.navigationTitle("기기 동기화")
+        }.scrollContentBackground(.hidden).background(LilacStyle.background).navigationTitle("기기 동기화")
     }
     private func connect() {
         working = true; message = nil

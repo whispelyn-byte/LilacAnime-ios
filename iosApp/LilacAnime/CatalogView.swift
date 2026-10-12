@@ -162,7 +162,7 @@ struct CatalogView: View {
                     }
                     if let error = model.error { Text(error).foregroundStyle(.red); Button("다시 시도") { model.load() } }
                     if let note = model.searchNote { Text(note).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading) }
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 145))], spacing: 18) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 26) {
                         ForEach(model.items, id: \.id) { anime in
                             NavigationLink { DetailView(summary: anime, source: model.source) } label: {
                                 AnimePosterCard(anime: anime)
@@ -263,56 +263,53 @@ struct DetailView: View {
     private var pageSize: Int { source == "reanime" ? 100 : 50 }
     private var sortKey: String { "episodeNewestFirst:" + source + ":" + anime.id }
     private func episodeName(_ episode: Episode) -> String { episode.displayNumber.isEmpty ? String(episode.number) : episode.displayNumber }
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    private var wide: Bool { sizeClass == .regular }
+    private var gutter: CGFloat { LilacStyle.gutter(sizeClass) }
+    private var heroHeight: CGFloat { wide ? 460 : 300 }
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                ZStack(alignment: .bottomLeading) {
-                    // The desktop detail hero: the poster itself, filling the top and cropped about its upper part.
-                    AnimeArtwork(url: anime.poster, height: 310, alignment: .posterFocus)
-                    LinearGradient(colors: [.black.opacity(0.1), .black.opacity(0.9)], startPoint: .top, endPoint: .bottom)
-                    HStack(alignment: .bottom, spacing: 16) {
-                        AnimeArtwork(url: anime.poster, width: 96, height: 140).clipShape(RoundedRectangle(cornerRadius: 16))
-                        VStack(alignment: .leading, spacing: 9) {
-                            AnimeDisplayTitle(anime: anime, source: source).font(.title2.bold()).lineLimit(3).minimumScaleFactor(0.85)
-                            Text([anime.format, anime.year, anime.status, anime.score > 0 ? "★ " + String(format: "%g", (anime.score * 100).rounded() / 100) : ""].filter { !$0.isEmpty }.joined(separator: " · "))
-                                .font(.subheadline).foregroundStyle(.white.opacity(0.8))
-                            Text(anime.genres.prefix(3).joined(separator: " · ")).font(.caption).foregroundStyle(.white.opacity(0.7))
+            VStack(alignment: .leading, spacing: 0) {
+                // ott.css #detailDialog: a tall still on top fading into the page, the poster and title coming up over it.
+                ZStack {
+                    AnimeArtwork(url: anime.poster, height: heroHeight, alignment: .posterFocus)
+                    LinearGradient(stops: [.init(color: LilacStyle.background, location: 0), .init(color: LilacStyle.background.opacity(0.55), location: 0.32), .init(color: .clear, location: 0.7)],
+                                   startPoint: .bottom, endPoint: .top)
+                }.frame(height: heroHeight).clipped()
+                VStack(alignment: .leading, spacing: 16) {
+                    titleBlock
+                    if !anime.genres.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(anime.genres, id: \.self) { genre in
+                                    Text(genre).font(.system(size: 11, weight: .medium)).foregroundStyle(LilacStyle.text)
+                                        .padding(.horizontal, 10).padding(.vertical, 5).background(LilacStyle.card2, in: Capsule())
+                                }
+                            }
                         }
-                    }.foregroundStyle(.white).padding(22)
-                }.frame(height: 310).clipShape(RoundedRectangle(cornerRadius: 28)).padding(.horizontal, 16)
-                HStack(spacing: 12) {
-                    if let resume {
-                        PlaybackButton(item: playback(resume.0.episodes, index: resume.1)) {
-                            Label(episodeName(resume.0.episodes[resume.1]) + "화 " + (resume.2 ? "이어보기" : "재생"), systemImage: "play.fill")
-                                .font(.subheadline.bold()).frame(maxWidth: .infinity).padding(.vertical, 15)
-                                .foregroundStyle(.white).background(LilacStyle.accent, in: RoundedRectangle(cornerRadius: 16))
-                        }.buttonStyle(.plain).accessibilityIdentifier("detail-play")
                     }
-                    Button { library.toggle(anime, source: source) } label: {
-                        Image(systemName: library.contains(anime, source: source) ? "heart.fill" : "heart")
-                            .font(.title3).frame(minWidth: 52, minHeight: 48).background(LilacStyle.card, in: RoundedRectangle(cornerRadius: 16))
-                    }.accessibilityLabel(library.contains(anime, source: source) ? "즐겨찾기 해제" : "즐겨찾기 추가")
-                }.padding(.horizontal, 20)
-                HStack(spacing: 8) {
-                    ForEach(Array(["회차", "작품 정보", "관련 작품"].enumerated()), id: \.offset) { index, title in
-                        Button { selectedTab = index } label: { LilacChip(text: title, selected: selectedTab == index) }
-                            .buttonStyle(.plain)
+                    let overview = DisplayText.shared.plain(value: names.record(anime, source: source)?.overview.isEmpty == false ? names.record(anime, source: source)!.overview : anime.description)
+                    if !overview.isEmpty {
+                        Text(overview).font(.system(size: 14)).lineSpacing(5).foregroundStyle(LilacStyle.muted).lineLimit(4)
                     }
-                }.padding(.horizontal, 20)
-                if model.loading { ProgressView("회차를 불러오는 중…").frame(maxWidth: .infinity) }
-                if let error = model.error {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(error).font(.subheadline).foregroundStyle(.secondary)
-                        Button("다시 시도") { model.load(summary, source: source) }
-                    }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
-                        .background(LilacStyle.card, in: RoundedRectangle(cornerRadius: 18)).padding(.horizontal, 20)
-                }
-                if selectedTab == 0 { episodes }
-                else if selectedTab == 1 { information }
-                else { related }
-            }.padding(.top, 12).padding(.bottom, 30)
+                    ViewThatFits(in: .horizontal) { actions(labels: true); actions(labels: false) }
+                    tabs
+                    if model.loading { ProgressView("회차를 불러오는 중…").frame(maxWidth: .infinity) }
+                    if let error = model.error {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(error).font(.subheadline).foregroundStyle(LilacStyle.muted)
+                            Button("다시 시도") { model.load(summary, source: source) }.buttonStyle(LilacOutlineButtonStyle())
+                        }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(LilacStyle.card, in: RoundedRectangle(cornerRadius: 8))
+                    }
+                    if selectedTab == 0 { episodes }
+                    else if selectedTab == 1 { information }
+                    else { related }
+                }.padding(.horizontal, gutter).padding(.top, wide ? -200 : -130).padding(.bottom, 30)
+            }
         }.background(LilacStyle.background)
-            .navigationTitle("작품 정보").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("").navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .task(id: model.anime?.id) { if !UIShowcase.enabled { await model.recordView() } }
             .task {
                 if UIShowcase.enabled {
@@ -322,33 +319,97 @@ struct DetailView: View {
                 newestFirst = UserDefaults.standard.bool(forKey: sortKey)
             }
     }
-    private var episodes: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("에피소드").font(.title3.bold())
-                Text("\(server?.episodes.count ?? 0)").font(.subheadline).foregroundStyle(.secondary)
-                Spacer()
-                if !model.servers.isEmpty {
-                    Menu {
-                        ForEach(model.servers, id: \.id) { server in Button(server.name) { serverID = server.id; page = 0; library.preferences.preferredServer = server.name } }
-                    } label: { Label(server?.name ?? "서버", systemImage: "chevron.down").font(.caption.bold()) }
+    /// The poster beside the title, the original title and a line of facts (#detailDialog .detail-body).
+    private var titleBlock: some View {
+        HStack(alignment: .bottom, spacing: wide ? 30 : 16) {
+            AnimeArtwork(url: anime.poster, width: wide ? 170 : 108, height: wide ? 255 : 162)
+                .clipShape(RoundedRectangle(cornerRadius: LilacStyle.radius)).shadow(color: .black.opacity(0.5), radius: 16, y: 8)
+            VStack(alignment: .leading, spacing: 6) {
+                AnimeDisplayTitle(anime: anime, source: source).font(.system(size: wide ? 40 : 25, weight: .black)).foregroundStyle(LilacStyle.text)
+                    .lineLimit(3).minimumScaleFactor(0.7)
+                if !anime.native.isEmpty { Text(anime.native).font(.system(size: 14)).foregroundStyle(LilacStyle.muted).lineLimit(1) }
+                HStack(spacing: 8) {
+                    if anime.score > 0 { Text("★ " + String(format: "%g", (anime.score * 100).rounded() / 100)).foregroundStyle(LilacStyle.score) }
+                    Text([anime.format, anime.year, anime.status, anime.studios.first ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")).foregroundStyle(LilacStyle.muted)
+                }.font(.system(size: 13, weight: .medium)).lineLimit(2)
+            }.padding(.bottom, 4)
+        }
+    }
+    /// ○화 재생 filled white, 내 목록 and 작품 정보 beside it; on a narrow screen the last two as icons.
+    private func actions(labels: Bool) -> some View {
+        HStack(spacing: 8) {
+            if let resume {
+                PlaybackButton(item: playback(resume.0.episodes, index: resume.1)) {
+                    Label(episodeName(resume.0.episodes[resume.1]) + "화 " + (resume.2 ? "이어보기" : "재생"), systemImage: "play.fill")
+                }.buttonStyle(LilacPrimaryButtonStyle()).accessibilityIdentifier("detail-play")
+            }
+            let saved = library.contains(anime, source: source)
+            Button { library.toggle(anime, source: source) } label: {
+                if labels { Label("내 목록", systemImage: saved ? "heart.fill" : "heart") } else { Image(systemName: saved ? "heart.fill" : "heart") }
+            }.buttonStyle(LilacGhostButtonStyle()).foregroundStyle(saved ? LilacStyle.accent : LilacStyle.text)
+                .accessibilityLabel(saved ? "즐겨찾기 해제" : "즐겨찾기 추가")
+            // app.js openDetail: the source's own page for the work (작품 정보).
+            if let page = URL(string: anime.detailUrl), ["http", "https"].contains(page.scheme ?? "") {
+                Link(destination: page) {
+                    if labels { Label("작품 정보", systemImage: "arrow.up.right.square") } else { Image(systemName: "arrow.up.right.square") }
+                }.buttonStyle(LilacGhostButtonStyle()).accessibilityLabel("사이트에서 작품 정보 보기")
+            }
+        }.fixedSize(horizontal: true, vertical: false)
+    }
+    /// Tabs underlined in lilac (#detailDialog tabs).
+    private var tabs: some View {
+        HStack(spacing: 22) {
+            ForEach(Array(["회차", "작품 정보", "관련 작품"].enumerated()), id: \.offset) { index, title in
+                Button { selectedTab = index } label: {
+                    VStack(spacing: 9) {
+                        Text(title).font(.system(size: 14, weight: selectedTab == index ? .bold : .semibold))
+                            .foregroundStyle(selectedTab == index ? LilacStyle.text : LilacStyle.muted)
+                        Rectangle().fill(selectedTab == index ? LilacStyle.accent : .clear).frame(height: 2)
+                    }.fixedSize()
+                }.buttonStyle(.plain)
+            }
+            Spacer()
+        }.overlay(alignment: .bottom) { LilacStyle.line.frame(height: 1) }
+    }
+    private func episodeCount(_ server: EpisodeServer) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
+            Text("회차").font(.system(size: 13, weight: .bold)).foregroundStyle(LilacStyle.accent)
+            Text("\(server.episodes.count)화").font(.system(size: 11)).foregroundStyle(LilacStyle.muted)
+        }
+    }
+    /// The server when there are several, the order and 전체 저장 (#detailDialog .episode-sort, .batch-download).
+    private func episodeTools(_ server: EpisodeServer) -> some View {
+        HStack(spacing: 8) {
+            if model.servers.count > 1 {
+                Menu {
+                    ForEach(model.servers, id: \.id) { server in Button(server.name) { serverID = server.id; page = 0; library.preferences.preferredServer = server.name } }
+                } label: {
+                    HStack(spacing: 5) { Text(server.name).lineLimit(1); Image(systemName: "chevron.down").font(.system(size: 10, weight: .bold)) }
+                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(LilacStyle.text).padding(.horizontal, 13).frame(height: 34)
+                        .overlay(RoundedRectangle(cornerRadius: LilacStyle.radius).stroke(LilacStyle.line))
                 }
             }
+            Button { newestFirst.toggle(); UserDefaults.standard.set(newestFirst, forKey: sortKey); page = 0 } label: {
+                Text(newestFirst ? "최신화순" : "오래된화순")
+            }.buttonStyle(LilacOutlineButtonStyle())
+            Button {
+                let targets = server.episodes.indices.filter { server.episodes[$0].playable }.map { playback(server.episodes, index: $0) }.filter { downloads.state($0) == .idle }
+                downloads.enqueue(targets, quality: library.preferences.quality)
+            } label: { Label("전체 저장", systemImage: "icloud.and.arrow.down") }.buttonStyle(LilacOutlineButtonStyle())
+        }.fixedSize()
+    }
+    private var episodes: some View {
+        VStack(alignment: .leading, spacing: 12) {
             if let server {
                 // app.js mountEpisodeList: newest first per series, pages of 100 (Re:Anime) or 50, 전체 저장 of what is not saved yet.
                 let ordered = newestFirst ? Array(server.episodes.reversed()) : server.episodes
                 let pages = max(1, (ordered.count + pageSize - 1) / pageSize)
                 let current = min(page, pages - 1)
                 let saved = savedAnime(server.episodes)
-                HStack(spacing: 10) {
-                    Button { newestFirst.toggle(); UserDefaults.standard.set(newestFirst, forKey: sortKey); page = 0 } label: {
-                        Label(newestFirst ? "최신화순" : "오래된화순", systemImage: "arrow.up.arrow.down").font(.subheadline)
-                    }
-                    Spacer()
-                    Button {
-                        let targets = server.episodes.indices.filter { server.episodes[$0].playable }.map { playback(server.episodes, index: $0) }.filter { downloads.state($0) == .idle }
-                        downloads.enqueue(targets, quality: library.preferences.quality)
-                    } label: { Label("전체 저장", systemImage: "arrow.down.circle").font(.subheadline) }
+                // The count on the left, the tools on the right; on a narrow screen the tools go under it.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { episodeCount(server); Spacer(minLength: 4); episodeTools(server) }
+                    VStack(alignment: .leading, spacing: 10) { episodeCount(server); episodeTools(server) }
                 }
                 if pages > 1 {
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -361,36 +422,39 @@ struct DetailView: View {
                         }
                     }
                 }
-                LazyVStack(spacing: 10) {
+                LazyVStack(spacing: 8) {
                     ForEach(Array(ordered[(current * pageSize)..<min(ordered.count, (current + 1) * pageSize)]), id: \.id) { episode in
                         let index = server.episodes.firstIndex { $0.id == episode.id } ?? 0
                         let item = PlaybackItem(anime: saved, episode: episode)
-                        HStack(spacing: 10) {
-                        PlaybackButton(item: playback(server.episodes, index: index, saved: saved)) {
-                            HStack(spacing: 14) {
-                                Text(episodeName(episode))
-                                    .font(.headline).lineLimit(2).minimumScaleFactor(0.5).multilineTextAlignment(.center).frame(width: 44, height: 44)
-                                    .background(LilacStyle.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 12)).foregroundStyle(LilacStyle.accent)
-                                VStack(alignment: .leading, spacing: 5) {
-                                    Text(episode.title.isEmpty || episode.title == "Episode \(episode.number)" ? episodeName(episode) + "화" : episode.title).font(.subheadline.weight(.semibold)).lineLimit(2)
-                                    if !episode.nativeTitle.isEmpty { Text(episode.nativeTitle).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
-                                    let badges = [episode.dubbed ? "더빙" : "", episode.isFiller ? "FILLER" : "", episode.isRecap ? "RECAP" : "",
-                                        String(episode.airedDate.split(separator: "T").first ?? ""), episode.playable ? "" : "재생 불가"].filter { !$0.isEmpty }
-                                    if !badges.isEmpty { Text(badges.joined(separator: " · ")).font(.caption).foregroundStyle(episode.playable ? LilacStyle.accent : .secondary) }
-                                }
-                                Spacer()
-                                Image(systemName: "play.circle.fill").font(.title2).foregroundStyle(LilacStyle.accent)
-                            }.padding(14).background(LilacStyle.card, in: RoundedRectangle(cornerRadius: 18)).foregroundStyle(.primary)
-                        }.buttonStyle(.plain).disabled(!episode.playable)
-                        Button { downloads.toggle(item, quality: library.preferences.quality) } label: { Image(systemName: downloadIcon(downloads.state(item))).font(.title2).padding(12) }
-                            .disabled(!episode.playable).accessibilityLabel(episode.title + " " + downloadLabel(downloads.state(item)))
-                        }
+                        // #detailDialog .episode-row.rich: one bordered card, its download button inside it.
+                        HStack(spacing: 0) {
+                            PlaybackButton(item: playback(server.episodes, index: index, saved: saved)) {
+                                HStack(spacing: 14) {
+                                    Text(episodeName(episode)).font(.system(size: 15, weight: .semibold)).foregroundStyle(LilacStyle.accent)
+                                        .lineLimit(1).minimumScaleFactor(0.5).frame(width: 40)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(episode.title.isEmpty || episode.title == "Episode \(episode.number)" ? episodeName(episode) + "화" : episode.title)
+                                            .font(.system(size: 14, weight: .semibold)).foregroundStyle(LilacStyle.text).lineLimit(2)
+                                        if !episode.nativeTitle.isEmpty { Text(episode.nativeTitle).font(.system(size: 11)).foregroundStyle(LilacStyle.muted).lineLimit(1) }
+                                        let badges = [episode.dubbed ? "더빙" : "", episode.isFiller ? "FILLER" : "", episode.isRecap ? "RECAP" : "",
+                                            String(episode.airedDate.split(separator: "T").first ?? ""), episode.playable ? "" : "재생 불가"].filter { !$0.isEmpty }
+                                        if !badges.isEmpty { Text(badges.joined(separator: " · ")).font(.system(size: 11)).foregroundStyle(LilacStyle.muted) }
+                                    }
+                                    Spacer(minLength: 0)
+                                }.padding(.vertical, 12).padding(.leading, 8).contentShape(Rectangle())
+                            }.buttonStyle(.plain).disabled(!episode.playable).opacity(episode.playable ? 1 : 0.5)
+                            Button { downloads.toggle(item, quality: library.preferences.quality) } label: {
+                                Image(systemName: downloadIcon(downloads.state(item))).font(.system(size: 17)).foregroundStyle(LilacStyle.muted).frame(width: 38, height: 38)
+                            }.buttonStyle(.plain).disabled(!episode.playable).accessibilityLabel(episode.title + " " + downloadLabel(downloads.state(item)))
+                        }.padding(.trailing, 8)
+                            .background(LilacStyle.card2, in: RoundedRectangle(cornerRadius: LilacStyle.radius))
+                            .overlay(RoundedRectangle(cornerRadius: LilacStyle.radius).stroke(LilacStyle.line))
                     }
                 }
             } else if !model.loading {
                 LilacEmptyState(icon: "play.rectangle", title: "회차 정보가 없습니다", message: "다른 영상 소스를 확인하거나 다시 불러와 주세요.")
             }
-        }.padding(.horizontal, 20)
+        }
     }
     private var information: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -411,12 +475,12 @@ struct DetailView: View {
                     HStack(alignment: .top) { Text(row.0).font(.subheadline).foregroundStyle(.secondary).frame(width: 60, alignment: .leading); Text(row.1).font(.subheadline); Spacer(minLength: 0) }
                 }
             }
-        }.padding(20).background(LilacStyle.card, in: RoundedRectangle(cornerRadius: 22)).padding(.horizontal, 20)
+        }.padding(18).background(LilacStyle.card, in: RoundedRectangle(cornerRadius: 8))
     }
     private var related: some View {
         VStack(alignment: .leading, spacing: 16) {
             if let extras = model.extras, !extras.related.isEmpty {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 140))], spacing: 18) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 26) {
                     ForEach(extras.related, id: \.id) { related in
                         NavigationLink { DetailView(summary: related, source: source) } label: { AnimePosterCard(anime: related) }.buttonStyle(.plain)
                     }
@@ -424,7 +488,7 @@ struct DetailView: View {
             } else if anime.reAnimeRelated.isEmpty {
                 LilacEmptyState(icon: "square.stack", title: "관련 작품이 없습니다", message: "관련 작품 정보가 제공되면 여기에 표시됩니다.")
             } else {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 140))], spacing: 18) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 26) {
                     ForEach(anime.reAnimeRelated, id: \.id) { relation in
                         NavigationLink { DetailView(summary: AnimeSnapshot.shared.related(relation: relation), source: source == "miruro" ? "miruro" : "reanime") } label: {
                             VStack(alignment: .leading, spacing: 6) {
@@ -435,7 +499,7 @@ struct DetailView: View {
                     }
                 }
             }
-        }.padding(.horizontal, 20)
+        }
     }
     private func downloadIcon(_ state: DownloadStore.EpisodeState) -> String {
         switch state { case .completed: return "trash"; case .active: return "xmark.circle"; case .stopped: return "arrow.clockwise.circle"; case .idle: return "arrow.down.circle" }

@@ -1,21 +1,19 @@
 import XCTest
 
 final class PlaybackTests: XCTestCase {
-    func testRepeatedMenuNavigationRemainsInteractive() {
+    /// The header (desktop ott.css): the destinations as words, settings as the gear, the rest under 더보기.
+    func testRepeatedHeaderNavigationRemainsInteractive() {
         let app = XCUIApplication(); app.launchArguments = ["--ui-preview", "workspace"]; app.launch()
         let menu = app.buttons["workspace-menu"]
         XCTAssertTrue(menu.waitForExistence(timeout: 15))
         for route in ["settings", "history", "favorites", "catalog", "home", "settings", "home"] {
-            var target = app.buttons["workspace-route-" + route]
-            if !target.exists || !target.isHittable { menu.tap(); target = app.buttons["workspace-route-" + route] }
+            let target = route == "settings" ? app.buttons["workspace-settings"] : app.buttons["workspace-route-" + route]
             XCTAssertTrue(target.waitForExistence(timeout: 5)); XCTAssertTrue(target.isHittable); target.tap()
             XCTAssertTrue(menu.isHittable)
-            XCTAssertFalse(app.buttons["workspace-menu-close"].exists)
         }
         XCTAssertTrue(app.buttons["전체 작품 둘러보기"].waitForExistence(timeout: 5))
         menu.tap()
-        let close = app.buttons["workspace-menu-close"]
-        if close.exists { close.tap(); XCTAssertFalse(close.exists); XCTAssertTrue(menu.isHittable) }
+        XCTAssertTrue(app.buttons["로컬 영상 열기"].waitForExistence(timeout: 5))
     }
     func testLocalModelsBackAndWorkspaceNavigation() {
         let app = XCUIApplication(); app.launchArguments = ["--ui-preview", "workspace"]; app.launch()
@@ -34,9 +32,7 @@ final class PlaybackTests: XCTestCase {
         XCTAssertTrue(back.waitForExistence(timeout: 5)); XCTAssertTrue(back.isHittable); back.tap()
         XCTAssertTrue(models.waitForExistence(timeout: 5)); XCTAssertFalse(list.exists)
         models.tap(); XCTAssertTrue(list.waitForExistence(timeout: 5))
-        let menu = app.buttons["workspace-menu"]; menu.tap()
         let home = app.buttons["workspace-route-home"]
-        if !home.exists { menu.tap() }
         XCTAssertTrue(home.waitForExistence(timeout: 5)); XCTAssertTrue(home.isHittable); home.tap()
         XCTAssertTrue(app.buttons["전체 작품 둘러보기"].waitForExistence(timeout: 10))
         XCTAssertFalse(list.exists)
@@ -107,14 +103,10 @@ final class PlaybackTests: XCTestCase {
         XCTAssertTrue(app.buttons["일시정지"].exists)
         XCTAssertFalse(app.staticTexts["speed-boost"].exists)
     }
-    func testWorkspaceMenuCanReachCatalog() {
+    func testHeaderCanReachCatalog() {
         let app = XCUIApplication(); app.launchArguments = ["--ui-preview", "workspace"]; app.launch()
-        let menu = app.buttons["workspace-menu"]
-        XCTAssertTrue(menu.waitForExistence(timeout: 15)); XCTAssertTrue(menu.isHittable)
-        menu.tap()
         let catalog = app.buttons["workspace-route-catalog"]
-        if !catalog.exists { menu.tap() }
-        XCTAssertTrue(catalog.waitForExistence(timeout: 5)); XCTAssertTrue(catalog.isHittable); catalog.tap()
+        XCTAssertTrue(catalog.waitForExistence(timeout: 15)); XCTAssertTrue(catalog.isHittable); catalog.tap()
         XCTAssertTrue(app.buttons["catalog-filter-apply"].waitForExistence(timeout: 10))
     }
     func testEpisodeOpensFullscreenAndBackReturnsToDetail() {

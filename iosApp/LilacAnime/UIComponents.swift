@@ -1,11 +1,75 @@
 import SwiftUI
 import LilacShared
 
+/// The desktop app's palette (styles.css :root and body.light, ott.css): one set for dark, one for light.
 enum LilacStyle {
-    static let accent = Color(red: 0.72, green: 0.56, blue: 0.95)
-    static let background = Color(uiColor: .systemGroupedBackground)
-    static let card = Color(uiColor: .secondarySystemGroupedBackground)
-    static let muted = Color.secondary
+    private static func dynamic(_ dark: UInt32, _ light: UInt32) -> Color {
+        Color(uiColor: UIColor { $0.userInterfaceStyle == .light ? UIColor(rgb: light) : UIColor(rgb: dark) })
+    }
+    static let accent = dynamic(0xC8A2C8, 0x8A6B8A)       // --lilac
+    static let background = dynamic(0x121212, 0xFFFFFF)   // --bg
+    static let card = dynamic(0x1E1E1E, 0xF5F5F5)         // --panel
+    static let card2 = dynamic(0x252525, 0xECECEC)        // --panel2
+    static let line = dynamic(0x2E2E2E, 0xE0E0E0)         // --line
+    static let muted = dynamic(0xA3A0A8, 0x6F6F73)        // --muted
+    static let text = dynamic(0xF0EDF6, 0x1C1B1F)         // --text
+    static let score = Color(uiColor: UIColor(rgb: 0xF4CF72)) // .hero-score
+    static let onAccent = Color(uiColor: UIColor(rgb: 0x1C1B1F))
+    static let radius: CGFloat = 6                        // --ott-radius
+    static func gutter(_ sizeClass: UserInterfaceSizeClass?) -> CGFloat { sizeClass == .regular ? 32 : 16 }
+}
+extension UIColor {
+    convenience init(rgb: UInt32) {
+        self.init(red: CGFloat(rgb >> 16 & 0xFF) / 255, green: CGFloat(rgb >> 8 & 0xFF) / 255, blue: CGFloat(rgb & 0xFF) / 255, alpha: 1)
+    }
+}
+/// The desktop's filled white button (.primary: 자세히 보기, ○화 재생); dark on the light theme.
+struct LilacPrimaryButtonStyle: ButtonStyle {
+    @Environment(\.colorScheme) private var scheme
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.font(.system(size: 15, weight: .bold)).lineLimit(1)
+            .padding(.horizontal, 20).padding(.vertical, 11)
+            .foregroundStyle(scheme == .light ? Color.white : Color(white: 0.08))
+            .background((scheme == .light ? LilacStyle.onAccent : Color.white).opacity(configuration.isPressed ? 0.8 : 1), in: RoundedRectangle(cornerRadius: LilacStyle.radius))
+    }
+}
+/// The desktop's grey see-through button beside it (.ghost: 내 목록).
+struct LilacGhostButtonStyle: ButtonStyle {
+    @Environment(\.colorScheme) private var scheme
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.font(.system(size: 15, weight: .bold)).lineLimit(1)
+            .padding(.horizontal, 18).padding(.vertical, 11)
+            .foregroundStyle(scheme == .light ? LilacStyle.text : Color.white)
+            .background(scheme == .light ? Color.black.opacity(configuration.isPressed ? 0.16 : 0.1) : Color(white: 0.43).opacity(configuration.isPressed ? 0.5 : 0.7),
+                        in: RoundedRectangle(cornerRadius: LilacStyle.radius))
+    }
+}
+/// The desktop's small bordered tool button (오래된화순 · 전체 저장).
+struct LilacOutlineButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.font(.system(size: 13, weight: .semibold)).lineLimit(1)
+            .padding(.horizontal, 13).frame(height: 34)
+            .foregroundStyle(LilacStyle.text)
+            .background(configuration.isPressed ? LilacStyle.card2 : Color.clear, in: RoundedRectangle(cornerRadius: LilacStyle.radius))
+            .overlay(RoundedRectangle(cornerRadius: LilacStyle.radius).stroke(LilacStyle.line))
+    }
+}
+/// A row's title with the desktop's lilac bar in front and 전체 보기 → on the right (ott.css .section-title).
+struct LilacSectionTitle: View {
+    let title: String
+    var seeAll: (() -> Void)? = nil
+    var body: some View {
+        HStack(alignment: .center) {
+            HStack(spacing: 10) {
+                RoundedRectangle(cornerRadius: 2).fill(LilacStyle.accent).frame(width: 4, height: 17)
+                Text(title).font(.system(size: 20, weight: .bold)).foregroundStyle(LilacStyle.text)
+            }
+            Spacer(minLength: 8)
+            if let seeAll {
+                Button(action: seeAll) { Text("전체 보기 →") }.font(.system(size: 13, weight: .semibold)).foregroundStyle(LilacStyle.accent)
+            }
+        }
+    }
 }
 extension VerticalAlignment {
     /// 22% from the top, as the desktop's `background-position: center 22%`: a cropped poster keeps its upper part.
@@ -21,8 +85,7 @@ struct AnimeArtwork: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                LinearGradient(colors: [LilacStyle.accent.opacity(0.4), Color.indigo.opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                Image(systemName: "sparkles").font(.system(size: 36)).foregroundStyle(.white.opacity(0.5))
+                LilacStyle.card2
                 if let file = URL(string: url), file.isFileURL, let data = try? Data(contentsOf: file), let image = UIImage(data: data) {
                     Image(uiImage: image).resizable().scaledToFill()
                 } else {
@@ -32,59 +95,136 @@ struct AnimeArtwork: View {
         }.frame(width: width, height: height).clipped().accessibilityHidden(true)
     }
 }
+/// A poster as the desktop's card: the picture with its score, the title and a line of facts under it.
 struct AnimePosterCard: View {
     let anime: Anime
     var width: CGFloat? = nil
     var height: CGFloat = 205
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             AnimeArtwork(url: anime.poster, width: width, height: height)
-                .clipShape(RoundedRectangle(cornerRadius: 18))
-                .overlay(alignment: .topLeading) {
-                    if !anime.format.isEmpty {
-                        Text(anime.format).font(.caption2.bold()).padding(.horizontal, 8).padding(.vertical, 5)
-                            .background(.ultraThinMaterial, in: Capsule()).padding(8)
-                    }
-                }
+                .clipShape(RoundedRectangle(cornerRadius: LilacStyle.radius))
                 .overlay(alignment: .topTrailing) {
                     // The source's score on the poster (app.js card: ★ 8.5).
                     if anime.score > 0 {
-                        Text("★ " + String(format: "%g", (anime.score * 100).rounded() / 100)).font(.caption2.bold()).padding(.horizontal, 8).padding(.vertical, 5)
-                            .background(.ultraThinMaterial, in: Capsule()).padding(8)
+                        Text("★ " + String(format: "%g", (anime.score * 100).rounded() / 100)).font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                            .padding(.horizontal, 6).padding(.vertical, 3).background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 4)).padding(6)
                     }
                 }
-            AnimeDisplayTitle(anime: anime).font(.subheadline.weight(.semibold)).lineLimit(2)
-                .frame(maxWidth: .infinity, minHeight: 38, alignment: .topLeading)
-            Text([anime.year, anime.genres.first ?? ""].filter { !$0.isEmpty }.joined(separator: " · "))
-                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            AnimeDisplayTitle(anime: anime).font(.system(size: 14, weight: .semibold)).foregroundStyle(LilacStyle.text).lineLimit(2)
+                .frame(maxWidth: .infinity, minHeight: 36, alignment: .topLeading).padding(.top, 9)
+            Text([anime.year, anime.format, anime.genres.first ?? ""].filter { !$0.isEmpty }.joined(separator: " · "))
+                .font(.system(size: 12)).foregroundStyle(LilacStyle.muted).lineLimit(1).padding(.top, 2)
             if !DesktopAnimeMetadata.shared.episodeLabel(anime: anime).isEmpty {
-                Text(DesktopAnimeMetadata.shared.episodeLabel(anime: anime)).font(.caption2).foregroundStyle(LilacStyle.accent)
+                Text(DesktopAnimeMetadata.shared.episodeLabel(anime: anime)).font(.system(size: 11, weight: .semibold)).foregroundStyle(LilacStyle.accent).padding(.top, 2)
             }
-        }.frame(width: width).foregroundStyle(.primary)
+        }.frame(width: width)
     }
 }
-struct FeaturedAnimeCard: View {
-    let anime: Anime
+/// The desktop home's spotlight (ott.css #homeView .hero): across the whole width, the shown poster blurred into the
+/// background under a lilac glow, the copy on the left, and on a wide screen the picks on the right.
+struct HomeHero: View {
+    let picks: [Anime]
+    @Binding var index: Int
+    let source: String
     @EnvironmentObject private var library: LibraryStore
     @ObservedObject private var names = DesktopCatalog.shared
-    private var saved: SavedAnime { SavedAnime(anime, source: anime.source.isEmpty ? library.preferences.source : anime.source) }
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.colorScheme) private var scheme
+    private var anime: Anime { picks[min(max(index, 0), picks.count - 1)] }
+    private var detailSource: String { anime.source == "jikan" ? "jikan" : source }
+    private var saved: SavedAnime { SavedAnime(anime, source: anime.source.isEmpty ? source : anime.source) }
+    private var wide: Bool { sizeClass == .regular }
+    private var height: CGFloat { wide ? 520 : 420 }
+    private var ink: Color { scheme == .light ? LilacStyle.text : .white }
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            // The desktop hero (ott.css .hero-backdrop): the poster, blurred into a dim colour field behind the text.
-            AnimeArtwork(url: anime.poster, height: 320)
-                .blur(radius: 22, opaque: true).saturation(1.35).colorMultiply(Color(white: 0.62)).scaleEffect(1.06)
-            LinearGradient(colors: [.clear, .black.opacity(0.25), .black.opacity(0.92)], startPoint: .top, endPoint: .bottom)
-            VStack(alignment: .leading, spacing: 10) {
-                Text("이번 시즌 추천").font(.caption.weight(.heavy)).foregroundStyle(LilacStyle.accent)
-                AnimeDisplayTitle(anime: anime).font(.system(size: 27, weight: .bold)).lineLimit(2)
-                Text([anime.format, anime.year, anime.genres.prefix(2).joined(separator: " · ")].filter { !$0.isEmpty }.joined(separator: " · "))
-                    .font(.caption).foregroundStyle(.white.opacity(0.8))
-                if let overview = names.record(saved)?.overview, !overview.isEmpty {
-                    Text(overview).font(.caption).lineLimit(2).foregroundStyle(.white.opacity(0.85))
-                }
-            }.foregroundStyle(.white).padding(22)
-        }.frame(height: 320).clipShape(RoundedRectangle(cornerRadius: 28))
+            backdrop
+            HStack(alignment: .bottom, spacing: 24) {
+                copy
+                if wide && picks.count > 1 { Spacer(minLength: 0); picksRow }
+            }.padding(.horizontal, LilacStyle.gutter(sizeClass)).padding(.bottom, wide ? 52 : 24)
+        }.frame(height: height).frame(maxWidth: .infinity).clipped()
+            .contentShape(Rectangle())
+            .simultaneousGesture(DragGesture(minimumDistance: 30).onEnded { value in
+                // The picks by swiping on a phone, where they are not shown (desktop: hidden below 860px).
+                guard picks.count > 1, abs(value.translation.width) > abs(value.translation.height) * 1.5, abs(value.translation.width) > 50 else { return }
+                withAnimation { index = (index + (value.translation.width < 0 ? 1 : picks.count - 1)) % picks.count }
+            })
             .task(id: saved.id) { if !UIShowcase.enabled { await names.enrich(anime, source: saved.source, cast: true) } }
+    }
+    @ViewBuilder private var backdrop: some View {
+        // .hero-backdrop: blur(42px) saturate(1.35) brightness(.62); light: brightness(1.15), opacity .55.
+        Group {
+            if scheme == .light {
+                AnimeArtwork(url: anime.poster, height: height).blur(radius: 30, opaque: true).saturation(1.2).brightness(0.1).opacity(0.55)
+            } else {
+                AnimeArtwork(url: anime.poster, height: height).blur(radius: 30, opaque: true).saturation(1.35).colorMultiply(Color(white: 0.62))
+            }
+        }.scaleEffect(1.15)
+        // .hero-shade: a lilac glow up right, the page colour coming in from the left and from the bottom.
+        RadialGradient(colors: [LilacStyle.accent.opacity(0.22), .clear], center: UnitPoint(x: 0.78, y: 0.38), startRadius: 0, endRadius: wide ? 460 : 300)
+        LinearGradient(stops: [.init(color: LilacStyle.background, location: 0), .init(color: LilacStyle.background.opacity(0.72), location: 0.3), .init(color: .clear, location: 0.62)],
+                       startPoint: .leading, endPoint: .trailing)
+        LinearGradient(stops: [.init(color: LilacStyle.background, location: 0), .init(color: .clear, location: 0.4)], startPoint: .bottom, endPoint: .top)
+        LinearGradient(stops: [.init(color: LilacStyle.background.opacity(0.55), location: 0), .init(color: .clear, location: 0.24)], startPoint: .top, endPoint: .bottom)
+    }
+    private var copy: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                Text("이번 시즌 추천").font(.system(size: 13, weight: .bold)).foregroundStyle(LilacStyle.accent)
+                if picks.count > 1 {
+                    HStack(spacing: 12) {
+                        Rectangle().frame(width: 22, height: 1)
+                        Text(String(format: "%02d / %02d", min(index, picks.count - 1) + 1, picks.count)).monospacedDigit()
+                    }.font(.system(size: 13, weight: .semibold)).foregroundStyle(ink.opacity(0.6))
+                }
+            }.padding(.bottom, 14)
+            AnimeDisplayTitle(anime: anime).font(.system(size: wide ? 52 : 30, weight: .black)).foregroundStyle(ink)
+                .lineLimit(3).minimumScaleFactor(0.75).shadow(color: .black.opacity(scheme == .light ? 0 : 0.5), radius: 9, y: 2).padding(.bottom, 12)
+            meta.padding(.bottom, 12)
+            if let overview = overview {
+                Text(overview).font(.system(size: 15)).lineSpacing(4).lineLimit(3).foregroundStyle(ink.opacity(0.9)).padding(.bottom, 20)
+            }
+            HStack(spacing: 10) {
+                NavigationLink { DetailView(summary: anime, source: detailSource) } label: { Label("자세히 보기", systemImage: "info.circle") }
+                    .buttonStyle(LilacPrimaryButtonStyle())
+                Button { library.toggle(anime, source: detailSource) } label: {
+                    Label("내 목록", systemImage: library.contains(anime, source: detailSource) ? "heart.fill" : "heart")
+                }.buttonStyle(LilacGhostButtonStyle())
+                    .accessibilityLabel(library.contains(anime, source: detailSource) ? "내 목록에서 제거" : "내 목록에 추가")
+            }
+        }.frame(maxWidth: wide ? 540 : .infinity, alignment: .leading)
+    }
+    private var overview: String? {
+        let text = DisplayText.shared.plain(value: names.record(saved)?.overview.isEmpty == false ? names.record(saved)!.overview : anime.description)
+        return text.isEmpty ? nil : text
+    }
+    private var meta: some View {
+        HStack(spacing: 12) {
+            if anime.score > 0 { Text("★ " + String(format: "%g", (anime.score * 100).rounded() / 100)).foregroundStyle(LilacStyle.score) }
+            if !anime.year.isEmpty { Text(anime.year) }
+            if !anime.format.isEmpty {
+                Text(anime.format).font(.system(size: 12, weight: .semibold)).padding(.horizontal, 7).padding(.vertical, 1)
+                    .overlay(RoundedRectangle(cornerRadius: 3).stroke(ink.opacity(0.5)))
+            }
+            let episodes = DesktopAnimeMetadata.shared.episodeLabel(anime: anime)
+            if !episodes.isEmpty { Text(episodes) }
+        }.font(.system(size: 14, weight: .semibold)).foregroundStyle(ink.opacity(0.85)).lineLimit(1)
+    }
+    private var picksRow: some View {
+        HStack(alignment: .bottom, spacing: 12) {
+            ForEach(Array(picks.enumerated()), id: \.element.id) { offset, candidate in
+                let active = offset == min(index, picks.count - 1)
+                Button { withAnimation(.easeOut(duration: 0.4)) { index = offset } } label: {
+                    AnimeArtwork(url: candidate.poster, width: active ? 200 : 92, height: active ? 300 : 138)
+                        .clipShape(RoundedRectangle(cornerRadius: LilacStyle.radius))
+                        .overlay(RoundedRectangle(cornerRadius: LilacStyle.radius).stroke(.white.opacity(active ? 0.12 : 0)))
+                        .shadow(color: .black.opacity(active ? 0.7 : 0), radius: 30, y: 28)
+                        .opacity(active ? 1 : 0.5)
+                }.buttonStyle(.plain).accessibilityLabel(candidate.title)
+            }
+        }
     }
 }
 struct AnimeRail: View {
@@ -92,29 +232,31 @@ struct AnimeRail: View {
     let items: [Anime]
     let source: String
     var seeAll: (() -> Void)? = nil
+    @Environment(\.horizontalSizeClass) private var sizeClass
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack { Text(title).font(.title3.bold()); Spacer(); if let seeAll { Button("전체 보기", action: seeAll).font(.caption.bold()) } }.padding(.horizontal, 20)
+        VStack(alignment: .leading, spacing: 12) {
+            LilacSectionTitle(title: title, seeAll: seeAll).padding(.horizontal, LilacStyle.gutter(sizeClass))
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(alignment: .top, spacing: 14) {
+                LazyHStack(alignment: .top, spacing: 10) {
                     ForEach(items, id: \.id) { anime in
                         NavigationLink { DetailView(summary: anime, source: anime.source == "jikan" ? "jikan" : source) } label: {
-                            AnimePosterCard(anime: anime, width: 135, height: 190)
+                            AnimePosterCard(anime: anime, width: sizeClass == .regular ? 170 : 130, height: sizeClass == .regular ? 255 : 195)
                         }.buttonStyle(.plain)
                     }
-                }.padding(.horizontal, 20)
+                }.padding(.horizontal, LilacStyle.gutter(sizeClass))
             }
         }
     }
 }
+/// The desktop's sort chips: the chosen one filled lilac with dark text, the others quiet.
 struct LilacChip: View {
     let text: String
     var selected = false
     var body: some View {
-        Text(text).font(.subheadline.weight(selected ? .bold : .medium))
-            .padding(.horizontal, 16).padding(.vertical, 12)
-            .foregroundStyle(selected ? Color.white : Color.primary)
-            .background(selected ? LilacStyle.accent : LilacStyle.card, in: Capsule())
+        Text(text).font(.system(size: 13, weight: selected ? .bold : .semibold)).lineLimit(1)
+            .padding(.horizontal, 14).frame(height: 32)
+            .foregroundStyle(selected ? LilacStyle.onAccent : LilacStyle.muted)
+            .background(selected ? LilacStyle.accent : LilacStyle.card2, in: RoundedRectangle(cornerRadius: LilacStyle.radius))
     }
 }
 struct LilacEmptyState: View {

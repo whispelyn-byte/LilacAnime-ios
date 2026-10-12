@@ -18,7 +18,8 @@ final class PictureInPictureTests: XCTestCase {
             }
             guard mpv_initialize(handle) >= 0 else { throw SubtitleFiles.failure("mpv initialization failed") }
             mpv_observe_property(handle, 1, "eof-reached", MPV_FORMAT_FLAG)
-            let strings = ["loadfile", movie.path].map { strdup($0) }
+            let arguments: [String] = ["loadfile", movie.path]
+            let strings = arguments.map { strdup($0) }
             defer { strings.forEach { free($0) } }
             var pointers: [UnsafePointer<CChar>?] = strings.map { $0.map { UnsafePointer<CChar>($0) } } + [nil]
             guard mpv_command(handle, &pointers) >= 0 else { throw SubtitleFiles.failure("Fixture failed to load") }

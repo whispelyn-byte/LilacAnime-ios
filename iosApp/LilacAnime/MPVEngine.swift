@@ -116,9 +116,11 @@ final class MPVEngine: ObservableObject {
         guard configured[name] != value else { return }
         configured[name] = value; set(name, value)
     }
-    func load(_ stream: ResolvedStream, resume: Double = 0) {
+    /// The video opened again after the app was suspended stays paused, as it was left.
+    private var startPaused = false
+    func load(_ stream: ResolvedStream, resume: Double = 0, paused: Bool = false) {
         finishSpaceHold()
-        pendingStream = stream; resumePosition = resume; pendingSubtitle = nil; translatedSubtitle = false
+        pendingStream = stream; resumePosition = resume; pendingSubtitle = nil; translatedSubtitle = false; startPaused = paused
         guard handle != nil else { return }
         error = nil; fileLoaded = false
         set("http-header-fields", stream.headers.map { $0.key + ": " + $0.value.replacingOccurrences(of: ",", with: "\\,") }.joined(separator: ","))
@@ -271,7 +273,7 @@ final class MPVEngine: ObservableObject {
                 configure(preferences)
                 if resumePosition > 0 { seek(resumePosition); resumePosition = 0 }
                 if let pendingSubtitle { command(["sub-add", pendingSubtitle.path, "select"]) }
-                play()
+                if startPaused { startPaused = false; pause() } else { play() }
             case MPV_EVENT_END_FILE:
                 finishSpaceHold()
                 fileLoaded = false

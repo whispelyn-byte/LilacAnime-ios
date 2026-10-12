@@ -92,6 +92,11 @@ final class EpisodePlayerModel: ObservableObject {
         preparer = DesktopSubtitlePreparer(jimaku: jimaku)
         self.item = item; previous = item.preceding; searchTitle = item.anime.title
         pictureInPicture.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observers)
+        NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification).sink { [weak self] _ in Task { @MainActor in self?.resigningActive() } }.store(in: &observers)
+        NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification).sink { [weak self] _ in Task { @MainActor in self?.enteredBackground() } }.store(in: &observers)
+        NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification).sink { [weak self] _ in Task { @MainActor in self?.enteringForeground() } }.store(in: &observers)
+        // Paused from the lock screen while playing in the background: the app is suspended from then on too.
+        engine.$paused.dropFirst().sink { [weak self] paused in Task { @MainActor in if paused { self?.pausedInBackground() } } }.store(in: &observers)
         resolver.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observers)
         translation.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observers)
         jimaku.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observers)
@@ -99,7 +104,43 @@ final class EpisodePlayerModel: ObservableObject {
     var displayedSubtitleAssets: [SubtitleAsset] { subtitleResultsProvider == "jimaku" ? jimaku.files(item) ?? [] : assets }
     var subtitleLookupLoading: Bool { subtitleResultsProvider == "jimaku" ? jimaku.files(item) == nil && jimaku.error(item) == nil : searching }
     var displayedSubtitleSearchError: String? { subtitleResultsProvider == "jimaku" ? jimaku.error(item) : subtitleSearchError }
+    // MARK: Screen off while paused
+    // Paused, the app is suspended a few seconds after the screen goes off, and the stream's connections (the local HLS
+    // proxy's included) die with it. Back in front, mpv took that for the end of the video: the timeline sat at the end,
+    // seeking snapped back there, and the next progress save recorded the end, so the episode started over next time
+    // (and 기기 동기화 sent that). Now the position is saved as the screen goes off, nothing is saved while suspended,
+    // and the stream is opened again at that position, still paused.
+    private weak var lifecycleLibrary: LibraryStore?
+    private var suspended: (at: Date, paused: Bool)?
+    private(set) var holdProgress = false
+    private func resigningActive() {
+        guard let library = lifecycleLibrary, !holdProgress else { return }
+        save(library: library)
+    }
+    private func enteredBackground() {
+        guard let library = lifecycleLibrary, active != nil, !systemPlayback, !pictureInPicture.active, engine.canCaptureVideo else { return }
+        suspended = (Date(), false)
+        // Playing on in the background (background audio) keeps the app running and its connections alive.
+        if engine.paused || !library.preferences.backgroundAudio { holdSuspended(library) }
+    }
+    private func pausedInBackground() {
+        guard let library = lifecycleLibrary, suspended?.paused == false, UIApplication.shared.applicationState == .background else { return }
+        holdSuspended(library)
+    }
+    private func holdSuspended(_ library: LibraryStore) {
+        save(library: library)
+        suspended = (suspended?.at ?? Date(), true); holdProgress = true
+    }
+    private func enteringForeground() {
+        guard let state = suspended else { return }
+        suspended = nil
+        guard state.paused else { return }
+        guard let library = lifecycleLibrary, let stream = active, !stream.url.isFileURL, !systemPlayback,
+              Date().timeIntervalSince(state.at) >= 3 else { holdProgress = false; return }
+        play(stream, library: library, paused: true)
+    }
     func begin(library: LibraryStore) {
+        lifecycleLibrary = library; suspended = nil; holdProgress = false
         active = nil; loadedSkip = false; systemPlayback = false
         let token = generation
         subtitleOffset = library.subtitleChoice(animeID: item.anime.id, episodeID: item.episodeID)?.offset ?? library.preferences.subtitleOffset
@@ -122,7 +163,7 @@ final class EpisodePlayerModel: ObservableObject {
             self.change(next, library: library)
         }
         engine.onProgress = { [weak self, weak library] position, duration in
-            guard let self, let library, token == self.generation else { return }
+            guard let self, let library, token == self.generation, !self.holdProgress else { return }
             // Watched elsewhere (기기 동기화 gives only the percentage): resumed once the length is known.
             if let fraction = self.pendingFraction, duration > 0 {
                 self.pendingFraction = nil
@@ -212,7 +253,7 @@ final class EpisodePlayerModel: ObservableObject {
         loadedSkip = false; lastSave = 0; lastSkipped = ""; systemPlayback = false
         begin(library: library)
     }
-    func play(_ stream: ResolvedStream, library: LibraryStore) {
+    func play(_ stream: ResolvedStream, library: LibraryStore, paused: Bool = false) {
         playRequest = UUID(); let playing = playRequest
         let token = generation
         Task {
@@ -226,7 +267,8 @@ final class EpisodePlayerModel: ObservableObject {
                 active = stream; systemStream = playable; error = nil; systemPlayback = false
                 if item.anime.source == "miruro", let provider = stream.label.components(separatedBy: " - ").dropFirst().first?.components(separatedBy: " ").first { UserDefaults.standard.set(provider, forKey: "miruro.working-provider") }
                 configure(library)
-                reloadVideo(playable, resume: library.resume(item.anime, episodeID: item.episodeID))
+                holdProgress = false
+                reloadVideo(playable, resume: library.resume(item.anime, episodeID: item.episodeID), paused: paused)
                 if subtitle == nil { automaticSubtitle(stream, library: library, token: token) }
                 prefetchNext(library: library, token: token)
             } catch { if token == generation, playing == playRequest { self.error = error.localizedDescription } }
@@ -235,9 +277,9 @@ final class EpisodePlayerModel: ObservableObject {
     func applyPreferences(_ library: LibraryStore) { configure(library) }
     /// A quality/server change reloads the video, but keeps the selected subtitle's styling policy,
     /// including a working translation that has not yet been added to the saved subtitle list.
-    func reloadVideo(_ stream: ResolvedStream, resume: Double) {
+    func reloadVideo(_ stream: ResolvedStream, resume: Double, paused: Bool = false) {
         let translated = engine.translatedSubtitle || currentSaved?.translated == true
-        engine.load(stream, resume: resume)
+        engine.load(stream, resume: resume, paused: paused)
         if let subtitle { engine.subtitle(subtitle, translated: translated) }
     }
     /// 애니24's own subtitle file can be found after the stream: the playing stream takes it and it is put on.
@@ -662,7 +704,8 @@ final class EpisodePlayerModel: ObservableObject {
         }
     }
     func save(library: LibraryStore) {
-        guard active != nil, !systemPlayback else { return }
+        // Only a position mpv reports for an open video, and none while suspended (it may read as the end).
+        guard active != nil, !systemPlayback, !holdProgress, engine.canCaptureVideo else { return }
         library.progress(anime: item.anime, episodeID: item.episodeID, title: item.title, number: item.number,
             watchURL: item.watchURL.absoluteString, directURL: active?.url.absoluteString, position: engine.position, duration: engine.duration)
     }

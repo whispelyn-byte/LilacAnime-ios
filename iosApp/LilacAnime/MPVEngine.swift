@@ -35,6 +35,7 @@ final class MPVEngine: ObservableObject {
     private var pendingStream: ResolvedStream?
     private var resumePosition = 0.0
     private var fileLoaded = false { didSet { updateScreenAwake() } }
+    private var completion = PlaybackCompletion()
     private let screenAwake = PlaybackScreenAwake()
     private var pendingSubtitle: URL?
     private(set) var translatedSubtitle = false
@@ -52,11 +53,11 @@ final class MPVEngine: ObservableObject {
     private var configuredSpeed: Double?
     private var lastNowPlaying: (paused: Bool, duration: Int, speed: Double, at: Date)?
     private enum ObservedProperty: UInt64, CaseIterable {
-        case position = 1, duration, pause, cache, volume, mute, speed, tracks
-        var name: String { ["time-pos", "duration", "pause", "paused-for-cache", "volume", "mute", "speed", "track-list"][Int(rawValue) - 1] }
+        case position = 1, duration, pause, cache, volume, mute, speed, tracks, eof
+        var name: String { ["time-pos", "duration", "pause", "paused-for-cache", "volume", "mute", "speed", "track-list", "eof-reached"][Int(rawValue) - 1] }
         var format: mpv_format {
             switch self {
-            case .pause, .cache, .mute: return MPV_FORMAT_FLAG
+            case .pause, .cache, .mute, .eof: return MPV_FORMAT_FLAG
             case .tracks: return MPV_FORMAT_NODE
             default: return MPV_FORMAT_DOUBLE
             }
@@ -122,6 +123,7 @@ final class MPVEngine: ObservableObject {
     func load(_ stream: ResolvedStream, resume: Double = 0, paused: Bool = false) {
         finishSpaceHold()
         pendingStream = stream; resumePosition = resume; pendingSubtitle = nil; translatedSubtitle = false; startPaused = paused
+        completion.reset(); observed[.eof] = 0
         guard handle != nil else { return }
         error = nil; fileLoaded = false
         set("http-header-fields", stream.headers.map { $0.key + ": " + $0.value.replacingOccurrences(of: ",", with: "\\,") }.joined(separator: ","))
@@ -257,6 +259,7 @@ final class MPVEngine: ObservableObject {
     }
     private func poll() {
         guard let handle else { return }
+        var ended = false
         while let event = mpv_wait_event(handle, 0), event.pointee.event_id != MPV_EVENT_NONE {
             switch event.pointee.event_id {
             case MPV_EVENT_PROPERTY_CHANGE:
@@ -280,7 +283,7 @@ final class MPVEngine: ObservableObject {
                 fileLoaded = false
                 if let data = event.pointee.data {
                     let end = data.assumingMemoryBound(to: mpv_event_end_file.self).pointee
-                    if end.reason == MPV_END_FILE_REASON_EOF { onEnd?() }
+                    if end.reason == MPV_END_FILE_REASON_EOF { ended = true }
                     if end.reason == MPV_END_FILE_REASON_ERROR { error = String(cString: mpv_error_string(end.error)) }
                 }
             default: break
@@ -297,6 +300,11 @@ final class MPVEngine: ObservableObject {
         if let speed = observed[.speed], speed > 0, self.speed != speed { self.speed = speed }
         if paused { finishSpaceHold() }
         if fileLoaded { onProgress?(position, duration) }
+        // keep-open retains the last frame without END_FILE; eof-reached is its completion signal.
+        // Notify after progress so history is saved before the next episode replaces this one.
+        if ended || (fileLoaded && observed[.eof] == 1) {
+            if completion.reachedEnd() { onEnd?() }
+        } else if fileLoaded, observed[.eof] == 0 { completion.resume() }
         // The system extrapolates the elapsed time from the rate, so it is told again only when something changes.
         let now = Date()
         if let last = lastNowPlaying, last.paused == paused, last.duration == Int(duration), last.speed == speed, now.timeIntervalSince(last.at) < 5 { return }

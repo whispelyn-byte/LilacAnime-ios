@@ -6,6 +6,38 @@ import Libmpv
 @testable import LilacAnime
 
 final class PictureInPictureTests: XCTestCase {
+    func testKeepOpenReportsCompletionThroughEOFProperty() async throws {
+        let movie = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mp4")
+        defer { try? FileManager.default.removeItem(at: movie) }
+        try await blackMovie(movie)
+        let completed = try await Task.detached { () throws -> Bool in
+            guard let handle = mpv_create() else { throw SubtitleFiles.failure("mpv initialization failed") }
+            defer { mpv_terminate_destroy(handle) }
+            for (key, value) in ["vo": "null", "ao": "null", "hwdec": "no", "keep-open": "yes"] {
+                mpv_set_option_string(handle, key, value)
+            }
+            guard mpv_initialize(handle) >= 0 else { throw SubtitleFiles.failure("mpv initialization failed") }
+            mpv_observe_property(handle, 1, "eof-reached", MPV_FORMAT_FLAG)
+            let strings = ["loadfile", movie.path].map { strdup($0) }
+            defer { strings.forEach { free($0) } }
+            var pointers: [UnsafePointer<CChar>?] = strings.map { $0.map { UnsafePointer<CChar>($0) } } + [nil]
+            guard mpv_command(handle, &pointers) >= 0 else { throw SubtitleFiles.failure("Fixture failed to load") }
+            let deadline = Date().addingTimeInterval(10)
+            var completion = PlaybackCompletion()
+            while Date() < deadline {
+                guard let event = mpv_wait_event(handle, 0.05) else { continue }
+                if event.pointee.event_id == MPV_EVENT_PROPERTY_CHANGE, let data = event.pointee.data {
+                    let property = data.assumingMemoryBound(to: mpv_event_property.self).pointee
+                    if property.format == MPV_FORMAT_FLAG, let value = property.data,
+                       value.assumingMemoryBound(to: Int32.self).pointee != 0 {
+                        return completion.reachedEnd() && !completion.reachedEnd()
+                    }
+                }
+            }
+            return false
+        }.value
+        XCTAssertTrue(completed, "keep-open playback must trigger completion even without END_FILE")
+    }
     func testSoftwareMpvCaptureContainsSubtitleWithoutMetalOutput() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

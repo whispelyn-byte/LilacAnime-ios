@@ -63,7 +63,7 @@ struct FeaturedAnimeCard: View {
     private var saved: SavedAnime { SavedAnime(anime, source: anime.source.isEmpty ? library.preferences.source : anime.source) }
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            AnimeArtwork(url: anime.backdrop.isEmpty ? anime.poster : anime.backdrop, height: 320)
+            AnimeArtwork(url: names.banner(anime, source: saved.source), height: 320)
             LinearGradient(colors: [.clear, .black.opacity(0.25), .black.opacity(0.92)], startPoint: .top, endPoint: .bottom)
             VStack(alignment: .leading, spacing: 10) {
                 Text("이번 시즌 추천").font(.caption.weight(.heavy)).foregroundStyle(LilacStyle.accent)

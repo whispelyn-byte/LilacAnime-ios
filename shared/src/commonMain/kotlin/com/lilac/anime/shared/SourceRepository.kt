@@ -41,8 +41,6 @@ class DetailMemory {
         }
         return answer.await()
     }
-    /** 다시 불러오기 on a series: what was kept for it is not used, and the site is asked again. */
-    suspend fun forget(key: String) { mutex.withLock { kept.remove(key) } }
     companion object { val shared = DetailMemory() }
 }
 class SourceRepository(private val client: HttpClient, private val details: DetailMemory? = null) {
@@ -91,11 +89,8 @@ class SourceRepository(private val client: HttpClient, private val details: Deta
                     else linkkf.home(page)
         }
     }
-    suspend fun detail(summary: Anime, source: String, reload: Boolean = false): SourceDetail {
-        val key = source + "|" + summary.detailUrl.ifBlank { summary.id }
-        if (reload) details?.forget(key)
-        return details?.get(key) { loadDetail(summary, source) } ?: loadDetail(summary, source)
-    }
+    suspend fun detail(summary: Anime, source: String): SourceDetail =
+        details?.get(source + "|" + summary.detailUrl.ifBlank { summary.id }) { loadDetail(summary, source) } ?: loadDetail(summary, source)
     private suspend fun loadDetail(summary: Anime, source: String): SourceDetail = coroutineScope {
         when (source) {
             "jikan" -> SourceDetail(DesktopMetadataFallback.parse(kotlinx.serialization.json.Json.parseToJsonElement(getText("https://api.jikan.moe/v4/anime/" + summary.id + "/full")).jsonObject).first(), emptyList())

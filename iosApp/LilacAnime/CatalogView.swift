@@ -250,8 +250,8 @@ final class DetailModel: ObservableObject {
     @Published var loading = false
     private let service = IosServices()
     private var generation = UUID()
-    /// reload: 다시 불러오기, past the answer kept for 5 minutes. Only the latest ask is shown (desktop openDetail.token).
-    func load(_ summary: Anime, source: String, reload: Bool = false) {
+    /// Only the latest ask is shown (desktop openDetail.token).
+    func load(_ summary: Anime, source: String) {
         generation = UUID(); let token = generation
         loading = true; error = nil
         let done: (SourceDetail?, String?) -> Void = { [weak self] detail, error in
@@ -264,8 +264,7 @@ final class DetailModel: ObservableObject {
                 self.anime = detail?.anime; self.servers = detail?.servers ?? []; self.error = error; self.loading = false
             }
         }
-        if reload { service.reloadDetail(summary: summary, sourceKey: source, completion: done) }
-        else { service.detail(summary: summary, sourceKey: source, completion: done) }
+        service.detail(summary: summary, sourceKey: source, completion: done)
     }
     func recordView() async {
         guard let anime, anime.source == "linkkf" else { return }
@@ -340,7 +339,7 @@ struct DetailView: View {
                     if let error = model.error {
                         VStack(alignment: .leading, spacing: 10) {
                             Text(error).font(.subheadline).foregroundStyle(LilacStyle.muted)
-                            Button("다시 시도") { model.load(summary, source: source, reload: true) }.buttonStyle(LilacOutlineButtonStyle())
+                            Button("다시 시도") { model.load(summary, source: source) }.buttonStyle(LilacOutlineButtonStyle())
                         }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
                             .background(LilacStyle.card, in: RoundedRectangle(cornerRadius: 8))
                     }
@@ -494,12 +493,9 @@ struct DetailView: View {
                     }
                 }
             } else if !model.loading {
+                // desktop openDetail: a provider's series without episodes (unavailable).
                 if model.error == nil {
-                    // desktop openDetail: a provider's series without episodes (unavailable).
-                    VStack(spacing: 12) {
-                        LilacEmptyState(icon: "play.rectangle", title: "현재 제공처에 영상이 없는 작품입니다", message: "다른 콘텐츠 소스를 선택하거나 다시 불러와 주세요.")
-                        Button("다시 불러오기") { model.load(summary, source: source, reload: true) }.buttonStyle(LilacOutlineButtonStyle())
-                    }
+                    LilacEmptyState(icon: "play.rectangle", title: "현재 제공처에 영상이 없는 작품입니다", message: "설정에서 다른 콘텐츠 소스를 선택해 주세요.")
                 }
             }
         }

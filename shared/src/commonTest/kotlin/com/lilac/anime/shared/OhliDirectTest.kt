@@ -57,14 +57,4 @@ class OhliDirectTest {
         assertEquals("y", memory.get("ohli24|y") { SourceDetail(Anime(id = "y", title = "y"), emptyList()) }.anime.id, "a failed answer is not kept")
     }
     private fun listed(id: String) = SourceDetail(Anime(id = id, title = id), listOf(EpisodeServer(1, "애니24", listOf(Episode(id = "1", number = 1, title = "1화")))))
-
-    @Test fun aForgottenSeriesIsAskedAgain() = runTest {
-        var loads = 0
-        val memory = DetailMemory()
-        memory.get("ohli24|z") { loads++; SourceDetail(Anime(id = "z", title = "z"), emptyList()) }
-        assertTrue(memory.get("ohli24|z") { loads++; listed("z") }.servers.isEmpty(), "kept for 5 minutes, as desktop provider:detail")
-        memory.forget("ohli24|z")
-        assertEquals(1, memory.get("ohli24|z") { loads++; listed("z") }.servers.single().episodes.size)
-        assertEquals(2, loads)
-    }
 }

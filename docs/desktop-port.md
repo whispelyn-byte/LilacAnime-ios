@@ -1,6 +1,6 @@
 # Desktop → iOS 이식 목록
 
-최신 기준: [LilacAnime-desktop 0.5.15](https://github.com/whispelyn-byte/LilacAnime-desktop/tree/16c9a3d1631061a72831e0657434003940daf531). 최근 작품 상세·회차 병렬 요청, 요청 공유, 애니24 직접 조회, ReAnime 서버 응답 경쟁과 FlixCloud 재요청을 반영했습니다. 스크린샷은 사진 앱에 저장하며 PiP는 mpv 자막을 포함한 영상 프레임을 iOS PiP에 전달합니다. PiP 백그라운드 전환과 사진 권한은 실기기 확인이 별도로 필요합니다.
+최신 기준: [LilacAnime-desktop 0.5.18](https://github.com/whispelyn-byte/LilacAnime-desktop/tree/a9ad0048d7b750ec477e088b33936ca19281948f). 0.5.16~0.5.18에서는 직접 이동한 OP/ED 구간을 건너뛰지 않는 변경을 반영했습니다. 홈·내 목록 정렬 버튼 간격(데스크탑 화면 폭용 CSS)과 Windows 제거 옵션은 iOS에 해당하지 않습니다. 그 전에는 작품 상세·회차 병렬 요청, 요청 공유, 애니24 직접 조회, ReAnime 서버 응답 경쟁과 FlixCloud 재요청을 반영했습니다. 스크린샷은 사진 앱에 저장하며 PiP는 mpv 자막을 포함한 영상 프레임을 iOS PiP에 전달합니다. PiP 백그라운드 전환과 사진 권한은 실기기 확인이 별도로 필요합니다.
 데스크탑 preload의 콘텐츠·자막·번역·다운로드·업데이트 작업을 아래 네이티브 기능으로 대응했습니다. Electron 창을 iOS 안에서 실행하는 구조는 아닙니다.
 
 2026-10-09의 11개 수정과 TMDB 후속 변경에 이어, 2026-10-10에 전체 파일·API 목록을 다시 대조했습니다. 카탈로그 정렬·분류, 한국어 소스 상세 정보와 AniSkip ID 연결, 클라우드 요청·재시도·부분 결과, HLS 공유 리소스·진행률, 자막 인코딩과 모델 검증을 추가로 수정했습니다. 수정 내용·회귀 검증·남는 플랫폼 차이는 [코드 대조 결과](desktop-code-review.md)에 기록했습니다. 기능 대응 목록은 모든 기기/네트워크 조건의 동일성 판정이 아닙니다.

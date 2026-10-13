@@ -244,6 +244,8 @@ final class EpisodePlayerModel: ObservableObject {
         }
     }
     func change(_ item: PlaybackItem, library: LibraryStore, remember: Bool = true) {
+        // desktop playSiblingEpisode → resolveIntoPlayer: the next episode, when saved, plays from its file too.
+        let item = DownloadStore.shared.offline(item) ?? item
         resolutionTask?.cancel(); selectionTask?.cancel()
         if remember { previous.append(self.item) }
         save(library: library); engine.pause(); proxy?.stop(); proxy = nil; stopPrefetch(); automaticTask?.cancel(); translation.cancel(); cast.stop()

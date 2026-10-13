@@ -8,7 +8,7 @@ struct PlaybackPresentation: Identifiable {
 @MainActor
 final class PlaybackRouter: ObservableObject {
     @Published var presentation: PlaybackPresentation?
-    func open(_ item: PlaybackItem) { presentation = PlaybackPresentation(item: item) }
+    func open(_ item: PlaybackItem) { presentation = PlaybackPresentation(item: DownloadStore.shared.offline(item) ?? item) }
 }
 
 struct PlaybackButton<Content: View>: View {

@@ -237,8 +237,27 @@ final class DownloadStore: ObservableObject {
     func stopResolving() { resolutionQueue.removeAll(); pendingResolution = 0; resolutionTask?.cancel(); resolver.cancel() }
     /// An episode's download as the desktop episode button shows it (app.js episodeDownloadMarkup).
     enum EpisodeState { case idle, active, stopped, completed }
-    func state(_ item: PlaybackItem) -> EpisodeState {
+    /// desktop linkLegacyDownloads: 애니24 moved from www.ohli24.net to ani.ohli24.com. An episode saved from the old site
+    /// is the same series' episode of the same number (a special: the same label) on the new one, so it shows as saved.
+    private func entryID(_ item: PlaybackItem) -> String {
         let id = SubtitleFiles.key(item.anime.id + "#" + item.episodeID)
+        guard item.anime.source == "ohli24", item.watchURL.host == "ani.ohli24.com", !entries.contains(where: { $0.id == id }) else { return id }
+        func key(_ value: String) -> String { value.precomposedStringWithCompatibilityMapping.filter { !$0.isWhitespace } }
+        let special = Int(item.displayNumber) == nil, title = key(item.anime.title)
+        return entries.first { entry in
+            entry.anime.source == "ohli24" && entry.watchURL.range(of: "ohli24.net/", options: .caseInsensitive) != nil &&
+                key(entry.anime.title) == title && (special ? key(entry.title) == key(item.title) : entry.number == item.number)
+        }?.id ?? id
+    }
+    /// desktop resolveIntoPlayer: an episode saved here plays from its file, and on through the saved episodes, wherever
+    /// it is opened from (상세, 시청 기록, 계속 시청하기). One whose file is gone plays online.
+    func offline(_ item: PlaybackItem) -> PlaybackItem? {
+        guard item.directURL == nil, let entry = entries.first(where: { $0.id == entryID(item) }), let file = entry.localFile,
+              FileManager.default.fileExists(atPath: Self.directory.appendingPathComponent(entry.id).appendingPathComponent(file).path) else { return nil }
+        return entry.playback
+    }
+    func state(_ item: PlaybackItem) -> EpisodeState {
+        let id = entryID(item)
         if resolutionQueue.contains(where: { $0.0.anime.id == item.anime.id && $0.0.episodeID == item.episodeID }) { return .active }
         guard let entry = entries.first(where: { $0.id == id }) else { return .idle }
         if entry.localFile != nil { return .completed }
@@ -275,7 +294,7 @@ final class DownloadStore: ObservableObject {
     }
     /// The episode button: delete a saved one, stop one in progress, resume a stopped one, else queue it.
     func toggle(_ item: PlaybackItem, quality: String) {
-        let id = SubtitleFiles.key(item.anime.id + "#" + item.episodeID)
+        let id = entryID(item)
         switch state(item) {
         case .completed: delete(id); notice = "\(item.title) 다운로드를 삭제했습니다."
         case .active:

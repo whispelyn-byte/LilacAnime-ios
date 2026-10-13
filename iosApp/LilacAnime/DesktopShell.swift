@@ -23,6 +23,10 @@ struct DesktopWorkspace: View {
             .task(id: library.preferences.source) {
                 // The saved catalog is read after launch: until then it looks empty and would be gathered again from the start.
                 if !UIShowcase.enabled { await DesktopCatalog.shared.load() }
+                // desktop catalog-title-retry: a source no longer chosen is not gathered, nor its title retry scheduled.
+                if !UIShowcase.enabled && !DesktopCatalog.shared.source.isEmpty && DesktopCatalog.shared.source != library.preferences.source {
+                    DesktopCatalog.shared.stop()
+                }
                 if !UIShowcase.enabled && !DesktopCatalog.shared.running &&
                     ((DesktopCatalog.shared.catalogs[library.preferences.source] ?? []).isEmpty || DesktopCatalog.shared.needsRefresh(library.preferences.source)) {
                     DesktopCatalog.shared.start(library.preferences.source)

@@ -488,7 +488,10 @@ struct DetailView: View {
                     }
                 }
             } else if !model.loading {
-                LilacEmptyState(icon: "play.rectangle", title: "회차 정보가 없습니다", message: "다른 영상 소스를 확인하거나 다시 불러와 주세요.")
+                VStack(spacing: 12) {
+                    LilacEmptyState(icon: "play.rectangle", title: "회차 정보가 없습니다", message: "다른 영상 소스를 확인하거나 다시 불러와 주세요.")
+                    if model.error == nil { Button("다시 불러오기") { model.load(summary, source: source) }.buttonStyle(LilacOutlineButtonStyle()) }
+                }
             }
         }
     }

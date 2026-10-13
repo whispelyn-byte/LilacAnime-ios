@@ -144,6 +144,13 @@ final class DesktopCatalog: ObservableObject {
         return await withTaskCancellationHandler(operation: { await worker.value }, onCancel: { worker.cancel() })
     }
     var known: Int { (catalogs[source] ?? []).filter { names[$0.id]?.korean.isEmpty == false || TitleCandidates.shared.isKorean(title: $0.title) }.count }
+    /// The collection's state belongs to the source it was run for: another source's saved list is not started again
+    /// when chosen, and must not show the failure (or progress) of the one before it.
+    func failure(for source: String) -> String? { self.source == source ? error : nil }
+    func progress(for source: String) -> String {
+        if self.source == source || self.source.isEmpty { return status }
+        return "저장된 목록 · \(catalogs[source]?.count ?? 0)개"
+    }
     func needsRefresh(_ source: String) -> Bool {
         let defaults = UserDefaults.standard
         return defaults.integer(forKey: "catalog-metadata-revision:" + source) < 2 ||
@@ -292,8 +299,8 @@ struct CatalogIndexView: View {
                 SettingChoices(options: ContentSources.keys.map { ($0, ContentSources.name($0)) }, selection: $library.preferences.source)
             }
             SettingBlock(title: "수집") {
-                SettingNote(catalog.status, color: LilacStyle.text)
-                if let error = catalog.error { SettingNote(error, color: .red) }
+                SettingNote(catalog.progress(for: library.preferences.source), color: LilacStyle.text)
+                if let error = catalog.failure(for: library.preferences.source) { SettingNote(error, color: .red) }
                 SettingButtons {
                     Button(catalog.running ? "일시 중지" : "목록·한국어 제목 이어서 모으기") { if catalog.running { catalog.stop() } else { catalog.start(library.preferences.source) } }
                     Button("전체 목록 새로 모으기") { catalog.start(library.preferences.source, refresh: true) }

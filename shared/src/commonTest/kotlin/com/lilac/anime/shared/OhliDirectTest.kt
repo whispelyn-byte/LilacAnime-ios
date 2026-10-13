@@ -51,9 +51,19 @@ class OhliDirectTest {
     @Test fun aSeriesAskedTwiceAtOnceIsFetchedOnce() = runTest {
         var loads = 0
         val memory = DetailMemory()
-        val answers = (1..3).map { async { memory.get("ohli24|x") { loads++; SourceDetail(Anime(id = "x", title = "x"), emptyList()) } } }.awaitAll()
+        val answers = (1..3).map { async { memory.get("ohli24|x") { loads++; listed("x") } } }.awaitAll()
         assertEquals(1, loads); assertTrue(answers.all { it.anime.id == "x" })
         assertFailsWith<IllegalStateException> { memory.get("ohli24|y") { error("down") } }
         assertEquals("y", memory.get("ohli24|y") { SourceDetail(Anime(id = "y", title = "y"), emptyList()) }.anime.id, "a failed answer is not kept")
+    }
+    private fun listed(id: String) = SourceDetail(Anime(id = id, title = id), listOf(EpisodeServer(1, "애니24", listOf(Episode(id = "1", number = 1, title = "1화")))))
+
+    @Test fun aSeriesThatCameWithoutEpisodesIsAskedAgain() = runTest {
+        var loads = 0
+        val memory = DetailMemory()
+        memory.get("ohli24|z") { loads++; SourceDetail(Anime(id = "z", title = "z"), emptyList()) }
+        assertEquals(1, memory.get("ohli24|z") { loads++; listed("z") }.servers.single().episodes.size)
+        memory.get("ohli24|z") { loads++; listed("z") }
+        assertEquals(2, loads, "an answer without episodes is not kept, one with them is")
     }
 }

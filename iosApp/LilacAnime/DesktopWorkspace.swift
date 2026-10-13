@@ -47,7 +47,7 @@ struct DesktopFullCatalog: View {
                     // ott.css .all-head: the title and where the list comes from, the order as the desktop's sort chips.
                     VStack(alignment: .leading, spacing: 6) {
                         Text("전체 애니메이션").font(.system(size: 28, weight: .heavy)).foregroundStyle(LilacStyle.text)
-                        Text(UIShowcase.enabled ? "UI PREVIEW · 예시 데이터" : remoteSource ? "선택한 콘텐츠 소스의 작품입니다." : catalog.status)
+                        Text(UIShowcase.enabled ? "UI PREVIEW · 예시 데이터" : remoteSource ? "선택한 콘텐츠 소스의 작품입니다." : catalog.progress(for: library.preferences.source))
                             .font(.system(size: 13)).foregroundStyle(LilacStyle.muted)
                     }
                     HStack(spacing: 8) {
@@ -72,7 +72,7 @@ struct DesktopFullCatalog: View {
                     }
                     filterPanel
                     Text("\(values.count)개").font(.system(size: 13)).foregroundStyle(LilacStyle.muted)
-                    if !remoteSource, let error = catalog.error { Text(error).font(.system(size: 13)).foregroundStyle(.red) }
+                    if !remoteSource, let error = catalog.failure(for: library.preferences.source) { Text(error).font(.system(size: 13)).foregroundStyle(.red) }
                     if let error = remote.error, remoteSource {
                         Text(error).font(.system(size: 13)).foregroundStyle(.red)
                         Button("다시 시도") { reloadRemote() }.buttonStyle(LilacGhostButtonStyle())

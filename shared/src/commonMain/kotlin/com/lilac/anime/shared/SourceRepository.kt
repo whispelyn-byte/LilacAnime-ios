@@ -39,7 +39,10 @@ class DetailMemory {
                 if (kept.size > 200) kept.remove(kept.keys.first())
             }
         }
-        return answer.await()
+        val detail = answer.await()
+        // Nor one that came without any episode (the site's page cut short): 다시 불러오기 asks the site again.
+        if (detail.servers.none { it.episodes.isNotEmpty() }) mutex.withLock { if (kept[key]?.second === answer) kept.remove(key) }
+        return detail
     }
     companion object { val shared = DetailMemory() }
 }

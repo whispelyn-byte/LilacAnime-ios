@@ -4,6 +4,11 @@ import LilacShared
 
 struct OfflineChapter: Codable, Identifiable {
     var id: String { type + String(start) }
+    /// The skip button (desktop #skipNow): 요약 스킵 for a recap, ED 스킵 for an ending (ed, mixed-ed), else OP 스킵.
+    static func skipLabel(_ type: String) -> String {
+        let kind = type.lowercased()
+        return kind == "recap" ? "요약 스킵" : kind.hasSuffix("ed") ? "ED 스킵" : "OP 스킵"
+    }
     var type: String
     var start: Double
     var end: Double

@@ -1244,7 +1244,7 @@ struct PlayerControls: View {
                 if engine.buffering { ProgressView().tint(.white).allowsHitTesting(false) }
                 if engine.speedBoosted { VStack { Text("2배속").font(.headline).padding(.horizontal, 18).padding(.vertical, 8).background(.black.opacity(0.75), in: Capsule()).accessibilityIdentifier("speed-boost"); Spacer() }.padding(.top, 72).allowsHitTesting(false) }
                 if let chapter, !locked, library.preferences.showSkipButton ?? true {
-                    VStack { Spacer(); HStack { Spacer(); Button(action: skipChapter) { Label(chapter.type.uppercased() + " 건너뛰기", systemImage: "forward.fill").font(.caption.bold()).padding(12).background(.black.opacity(0.65), in: Capsule()) } }.padding(.bottom, visible ? 70 : 18).padding(.trailing, 18) }
+                    VStack { Spacer(); HStack { Spacer(); Button(action: skipChapter) { Label(OfflineChapter.skipLabel(chapter.type), systemImage: "forward.fill").font(.caption.bold()).padding(12).background(.black.opacity(0.65), in: Capsule()) } }.padding(.bottom, visible ? 70 : 18).padding(.trailing, 18) }
                 }
             }.frame(width: geometry.size.width, height: geometry.size.height)
         }.foregroundStyle(.white).buttonStyle(.plain)

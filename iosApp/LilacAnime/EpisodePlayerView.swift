@@ -69,11 +69,6 @@ final class EpisodePlayerModel: ObservableObject {
     private var proxy: HLSProxy?
     private let cast = CastService()
     private var loadedSkip = false
-    private var skipAttempts = 0
-    private var skipRetryAfter = Date.distantPast
-    private var skipTask: Task<Void, Never>?
-    typealias SkipLookup = (Int32, Int32, Int32, Int32, @escaping ([SkipSegment]?, String?) -> Void) -> Void
-    private let skipLookup: SkipLookup?
     private var lastSave = 0.0
     private var lastSkipped = ""
     private var generation = UUID()
@@ -82,8 +77,7 @@ final class EpisodePlayerModel: ObservableObject {
     private var subtitleSearchCache: [String: [SubtitleAsset]] = [:]
     private let subtitleLookup: ((String, @escaping ([SubtitleAsset]?, String?) -> Void) -> Void)?
     private var observers: Set<AnyCancellable> = []
-    init(item: PlaybackItem, subtitleLookup: ((String, @escaping ([SubtitleAsset]?, String?) -> Void) -> Void)? = nil, skipLookup: SkipLookup? = nil) {
-        self.skipLookup = skipLookup
+    init(item: PlaybackItem, subtitleLookup: ((String, @escaping ([SubtitleAsset]?, String?) -> Void) -> Void)? = nil) {
         self.subtitleLookup = subtitleLookup
         if let subtitleLookup {
             jimaku = DesktopJimakuCatalog(fetch: { _ in
@@ -179,7 +173,16 @@ final class EpisodePlayerModel: ObservableObject {
             if position - self.lastSave >= 5 || position < self.lastSave {
                 self.lastSave = position; self.save(library: library)
             }
-            self.requestSkipSegments(duration: duration)
+            if !self.loadedSkip && duration > 0 {
+                self.loadedSkip = true
+                self.service.skipSegments(anilistId: self.item.anime.anime.anilistId?.int32Value ?? 0,
+                    malId: self.item.anime.anime.malId?.int32Value ?? 0, episode: Int32(self.item.number), duration: Int32(duration)) { [weak self] segments, _ in
+                        guard let self, token == self.generation else { return }
+                        if let segments, !segments.isEmpty {
+                            self.chapters = segments.map { OfflineChapter(type: $0.type, start: $0.start, end: $0.end, score: 1) }
+                        }
+                    }
+            }
             if let chapter = self.chapters.first(where: { position >= $0.start && position < $0.end }) {
                 if self.skipEntered?.0 != chapter.id { self.skipEntered = (chapter.id, Date()) }
                 if library.preferences.autoSkip, !self.systemPlayback, chapter.id != self.lastSkipped,
@@ -197,46 +200,6 @@ final class EpisodePlayerModel: ObservableObject {
             preferRaw = await preparer.preferRaw(item, preferences: library.preferences)
             guard token == generation, !Task.isCancelled else { return }
             resolver.resolve(item, preferRaw: preferRaw, preferred: library.preferences.preferredServers?[item.anime.source] ?? library.preferences.preferredStream)
-        }
-    }
-    func requestSkipSegments(duration: Double, now: Date = Date()) {
-        guard !loadedSkip, skipAttempts < 3, now >= skipRetryAfter,
-              duration.isFinite, duration > 0, duration < Double(Int32.max) else { return }
-        loadedSkip = true; skipAttempts += 1
-        let token = generation, opening = item
-        skipTask = Task { [weak self] in
-            guard let self else { return }
-            var anilist = opening.anime.anime.anilistId?.int32Value ?? 0
-            var mal = opening.anime.anime.malId?.int32Value ?? 0
-            if skipLookup == nil {
-                await DesktopCatalog.shared.load()
-                if anilist <= 0 && mal <= 0 {
-                    let cached = DesktopCatalog.shared.record(opening.anime)
-                    if (cached?.anilist ?? 0) <= 0 && (cached?.mal ?? 0) <= 0 {
-                        await DesktopCatalog.shared.enrich(opening.anime.anime, source: opening.anime.source)
-                    }
-                }
-                if let metadata = DesktopCatalog.shared.record(opening.anime) {
-                    if anilist <= 0 { anilist = Int32(clamping: metadata.anilist) }
-                    if mal <= 0 { mal = Int32(clamping: metadata.mal) }
-                }
-            }
-            guard token == generation, !Task.isCancelled else { return }
-            guard anilist > 0 || mal > 0 else {
-                loadedSkip = false; skipRetryAfter = now.addingTimeInterval(10)
-                return
-            }
-            let completion: ([SkipSegment]?, String?) -> Void = { [weak self] segments, error in
-                guard let self, token == self.generation else { return }
-                if error != nil || segments == nil {
-                    self.loadedSkip = false; self.skipRetryAfter = now.addingTimeInterval(10)
-                } else if let segments, !segments.isEmpty {
-                    self.chapters = segments.filter { $0.start.isFinite && $0.end.isFinite && $0.start >= 0 && $0.end > $0.start }
-                        .map { OfflineChapter(type: $0.type, start: $0.start, end: $0.end, score: 1) }
-                }
-            }
-            if let skipLookup { skipLookup(anilist, mal, Int32(clamping: opening.number), Int32(duration), completion) }
-            else { service.skipSegments(anilistId: anilist, malId: mal, episode: Int32(clamping: opening.number), duration: Int32(duration), completion: completion) }
         }
     }
     /// An episode opened from the watch history carries the list saved back then; like app.js playHistoryItem the series
@@ -279,7 +242,6 @@ final class EpisodePlayerModel: ObservableObject {
         }
     }
     func change(_ item: PlaybackItem, library: LibraryStore, remember: Bool = true) {
-        skipTask?.cancel(); skipAttempts = 0; skipRetryAfter = .distantPast
         resolutionTask?.cancel(); selectionTask?.cancel()
         if remember { previous.append(self.item) }
         save(library: library); engine.pause(); proxy?.stop(); proxy = nil; stopPrefetch(); automaticTask?.cancel(); translation.cancel(); cast.stop()
@@ -746,7 +708,6 @@ final class EpisodePlayerModel: ObservableObject {
             watchURL: item.watchURL.absoluteString, directURL: active?.url.absoluteString, position: engine.position, duration: engine.duration)
     }
     func shutdown(library: LibraryStore) {
-        skipTask?.cancel(); skipTask = nil
         pictureInPicture.stop()
         subtitleClassification?.cancel()
         resolutionTask?.cancel(); selectionTask?.cancel()

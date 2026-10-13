@@ -58,12 +58,13 @@ class OhliDirectTest {
     }
     private fun listed(id: String) = SourceDetail(Anime(id = id, title = id), listOf(EpisodeServer(1, "애니24", listOf(Episode(id = "1", number = 1, title = "1화")))))
 
-    @Test fun aSeriesThatCameWithoutEpisodesIsAskedAgain() = runTest {
+    @Test fun aForgottenSeriesIsAskedAgain() = runTest {
         var loads = 0
         val memory = DetailMemory()
         memory.get("ohli24|z") { loads++; SourceDetail(Anime(id = "z", title = "z"), emptyList()) }
+        assertTrue(memory.get("ohli24|z") { loads++; listed("z") }.servers.isEmpty(), "kept for 5 minutes, as desktop provider:detail")
+        memory.forget("ohli24|z")
         assertEquals(1, memory.get("ohli24|z") { loads++; listed("z") }.servers.single().episodes.size)
-        memory.get("ohli24|z") { loads++; listed("z") }
-        assertEquals(2, loads, "an answer without episodes is not kept, one with them is")
+        assertEquals(2, loads)
     }
 }

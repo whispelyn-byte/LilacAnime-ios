@@ -14,7 +14,10 @@ struct DesktopWorkspace: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            page.id(navigation.section).modifier(LilacAppearMotion()).frame(maxWidth: .infinity, maxHeight: .infinity)
+            // A source chosen is the desktop's location.reload(): each page (its lists, errors and open series) starts
+            // again for it. 설정 stays where it is scrolled to.
+            page.id(navigation.section == "settings" ? navigation.section : navigation.section + "|" + library.preferences.source)
+                .modifier(LilacAppearMotion()).frame(maxWidth: .infinity, maxHeight: .infinity)
         }.background(LilacStyle.background)
             .environmentObject(navigation)
             .task(id: library.preferences.source) {

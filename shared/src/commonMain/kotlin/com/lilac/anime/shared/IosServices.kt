@@ -40,6 +40,10 @@ class IosServices {
     fun detail(summary: Anime, sourceKey: String, completion: (SourceDetail?, String?) -> Unit) {
         scope.launch { call(completion) { source.detail(summary, sourceKey) } }
     }
+    /** The series asked of its site again, not the answer kept for 5 minutes (다시 불러오기). */
+    fun reloadDetail(summary: Anime, sourceKey: String, completion: (SourceDetail?, String?) -> Unit) {
+        scope.launch { call(completion) { source.detail(summary, sourceKey, reload = true) } }
+    }
     fun filters(sourceKey: String, completion: (SourceFilters?, String?) -> Unit) { scope.launch { call(completion) { source.filters(sourceKey) } } }
     fun catalog(sourceKey: String, query: String, page: Int, filter: BrowseFilter, completion: (SourceCatalogPage?, String?) -> Unit) {
         scope.launch { call(completion) { source.catalog(sourceKey, page, filter, query) } }

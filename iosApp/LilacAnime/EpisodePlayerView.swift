@@ -23,6 +23,12 @@ final class EpisodePlayerModel: ObservableObject {
     private var alongsideTask: Task<Void, Never>?
     private let alongsideTranslation = TranslationCoordinator()
     private var selectedProvider = ""
+    /// desktop toast(): a short note over the player.
+    struct Toast: Equatable { let id = UUID(); let text: String }
+    @Published private(set) var toast: Toast?
+    func notify(_ text: String) { toast = Toast(text: text) }
+    /// desktop alongsideNoted: the note about a translation made beside a Korean subtitle is said once a series per launch.
+    private static var alongsideNoted: Set<String> = []
     /// desktop koreanFound: a Korean subtitle (a fansub, Linkkf's) was put on for this episode.
     private var koreanFound = false
     private var searchProvider = "kairan"
@@ -159,8 +165,10 @@ final class EpisodePlayerModel: ObservableObject {
         let opening = item
         Task { await jimaku.load(opening) }
         engine.onEnd = { [weak self, weak library] in
-            guard let self, let library, token == self.generation, !self.holdProgress, !self.systemPlayback,
-                  library.preferences.autoPlay, !self.item.next.isEmpty else { return }
+            guard let self, let library, token == self.generation, !self.holdProgress, !self.systemPlayback else { return }
+            // desktop video 'ended': said when nothing follows.
+            guard !self.item.next.isEmpty else { self.notify("마지막 회차입니다."); return }
+            guard library.preferences.autoPlay else { self.notify("재생이 끝났습니다."); return }
             let remaining = self.item.next
             var next = remaining[0]; next.next = Array(remaining.dropFirst())
             self.change(next, library: library)
@@ -541,6 +549,9 @@ final class EpisodePlayerModel: ObservableObject {
                 alongsideTranslation.translate(prepared.0, preferences: preferences, anime: episode.anime, background: true) { output in
                     guard token == self.generation, request == self.subtitleRequest else { return }
                     EpisodeSubtitleStore.shared.save(output, item: episode, provider: preferences.translationProvider, translated: true, behind: true, original: prepared.0)
+                    if Self.alongsideNoted.insert(episode.anime.id).inserted {
+                        self.notify("번역본도 만들어 뒀어요. 한국어 자막이 맞지 않으면 플레이어 설정 > 자막에서 'AI 번역'을 눌러 보세요.")
+                    }
                 }
                 while alongsideTranslation.running && !Task.isCancelled { try await Task.sleep(nanoseconds: 300_000_000) }
                 if !Task.isCancelled, token == generation { prefetchNext(library: library, token: token) }
@@ -802,7 +813,7 @@ struct EpisodePlayerView: View {
                     pipSupported: model.pictureInPicture.supported, pipActive: model.pictureInPicture.active,
                     screenshot: { await model.screenshot(title: DesktopCatalog.shared.title(model.item.anime.anime, source: model.item.anime.source, language: library.preferences.titleLanguage)) },
                     subtitleOffset: model.subtitleOffset,
-                    keyboardEnabled: !settings && !importer)
+                    keyboardEnabled: !settings && !importer, toast: model.toast)
             } else {
                 VStack { HStack { Button { dismiss() } label: { Image(systemName: "arrow.left") }; Spacer(); Button { settings = true } label: { Image(systemName: "gearshape") } }.font(.title3).padding(20).background(.black.opacity(0.65)); Spacer() }.foregroundStyle(.white)
             }
@@ -1177,6 +1188,7 @@ struct PlayerControls: View {
     let screenshot: () async -> String
     var subtitleOffset = 0.0
     let keyboardEnabled: Bool
+    var toast: EpisodePlayerModel.Toast? = nil
     @GestureState private var holdingSpeed = false
     @State private var dragging = false
     @State private var value = 0.0
@@ -1240,7 +1252,7 @@ struct PlayerControls: View {
                 if locked {
                     VStack { Spacer(); HStack { Spacer(); control("lock.open.fill", label: "잠금 해제") { locked = false; visible = true } }.padding(18) }
                 }
-                if !feedback.isEmpty { Text(feedback).font(.headline).padding(14).background(.black.opacity(0.7), in: Capsule()).allowsHitTesting(false) }
+                if !feedback.isEmpty { Text(feedback).font(.headline).multilineTextAlignment(.center).padding(14).background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 22)).padding(.horizontal, 24).allowsHitTesting(false) }
                 if engine.buffering { ProgressView().tint(.white).allowsHitTesting(false) }
                 if engine.speedBoosted { VStack { Text("2배속").font(.headline).padding(.horizontal, 18).padding(.vertical, 8).background(.black.opacity(0.75), in: Capsule()).accessibilityIdentifier("speed-boost"); Spacer() }.padding(.top, 72).allowsHitTesting(false) }
                 if let chapter, !locked, library.preferences.showSkipButton ?? true {
@@ -1280,6 +1292,7 @@ struct PlayerControls: View {
                 if !dragging { withAnimation(LilacMotion.animation(reduced: reduceMotion)) { visible = false } }
             }
             .onChange(of: engine.paused) { paused in if paused { visible = true }; touch() }
+            .onChange(of: toast) { note in if let note { flash(note.text, seconds: 2.2) } }
     }
     private func shiftSubtitle(_ delta: Double) {
         adjustSubtitle(delta)
@@ -1299,9 +1312,9 @@ struct PlayerControls: View {
         takingScreenshot = true
         Task { defer { takingScreenshot = false }; flash(await screenshot()) }
     }
-    private func flash(_ text: String) {
+    private func flash(_ text: String, seconds: Double = 1.4) {
         feedback = text
-        Task { try? await Task.sleep(nanoseconds: 1_400_000_000); if feedback == text { feedback = "" } }
+        Task { try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000)); if feedback == text { feedback = "" } }
     }
     private func tapZone(_ delta: Double) -> some View {
         Color.clear.contentShape(Rectangle()).onTapGesture(count: 2) {

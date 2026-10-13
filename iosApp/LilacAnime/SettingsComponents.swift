@@ -187,17 +187,18 @@ struct SettingSyncInput: View {
             }
             if invalid { SettingNote("유효한 숫자를 입력하세요.", color: .red) }
             SettingButtons {
-                Button("-250ms") { update(value - 0.25) }
+                Button("-250ms") { update(((value - 0.25) * 1000).rounded() / 1000) }
                 Button("초기화") { update(0) }
-                Button("+250ms") { update(value + 0.25) }
+                Button("+250ms") { update(((value + 0.25) * 1000).rounded() / 1000) }
             }
-        }.onAppear { refresh() }.onChange(of: value) { _ in refresh() }
+        }.onAppear { show(value) }.onChange(of: value) { show($0) }
     }
     private func apply() {
         guard let milliseconds = Double(input.trimmingCharacters(in: .whitespacesAndNewlines)), milliseconds.isFinite else { invalid = true; return }
         update(milliseconds.rounded() / 1000); invalid = false; focused = false
     }
-    private func refresh() { if !focused { input = String(format: "%.0f", value * 1000) }; invalid = false }
+    /// As PSSyncInput: the new value from onChange, also while the field is being edited.
+    private func show(_ seconds: Double) { input = String(format: "%.0f", (seconds * 1000).rounded()); invalid = false }
 }
 
 extension View {

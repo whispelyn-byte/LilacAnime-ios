@@ -297,14 +297,16 @@ struct PSSyncInput: View {
                 Button("적용", action: apply).buttonStyle(PSTextButtonStyle()).foregroundStyle(LilacStyle.accent)
                     .accessibilityIdentifier("subtitle-sync-apply")
             }
-        }.padding(.vertical, 8).onAppear { refresh() }.onChange(of: value) { _ in refresh() }
+        }.padding(.vertical, 8).onAppear { show(value) }.onChange(of: value) { show($0) }
         if invalid { Text("유효한 숫자를 입력하세요.").font(.system(size: 11)).foregroundStyle(.red) }
     }
     private func apply() {
         guard let milliseconds = Double(input.trimmingCharacters(in: .whitespacesAndNewlines)), milliseconds.isFinite else { invalid = true; return }
         update(milliseconds.rounded() / 1000); invalid = false; focused = false
     }
-    private func refresh() { if !focused { input = String(format: "%.0f", value * 1000) }; invalid = false }
+    /// The offset as it now is, also while the field is being edited: a button changed it, and the typed text is stale.
+    /// Shown from the value onChange hands over, not `value`, which the closure can still hold from the last render.
+    private func show(_ seconds: Double) { input = String(format: "%.0f", (seconds * 1000).rounded()); invalid = false }
 }
 
 /// Lays its children out in rows, moving to the next row when one is full (CSS flex-wrap).

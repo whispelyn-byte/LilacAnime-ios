@@ -295,7 +295,12 @@ final class EpisodePlayerModel: ObservableObject {
         engine.configure(settings)
     }
     func shiftSubtitle(_ delta: Double, library: LibraryStore) {
-        subtitleOffset += delta
+        setSubtitleOffset(subtitleOffset + delta, library: library)
+    }
+    /// Sets the offset itself (desktop setSubtitleSync), kept to whole milliseconds as the field shows it.
+    func setSubtitleOffset(_ seconds: Double, library: LibraryStore) {
+        guard seconds.isFinite else { return }
+        subtitleOffset = (seconds * 1000).rounded() / 1000
         engine.set("sub-delay", String(subtitleOffset))
         library.saveSubtitle(animeID: item.anime.id, episodeID: item.episodeID, file: sourceSubtitle, offset: subtitleOffset)
     }
@@ -1055,10 +1060,11 @@ struct EpisodePlayerView: View {
             PSLabel(title: "자막 높이", value: "\(Int(library.preferences.subtitlePadding))%")
             Slider(value: $library.preferences.subtitlePadding, in: 3...30, step: 1).accessibilityLabel("자막 높이")
             PSLabel(title: "자막 타이밍", value: syncLabel)
-            PSSyncInput(value: model.subtitleOffset) { model.shiftSubtitle($0 - model.subtitleOffset, library: library) }
+            PSSyncInput(value: model.subtitleOffset) { model.setSubtitleOffset($0, library: library) }
             PSNote("음수는 빠르게, 양수는 늦게 표시합니다. 크기 제한 없이 직접 입력할 수 있어요.").padding(.bottom, 6)
             PlayerChoiceGrid(options: [("fast", "0.25초 빠르게"), ("reset", "원래대로"), ("slow", "0.25초 늦게")], selection: Binding(get: { "" }, set: {
-                model.shiftSubtitle($0 == "reset" ? -model.subtitleOffset : $0 == "fast" ? -0.25 : 0.25, library: library)
+                if $0 == "reset" { model.setSubtitleOffset(0, library: library) }
+                else { model.shiftSubtitle($0 == "fast" ? -0.25 : 0.25, library: library) }
             }), identifier: "player-subtitle-sync")
             PSNote("자막이 대사보다 늦게 나오면 빠르게, 먼저 나오면 늦게를 누르세요.").padding(.top, 6)
         }

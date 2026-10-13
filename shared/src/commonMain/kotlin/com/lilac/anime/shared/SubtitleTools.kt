@@ -41,13 +41,22 @@ object SubtitleTools {
     fun translatedVtt(content: String, extension: String, lines: List<String>): String {
         val cues = SubtitleDocument.parse(content, extension.lowercase())
         require(cues.size == lines.size) { "번역 자막 줄 수가 일치하지 않습니다." }
-        return "WEBVTT\n\n" + cues.mapIndexedNotNull { index, cue ->
-            val text = lines[index].lineSequence().filter { it.isNotBlank() }.joinToString("\n")
-            if (text.isBlank()) return@mapIndexedNotNull null
-            (index + 1).toString() + "\n" + clock(cue.startMs / 1000.0) + " --> " + clock(cue.endMs / 1000.0) + "\n" +
-                text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        // Cues with the same timing (an ASS file's separate lines) become one cue, as desktop writeResult does, or the
+        // player draws them stacked on top of each other.
+        val merged = LinkedHashMap<Pair<Long, Long>, MutableList<String>>()
+        cues.forEachIndexed { index, cue ->
+            val text = cueText(lines[index])
+            if (text.isNotEmpty()) merged.getOrPut(cue.startMs to cue.endMs) { mutableListOf() } += text
+        }
+        return "WEBVTT\n\n" + merged.entries.mapIndexed { index, (timing, texts) ->
+            (index + 1).toString() + "\n" + clock(timing.first / 1000.0) + " --> " + clock(timing.second / 1000.0) + "\n" + texts.joinToString("\n")
         }.joinToString("\n\n")
     }
+    /** A line as the source or the model has it, for a VTT cue: the ASS / SRT breaks sent to the model (\N, or the \n
+     *  a model answers with) as real line breaks, \h as a space, no blank lines, escaped (desktop escapeCue). */
+    private fun cueText(value: String): String = value.replace(Regex("\\\\[Nn]"), "\n").replace("\\h", " ")
+        .lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.joinToString("\n")
+        .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     fun cues(content: String, extension: String): List<SubtitleCue> =
         SubtitleDocument.parse(content, extension.lowercase()).map {
             SubtitleCue(it.startMs / 1000.0, it.endMs / 1000.0,

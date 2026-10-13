@@ -51,7 +51,8 @@ final class TranslationCoordinator: ObservableObject {
                 let configuration = try JSONSerialization.data(withJSONObject: settings, options: [.sortedKeys])
                 let cacheID = SubtitleFiles.key(content + String(decoding: configuration, as: UTF8.self))
                 try FileManager.default.createDirectory(at: SubtitleFiles.translations, withIntermediateDirectories: true)
-                let resultFile = SubtitleFiles.translations.appendingPathComponent(cacheID + ".vtt")
+                // ".v2": written with real line breaks and same-timing lines merged; an older file is written again.
+                let resultFile = SubtitleFiles.translations.appendingPathComponent(cacheID + ".v2.vtt")
                 let partialFile = SubtitleFiles.translations.appendingPathComponent(cacheID + ".lines.json")
                 if fresh { try? FileManager.default.removeItem(at: resultFile); try? FileManager.default.removeItem(at: partialFile) }
                 if FileManager.default.fileExists(atPath: resultFile.path) {

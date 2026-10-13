@@ -36,6 +36,21 @@ class TranslatedSubtitleStyleTest {
         assertTrue(output.contains("&lt;b&gt;문자 &amp; 설명&lt;/b&gt;"))
         assertFailsWith<IllegalArgumentException> { SubtitleTools.translatedVtt(ass, "ass", listOf("누락")) }
     }
+    @Test fun escapedLineBreaksBecomeRealLines() {
+        val srt = "1\n00:00:01,000 --> 00:00:03,000\n一行目\n二行目\n\n2\n00:00:04,000 --> 00:00:05,000\nまた\n"
+        val output = SubtitleTools.translatedVtt(srt, "srt", listOf("첫 줄\\n둘째 줄", "다시\\N한 번\\h!"))
+        assertFalse(output.contains("\\n")); assertFalse(output.contains("\\N")); assertFalse(output.contains("\\h"))
+        assertTrue(output.contains("첫 줄\n둘째 줄"))
+        assertTrue(output.contains("다시\n한 번 !"))
+    }
+    @Test fun sameTimingLinesBecomeOneCue() {
+        val twoSpeakers = ass + "\nDialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,さようなら"
+        val output = SubtitleTools.translatedVtt(twoSpeakers, "ass", listOf("안녕", "다음에 봐요", "잘 가"))
+        val cues = SubtitleTools.cues(output, "vtt")
+        assertEquals(2, cues.size)
+        assertTrue(output.contains("00:00:01.000 --> 00:00:03.000\n안녕\n잘 가\n\n"))
+        assertEquals(2.0, cues[1].startSeconds)
+    }
     @Test fun discardedBilingualCueDoesNotLeaveAnEmptyVttCue() {
         val output = SubtitleTools.translatedVtt(ass, "ass", listOf("", "남은 자막\n\n둘째 줄"))
         val cues = SubtitleTools.cues(output, "vtt")

@@ -189,7 +189,7 @@ final class PlayerPictureInPicture: NSObject, ObservableObject, AVPictureInPictu
     func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, skipByInterval skipInterval: CMTime, completion completionHandler: @escaping @Sendable () -> Void) {
         guard let engine else { completionHandler(); return }
         let target = max(0, min(engine.duration, engine.position + skipInterval.seconds))
-        engine.seek(target); layer.flush()
+        engine.seekByViewer(target); layer.flush()
         Task {
             // Wait for mpv's observed position, then update the PiP timebase before completing the seek.
             for _ in 0..<20 {

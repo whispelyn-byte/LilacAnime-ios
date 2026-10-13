@@ -183,9 +183,11 @@ final class EpisodePlayerModel: ObservableObject {
                         }
                     }
             }
-            if let chapter = self.chapters.first(where: { position >= $0.start && position < $0.end }) {
+            let chapter = self.chapters.first(where: { position >= $0.start && position < $0.end })
+            let watched = self.watchedByChoice(chapter)
+            if let chapter {
                 if self.skipEntered?.0 != chapter.id { self.skipEntered = (chapter.id, Date()) }
-                if library.preferences.autoSkip, !self.systemPlayback, chapter.id != self.lastSkipped,
+                if !watched, library.preferences.autoSkip, !self.systemPlayback, chapter.id != self.lastSkipped,
                    Date().timeIntervalSince(self.skipEntered?.1 ?? Date()) >= 2.5 {
                     self.lastSkipped = chapter.id; self.engine.seek(chapter.end)
                 }
@@ -251,7 +253,7 @@ final class EpisodePlayerModel: ObservableObject {
         subtitleSearchRequest = UUID(); subtitleSearchCache = [:]; subtitleResultsProvider = ""; subtitleSearchError = nil; searching = false; makers = []
         chipTask?.cancel(); chipTask = nil; chipRequest = UUID(); pressedSource = nil; pressedFor = nil; pickedSheet = nil; sheetPicked = false
         subtitleState = nil; selectedTrackURL = nil; selectedMaker = nil
-        loadedSkip = false; lastSave = 0; lastSkipped = ""; systemPlayback = false
+        loadedSkip = false; lastSave = 0; lastSkipped = ""; systemPlayback = false; engine.clearViewerSeek()
         begin(library: library)
     }
     func play(_ stream: ResolvedStream, library: LibraryStore, paused: Bool = false) {
@@ -293,6 +295,15 @@ final class EpisodePlayerModel: ObservableObject {
         var settings = library.preferences
         settings.subtitleOffset = subtitleOffset
         engine.configure(settings)
+    }
+    /// desktop updateSkipState: an OP/ED the viewer moved into themselves is watched until they leave it; other
+    /// segments, and this one once played past, are skipped as before. mpv reports the new position a moment after a
+    /// seek, so the mark is kept that long instead of being judged on the position before it.
+    func watchedByChoice(_ chapter: OfflineChapter?, now: Date = Date()) -> Bool {
+        guard let seek = engine.viewerSeek else { return false }
+        if let chapter, seek.time >= chapter.start && seek.time < chapter.end { return true }
+        if now.timeIntervalSince(seek.at) >= 1.5 { engine.clearViewerSeek() }
+        return false
     }
     func shiftSubtitle(_ delta: Double, library: LibraryStore) {
         setSubtitleOffset(subtitleOffset + delta, library: library)
@@ -1187,7 +1198,7 @@ struct PlayerControls: View {
                                 Slider(value: Binding(get: { dragging ? value : min(max(engine.position, 0), max(engine.duration, 1)) }, set: { value = $0 }),
                                     in: 0...max(engine.duration, 1), onEditingChanged: { editing in
                                         if editing { value = engine.position }; dragging = editing
-                                        if !editing { engine.seek(value) }; touch()
+                                        if !editing { engine.seekByViewer(value) }; touch()
                                     }).tint(LilacStyle.accent)
                                 Text(clock(engine.duration)).monospacedDigit().foregroundStyle(.white.opacity(0.65))
                             }.font(.system(size: 11)).padding(.horizontal, 12).padding(.vertical, 2)
@@ -1226,7 +1237,7 @@ struct PlayerControls: View {
                         Button("") { changeSpeed(0.25) }.keyboardShortcut("]", modifiers: [])
                         Button("") { if canNext { next() } }.keyboardShortcut(.pageDown, modifiers: [])
                         Button("") { if canPrevious { previous() } }.keyboardShortcut(.pageUp, modifiers: [])
-                        ForEach(0..<10) { digit in Button("") { engine.seek(engine.duration * Double(digit) / 10) }.keyboardShortcut(KeyEquivalent(Character(String(digit))), modifiers: []) }
+                        ForEach(0..<10) { digit in Button("") { engine.seekByViewer(engine.duration * Double(digit) / 10) }.keyboardShortcut(KeyEquivalent(Character(String(digit))), modifiers: []) }
                     }
                 }.disabled(locked || !keyboardEnabled).frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
             }

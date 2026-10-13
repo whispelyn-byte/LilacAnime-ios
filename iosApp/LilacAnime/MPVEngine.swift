@@ -169,7 +169,14 @@ final class MPVEngine: ObservableObject {
     func toggle() { paused ? play() : pause() }
     private(set) var seekRevision: UInt64 = 0
     func seek(_ seconds: Double) { seekRevision &+= 1; command(["seek", max(0, seconds).description, "absolute+exact"]) }
-    func skip(_ delta: Double) { seek(position + delta) }
+    /// Where the viewer moved to themselves, and when (desktop seekPlayer): the OP/ED there is watched, not skipped.
+    private(set) var viewerSeek: (time: Double, at: Date)?
+    func seekByViewer(_ seconds: Double) {
+        guard seconds.isFinite else { return }
+        viewerSeek = (max(0, seconds), Date()); seek(seconds)
+    }
+    func clearViewerSeek() { viewerSeek = nil }
+    func skip(_ delta: Double) { seekByViewer(position + delta) }
     func subtitle(_ file: URL, translated: Bool = false) {
         pendingSubtitle = file; translatedSubtitle = translated
         configure("sub-ass-override", assOverride)
@@ -346,7 +353,7 @@ final class MPVEngine: ObservableObject {
             (center.pauseCommand, center.pauseCommand.addTarget { [weak self] _ in DispatchQueue.main.async { self?.pause() }; return .success }),
             (center.changePlaybackPositionCommand, center.changePlaybackPositionCommand.addTarget { [weak self] event in
                 guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
-                DispatchQueue.main.async { self?.seek(event.positionTime) }; return .success
+                DispatchQueue.main.async { self?.seekByViewer(event.positionTime) }; return .success
             })
         ]
         notifications.append(NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in

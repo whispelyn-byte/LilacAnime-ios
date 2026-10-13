@@ -33,12 +33,14 @@ object SubtitleDocument {
         .replace("\\N", "\n")
         .trim()
 
+    /** A cue's words as the models get them. Desktop reads every subtitle as WebVTT, so a line break is a line break:
+     *  not ASS's \N (an SRT's breaks were turned into it, which a model could answer with as text). */
     fun modelText(text: String, kind: String): String {
         var value = text.replace("\r\n", "\n").replace('\r', '\n')
-        if (kind == "srt") value = value.replace("\n", "\\N")
         value = value.replace(Regex("(?s)\\{[^}]*\\}"), "")
         value = value.replace(Regex("(?is)<[^>]+>"), "")
-        return value.trim()
+        value = value.replace(Regex("\\\\[Nn]"), "\n").replace("\\h", " ")
+        return value.lines().map { it.trim() }.filter { it.isNotEmpty() }.joinToString("\n")
     }
 
     private fun restoreTags(original: String, translated: String, kind: String): String {

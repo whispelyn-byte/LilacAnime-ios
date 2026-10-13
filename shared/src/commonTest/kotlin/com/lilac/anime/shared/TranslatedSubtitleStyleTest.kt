@@ -43,6 +43,12 @@ class TranslatedSubtitleStyleTest {
         assertTrue(output.contains("첫 줄\n둘째 줄"))
         assertTrue(output.contains("다시\n한 번 !"))
     }
+    @Test fun modelsGetRealLineBreaksAsDesktop() {
+        val srt = "1\n00:00:01,000 --> 00:00:03,000\n一行目\n<i>二行目</i>\n"
+        assertEquals(listOf("一行目\n二行目"), SubtitleTools.lines(srt, "srt"))
+        val twoLines = ass.replace("またね", "{\\an8}また\\Nね\\hね")
+        assertEquals(listOf("こんにちは", "また\nね ね"), SubtitleTools.lines(twoLines, "ass"))
+    }
     @Test fun sameTimingLinesBecomeOneCue() {
         val twoSpeakers = ass + "\nDialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,さようなら"
         val output = SubtitleTools.translatedVtt(twoSpeakers, "ass", listOf("안녕", "다음에 봐요", "잘 가"))

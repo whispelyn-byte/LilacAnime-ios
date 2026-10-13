@@ -37,6 +37,9 @@ object SubtitleDocument {
      *  not ASS's \N (an SRT's breaks were turned into it, which a model could answer with as text). */
     fun modelText(text: String, kind: String): String {
         var value = text.replace("\r\n", "\n").replace('\r', '\n')
+        // desktop assToVtt: an ASS drawing ({\p1}m 0 0 l …) is a shape, not words; srtToVtt: <br> is a line break.
+        value = value.replace(Regex("\\{[^}]*\\\\p[1-9][^}]*\\}[^{]*"), "")
+        value = value.replace(Regex("(?i)<br\\s*/?>"), "\n")
         value = value.replace(Regex("(?s)\\{[^}]*\\}"), "")
         value = value.replace(Regex("(?is)<[^>]+>"), "")
         value = value.replace(Regex("\\\\[Nn]"), "\n").replace("\\h", " ")

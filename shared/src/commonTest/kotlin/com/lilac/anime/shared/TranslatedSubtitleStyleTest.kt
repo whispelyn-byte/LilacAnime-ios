@@ -48,6 +48,10 @@ class TranslatedSubtitleStyleTest {
         assertEquals(listOf("一行目\n二行目"), SubtitleTools.lines(srt, "srt"))
         val twoLines = ass.replace("またね", "{\\an8}また\\Nね\\hね")
         assertEquals(listOf("こんにちは", "また\nね ね"), SubtitleTools.lines(twoLines, "ass"))
+        val drawing = ass.replace("またね", "{\\p1}m 0 0 l 100 0 100 100{\\p0}またね")
+        assertEquals("またね", SubtitleTools.lines(drawing, "ass")[1], "an ASS drawing is not sent as words (desktop assToVtt)")
+        val br = "1\n00:00:01,000 --> 00:00:03,000\n一行目<br>二行目\n"
+        assertEquals(listOf("一行目\n二行目"), SubtitleTools.lines(br, "srt"))
     }
     @Test fun sameTimingLinesBecomeOneCue() {
         val twoSpeakers = ass + "\nDialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,さようなら"

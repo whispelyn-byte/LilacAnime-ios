@@ -25,8 +25,8 @@ class IosServices {
     private val tmdb by tmdbLazy
     private val metadata by metadataLazy
     fun catalogKoreanIndex(completion: (String?, String?) -> Unit) { scope.launch { call(completion) { metadata.wikidataIndex() } } }
-    fun desktopMetadata(anime: Anime, credential: String, includeCast: Boolean, completion: (DesktopMetadata?, String?) -> Unit) {
-        scope.launch { call(completion) { metadata.resolve(anime, credential, includeCast) } }
+    fun desktopMetadata(anime: Anime, credential: String, includeCast: Boolean, background: Boolean, completion: (DesktopMetadata?, String?) -> Unit) {
+        scope.launch { call(completion) { metadata.resolve(anime, credential, includeCast, background) } }
     }
     fun koreanTitle(titles: List<String>, credential: String, completion: (String?, String?) -> Unit) {
         scope.launch { call(completion) { tmdb.desktopTitles(titles, credential, light = true).firstOrNull() } }

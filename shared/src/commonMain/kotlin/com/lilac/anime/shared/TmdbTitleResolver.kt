@@ -18,10 +18,14 @@ class TmdbTitleResolver(private val client: HttpClient = HttpClient {
     followRedirects = false
     install(HttpTimeout) { requestTimeoutMillis = 20_000; connectTimeoutMillis = 20_000 }
 }, private val gate: TmdbRequestGate = TmdbRequestGate.shared) {
-    private suspend fun request(path: String, credential: String, query: String? = null, language: String = "ko-KR"): JSONObject {
+    // background: a catalog index lookup, which gives way to the requests made for the screen (see TmdbRequestGate).
+    private suspend fun request(path: String, credential: String, query: String? = null, language: String = "ko-KR", background: Boolean = false): JSONObject {
         if (credential.isBlank()) throw TmdbFailure("auth")
+        return gate.shared(listOf(credential, path, language, query.orEmpty()).joinToString("\u0000"), background) { ticket -> send(path, credential, query, language, ticket) }
+    }
+    private suspend fun send(path: String, credential: String, query: String?, language: String, ticket: TmdbTicket): JSONObject {
         for (attempt in 0..2) {
-        gate.takeTurn()
+        gate.takeTurn(ticket)
         val failure = try {
         val response = try { client.get("https://api.themoviedb.org/3/" + path) {
             timeout { requestTimeoutMillis = 20_000; connectTimeoutMillis = 20_000 }
@@ -80,9 +84,9 @@ class TmdbTitleResolver(private val client: HttpClient = HttpClient {
         return null
     }
     private fun rows(root: JSONObject, name: String): List<JSONObject> = root.optJSONArray(name)?.let { list -> (0 until list.length()).mapNotNull(list::optJSONObject) }.orEmpty()
-    private suspend fun desktopPick(query: String, kind: String, credential: String): JSONObject? = coroutineScope {
-        val en = async { request("search/$kind", credential, query, "en-US") }
-        val ko = async { request("search/$kind", credential, query) }
+    private suspend fun desktopPick(query: String, kind: String, credential: String, background: Boolean = false): JSONObject? = coroutineScope {
+        val en = async { request("search/$kind", credential, query, "en-US", background) }
+        val ko = async { request("search/$kind", credential, query, background = background) }
         val animation = rows(en.await(), "results").filter { item -> item.optJSONArray("genre_ids")?.let { (0 until it.length()).any { index -> it.optInt(index) == 16 } } == true }
         val pick = animation.firstOrNull { DesktopTmdbRules.key(it.optString("name").ifBlank { it.optString("title") }) == DesktopTmdbRules.key(query) }
             ?: animation.sortedByDescending { item -> item.optString("original_language") == "ja" || item.optJSONArray("origin_country")?.let { (0 until it.length()).any { index -> it.optString(index) == "JP" } } == true }.firstOrNull()
@@ -94,20 +98,19 @@ class TmdbTitleResolver(private val client: HttpClient = HttpClient {
         !Regex("^(?:season\\s*\\d+|specials)$", RegexOption.IGNORE_CASE).matches(name) &&
             DesktopTmdbRules.key(name).length >= 6 && DesktopTmdbRules.key(original).contains(DesktopTmdbRules.key(name))
     }.maxByOrNull { DesktopTmdbRules.key(it.optString("name")).length }
-    private suspend fun desktopSeasonTitle(id: Int, original: String, credential: String): String = coroutineScope {
-        val en = async { request("tv/$id", credential, language = "en-US") }
-        val ko = async { request("tv/$id", credential) }
-        val season = namedSeason(en.await(), original)
-        val korean = ko.await()
-        val name = rows(korean, "seasons").firstOrNull { season != null && it.optInt("season_number") == season.optInt("season_number") }
+    private suspend fun desktopSeasonTitle(id: Int, original: String, credential: String, background: Boolean = false): String {
+        // The ko-KR entry is only asked for when the title names one of the seasons.
+        val season = namedSeason(request("tv/$id", credential, language = "en-US", background = background), original) ?: return ""
+        val korean = request("tv/$id", credential, background = background)
+        val name = rows(korean, "seasons").firstOrNull { it.optInt("season_number") == season.optInt("season_number") }
             ?.optString("name").orEmpty().replace(Regex("^시즌\\s*\\d+\\s*[:：]?\\s*"), "").trim()
-        if (!Regex("[가-힣]{2}").containsMatchIn(name)) return@coroutineScope ""
+        if (!Regex("[가-힣]{2}").containsMatchIn(name)) return ""
         val series = korean.optString("name").trim()
         val first = DesktopTitleRules.simple(series).split(' ').firstOrNull().orEmpty()
-        if (first.isNotBlank() && DesktopTitleRules.simple(name).contains(first)) name
+        return if (first.isNotBlank() && DesktopTitleRules.simple(name).contains(first)) name
         else series.replace(Regex("\\s*[~〜～][^~〜～]*[~〜～]\\s*"), " ").trim() + " " + name
     }
-    suspend fun desktopTitles(titles: List<String>, credential: String, light: Boolean): List<String> {
+    suspend fun desktopTitles(titles: List<String>, credential: String, light: Boolean, background: Boolean = false): List<String> {
         if (credential.isBlank()) return emptyList()
         val found = mutableListOf<String>()
         fun add(value: String) {
@@ -115,10 +118,10 @@ class TmdbTitleResolver(private val client: HttpClient = HttpClient {
             if (Regex("[가-힣]{2}").containsMatchIn(name) && name !in found && !DesktopTmdbRules.sibling(found.firstOrNull().orEmpty(), name)) found += name
         }
         for (query in DesktopTmdbRules.queries(titles)) for (kind in listOf("tv", "movie")) {
-            val pick = desktopPick(query, kind, credential) ?: continue
-            if (kind == "tv") attempt { desktopSeasonTitle(pick.optInt("id"), titles.firstOrNull().orEmpty(), credential) }?.let(::add)
+            val pick = desktopPick(query, kind, credential, background) ?: continue
+            if (kind == "tv") attempt { desktopSeasonTitle(pick.optInt("id"), titles.firstOrNull().orEmpty(), credential, background) }?.let(::add)
             add(pick.optString("name").ifBlank { pick.optString("title") })
-            if (!light) attempt { request("$kind/${pick.optInt("id")}/alternative_titles", credential) }?.let { root ->
+            if (!light) attempt { request("$kind/${pick.optInt("id")}/alternative_titles", credential, background = background) }?.let { root ->
                 (rows(root, "results") + rows(root, "titles")).filter { it.optString("iso_3166_1") == "KR" }.forEach { add(it.optString("title")) }
             }
             if (found.isNotEmpty()) return found

@@ -89,7 +89,7 @@ final class DesktopCatalog: ObservableObject {
             if delay > 0 { try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
             guard !Task.isCancelled else { return false }
             let result: DesktopMetadata? = await withCheckedContinuation { continuation in
-                service.desktopMetadata(anime: anime, credential: SecureKeys.load("tmdb"), includeCast: cast) { value, _ in continuation.resume(returning: value) }
+                service.desktopMetadata(anime: anime, credential: SecureKeys.load("tmdb"), includeCast: cast, background: bulk) { value, _ in continuation.resume(returning: value) }
             }
             guard let result, !Task.isCancelled else { return false }
             if !result.titleLookupFailure.isEmpty && result.korean.isEmpty {

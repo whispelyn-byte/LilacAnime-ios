@@ -54,7 +54,7 @@ final class DesktopJimakuCatalog: ObservableObject {
         try Task.checkCancellation()
         guard anilist > 0 else { throw SubtitleFiles.failure("AniList 작품을 찾지 못해 Jimaku를 검색할 수 없습니다.") }
         let files: [SubtitleAsset] = try await withCheckedThrowingContinuation { continuation in
-            service.findSubtitles(provider: "jimaku", title: item.anime.title, episode: Int32(item.number), episodeKey: item.displayNumber, anilistId: anilist) { values, error in
+            service.findSubtitles(provider: "jimaku", title: item.anime.title, episode: Int32(item.number), episodeKey: item.subtitleEpisodeKey, anilistId: anilist) { values, error in
                 if let error { continuation.resume(throwing: SubtitleFiles.failure(error)) }
                 else { continuation.resume(returning: values ?? []) }
             }

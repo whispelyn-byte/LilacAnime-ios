@@ -393,7 +393,7 @@ final class EpisodePlayerModel: ObservableObject {
             self?.finishSubtitleSearch(assets, failure: error, key: key, token: token, request: request)
         }
         if let subtitleLookup { subtitleLookup(provider, completion); return }
-        service.findSubtitles(provider: provider, title: searchTitle, episode: Int32(item.number), episodeKey: item.displayNumber,
+        service.findSubtitles(provider: provider, title: searchTitle, episode: Int32(item.number), episodeKey: item.subtitleEpisodeKey,
             anilistId: item.anime.anime.anilistId?.int32Value ?? Int32(DesktopCatalog.shared.record(item.anime)?.anilist ?? 0), completion: completion)
     }
     func importSubtitle(_ url: URL, library: LibraryStore, headers: [String: String] = [:], translate: Bool = true, provider: String? = nil, asset: SubtitleAsset? = nil) {
@@ -577,7 +577,7 @@ final class EpisodePlayerModel: ObservableObject {
         let key = "maker:" + maker.website + ":" + searchTitle
         let request = beginSubtitleSearch(key: key, provider: "anissia")
         let token = generation
-        service.makerSubtitles(title: searchTitle, episode: Int32(item.number), episodeKey: item.displayNumber, website: maker.website, anilistId: item.anime.anime.anilistId?.int32Value ?? Int32(DesktopCatalog.shared.record(item.anime)?.anilist ?? 0)) { [weak self] values, failure in
+        service.makerSubtitles(title: searchTitle, episode: Int32(item.number), episodeKey: item.subtitleEpisodeKey, website: maker.website, anilistId: item.anime.anime.anilistId?.int32Value ?? Int32(DesktopCatalog.shared.record(item.anime)?.anilist ?? 0)) { [weak self] values, failure in
             self?.finishSubtitleSearch(values, failure: failure, key: key, token: token, request: request)
         }
     }
@@ -639,13 +639,13 @@ final class EpisodePlayerModel: ObservableObject {
             library.preferences.subtitleProvider = ["kairan", "csora", "anissia"].contains(source) ? source : "auto"
         }
         if source == "anissia" { loadMakers() }
+        // Re:Anime / Miruro: the site's own subtitle, never a machine translation (that is the AI 번역 chip): its Korean
+        // track, else its best other track (Japanese, then the English dialogue), the rest listed under the chip. Pressing it
+        // ends a series watched in machine translation (preferAI above), so its next episodes open with the site's track too.
         if source == "reanime" || source == "linkkf" {
             let tracks = siteTracks
             if let korean = tracks.first(where: DesktopSubtitlePolicy.isKorean) { chooseTrack(korean, library: library); return }
-            if let translated = EpisodeSubtitleStore.shared.list(item).first(where: \.translated), let file = translated.file {
-                selectSubtitle(file, library: library, translate: false, provider: translated.provider); return
-            }
-            if let track = DesktopSubtitlePolicy.translationTrack(tracks) ?? tracks.first { chooseTrack(track, library: library, translate: true) }
+            if let track = DesktopSubtitlePolicy.translationTrack(tracks) ?? tracks.first { chooseTrack(track, library: library) }
             else { subtitleState = "사이트 자막 트랙이 없습니다." }
             return
         }
@@ -677,7 +677,7 @@ final class EpisodePlayerModel: ObservableObject {
             if let found {
                 subtitleFiles = [found.0]; subtitleState = nil
                 selectSubtitle(found.0, library: library, provider: "anissia"); selectedMaker = maker.name
-            } else { subtitleState = maker.name + "의 " + opening.displayNumber + "화 자막을 찾지 못했습니다." }
+            } else { subtitleState = maker.name + "의 " + opening.subtitleEpisodeKey + "화 자막을 찾지 못했습니다." }
         }
     }
     /// 한국어 자막 다시 찾기: the automatic order again, past the saved subtitles and earlier results (app.js #findSubtitle).

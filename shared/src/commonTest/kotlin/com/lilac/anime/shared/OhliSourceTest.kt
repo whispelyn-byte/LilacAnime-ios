@@ -64,6 +64,34 @@ class OhliSourceTest {
         assertTrue(requested.any { it.contains("page=2") })
     }
 
+    // desktop 0.5.21 (issue #11): a number inside an episode's own title is not its number.
+    @Test fun aNumberInAnEpisodesTitleIsNotItsNumber() {
+        val label = DesktopSourceParser::episodeLabel
+        assertEquals(DesktopSourceParser.EpisodeLabel("80000대장경", null, false), label("80000대장경"))
+        assertEquals(DesktopSourceParser.EpisodeLabel("팔만대장경", null, false), label("팔만대장경"))
+        assertEquals(DesktopSourceParser.EpisodeLabel("3월의 라이온", null, false), label("3월의 라이온"))
+        for ((text, number) in listOf("5회" to 5.0, "제7화" to 7.0, "EP 3" to 3.0, "#4" to 4.0, "12-13" to 12.0, "12 END" to 12.0, "12 (完)" to 12.0, "1기 3화" to 3.0, "80000대장경 5화" to 5.0))
+            assertEquals(number, label(text).number, text)
+        val numbered = { labels: List<String> -> DesktopSourceParser.numberTitled(labels.map(label)).map { it.number } }
+        assertEquals(listOf(1.0, 2.0, 3.0, 4.0, 5.0, 6.0), numbered(listOf("1화", "2화", "3화", "4화", "80000대장경", "6화")))
+        assertEquals(listOf(1.0, 2.0, null), numbered(listOf("팔만대장경", "80000대장경", "OVA 1화")))
+        assertEquals(listOf(9.5, 10.0), numbered(listOf("9.5화", "제목")))
+    }
+
+    @Test fun aTitledEpisodeTakesItsNumberFromItsAddressOrPlace() {
+        val json = { text: String -> kotlinx.serialization.json.Json.parseToJsonElement(text) as kotlinx.serialization.json.JsonObject }
+        val comic = json("""{"slug":"작품","title":"작품","category":"방영중"}""")
+        val rows = listOf(json("""{"title":"팔만대장경","slug":"작품 팔만대장경","sort":600}"""), json("""{"title":"4화","slug":"작품 4화","sort":400}"""),
+            json("""{"title":"80000대장경","slug":"작품 5화","sort":500}"""))
+        val episodes = DesktopSourceParser.ohliDetail(comic, rows, Anime(id = "x", title = "x", source = "ohli24")).servers.single().episodes
+        assertEquals(listOf(4, 5, 6), episodes.map { it.number })
+        assertEquals(listOf("4화", "80000대장경", "팔만대장경"), episodes.map { it.title })
+        val html = """<div class="ewave-playlist-content"><a href="/watch/7/a/">1화</a><a href="/watch/7/b/">80000대장경</a><a href="/watch/7/k9/">특별한 제목</a></div>"""
+        val linkani = DesktopSourceParser.koreanDetail(html, Anime(id = "7", title = "작품", detailUrl = "https://linkani.tv/ani/7/"), "linkani").servers.single().episodes
+        assertEquals(listOf(1, 2, 9), linkani.map { it.number })
+        assertEquals("80000대장경", linkani[1].title)
+    }
+
     @Test fun aSingleEpisodeMovieIsItsFirstEpisode() {
         val comic = kotlinx.serialization.json.Json.parseToJsonElement("""{"slug":"극장판 작품","title":"극장판 작품","category":"극장판"}""") as kotlinx.serialization.json.JsonObject
         val row = kotlinx.serialization.json.Json.parseToJsonElement("""{"title":"14기","slug":"극장판 작품 14기"}""") as kotlinx.serialization.json.JsonObject

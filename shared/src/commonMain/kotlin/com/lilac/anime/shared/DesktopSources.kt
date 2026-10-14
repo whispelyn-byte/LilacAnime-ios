@@ -199,7 +199,16 @@ object DesktopSourceParser {
     /** A series and every episode: numbered ones first by number, specials (OVA, SP) after them; a movie is its one 1화. */
     fun ohliDetail(comic: JsonObject, rows: List<JsonObject>, summary: Anime): SourceDetail {
         data class Row(val label: EpisodeLabel, val url: String, val order: Int, val date: String)
-        var items = rows.map { Row(episodeLabel(it.text("title")), ohliPath("e", it.text("slug")), it.number("sort") ?: 0, ohliDay(it.text("published_at"))) }
+        // An episode titled by name alone ("80000대장경") takes its number from its address (/e/<title N화>), or else from
+        // its place in the site's order.
+        val listed = rows.map {
+            val label = episodeLabel(it.text("title")).let { label ->
+                val fromSlug = if (label.number == null && !label.special) Regex("(\\d+(?:\\.\\d+)?)\\s*화\\s*$").find(it.text("slug"))?.groupValues?.get(1)?.toDoubleOrNull()?.takeIf { value -> value != 0.0 } else null
+                if (fromSlug != null) label.copy(number = fromSlug) else label
+            }
+            Row(label, ohliPath("e", it.text("slug")), it.number("sort") ?: 0, ohliDay(it.text("published_at")))
+        }.sortedBy { it.order }
+        var items = listed.zip(numberTitled(listed.map { it.label })) { row, label -> row.copy(label = label) }
             .sortedWith(compareBy<Row>({ it.label.special }, { it.label.number ?: 0.0 }, { it.order }))
         if (comic.text("category") == "극장판" && items.size == 1) items = listOf(items[0].copy(label = EpisodeLabel("1", 1.0, false)))
         val episodes = items.mapIndexed { index, row -> koreanEpisode(row.label, row.url, index, row.date) }.distinctBy { it.id }
@@ -221,8 +230,27 @@ object DesktopSourceParser {
     fun episodeLabel(label: String): EpisodeLabel {
         val text = label.trim()
         if (specialEpisode.containsMatchIn(text)) return EpisodeLabel(text.replace(Regex("\\s*화\\s*$"), ""), null, true)
-        val number = (Regex("(\\d+(?:\\.\\d+)?)\\s*화").find(text)?.groupValues?.get(1) ?: Regex("\\d+(?:\\.\\d+)?").find(text)?.value)?.toDoubleOrNull()?.takeIf { it != 0.0 }
+        val number = episodeLabelNumber(text)
         return EpisodeLabel(number?.let(::numberName) ?: text.ifBlank { "1" }, number, false)
+    }
+    // The number a label gives: one marked as an episode's ("12화", "5회", "제3화", "EP 3", "#3") or the label itself
+    // ("12", "12-13", "12 END", "12 (完)"). A number inside an episode's own title ("80000대장경") is part of the title,
+    // not its number: read as one, the 5th episode was 80000화.
+    fun episodeLabelNumber(label: String): Double? {
+        val text = label.trim()
+        val marked = Regex("(\\d+(?:\\.\\d+)?)\\s*[화회話]").find(text) ?: Regex("^(?:제|ep(?:isode)?\\.?|#)\\s*(\\d+(?:\\.\\d+)?)", RegexOption.IGNORE_CASE).find(text)
+        if (marked != null) return marked.groupValues[1].toDoubleOrNull()?.takeIf { it != 0.0 }
+        val lead = Regex("^(\\d+(?:\\.\\d+)?)([\\s\\S]*)$").find(text) ?: return null
+        val rest = lead.groupValues[2].replace(Regex("[(\\[{【][^)\\]}】]*[)\\]}】]"), "").replace(Regex("\\b(?:end|final|fin)\\b|完|끝|最終", RegexOption.IGNORE_CASE), "")
+        return if (Regex("\\p{L}").containsMatchIn(rest)) null else lead.groupValues[1].toDoubleOrNull()?.takeIf { it != 0.0 }
+    }
+    // An episode listed by its title alone ("팔만대장경") is numbered by its place in the site's order: the one after the
+    // numbered episode before it (1 at the start). Specials keep no number.
+    fun numberTitled(labels: List<EpisodeLabel>): List<EpisodeLabel> {
+        var last = 0.0
+        return labels.map { label ->
+            if (label.special) label else (if (label.number == null) label.copy(number = kotlin.math.floor(last) + 1) else label).also { last = it.number ?: last }
+        }
     }
     private fun numberName(value: Double) = if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()
     /** "12화", or a special's own label ("OVA 1", "SP 노벨 히로인즈"). */
@@ -244,16 +272,20 @@ object DesktopSourceParser {
         groups.forEachIndexed { index, list ->
             val links = list.select(if (source == "linkani") "a[href*=/watch/]" else ".eps-item a[href]")
             // 9.5화 keeps its own number and an OVA its label, so neither is listed, played or saved as another episode.
-            val labelled = links.mapIndexedNotNull { position, link ->
+            // An episode named by its title alone ("80000대장경") is numbered by its place in the list.
+            val found = links.mapNotNull { link ->
                 val url = link.absUrl("href")
-                if (url.isBlank()) return@mapIndexedNotNull null
+                if (url.isBlank()) return@mapNotNull null
                 var label = episodeLabel(link.text().replace(link.selectFirst(".eps-date")?.text().orEmpty(), "").trim())
                 if (label.number == null && !label.special) {
-                    val fromUrl = Regex("/k(\\d+)/?$").find(url)?.groupValues?.get(1)?.toDoubleOrNull()
-                    label = if (fromUrl != null) EpisodeLabel(numberName(fromUrl), fromUrl, false) else EpisodeLabel((position + 1).toString(), (position + 1).toDouble(), false)
+                    val fromUrl = Regex("/k(\\d+)/?$").find(url)?.groupValues?.get(1)?.toDoubleOrNull()?.takeIf { it != 0.0 }
+                    if (fromUrl != null) label = EpisodeLabel(numberName(fromUrl), fromUrl, false)
                 }
-                label to koreanEpisode(label, url, position, link.selectFirst(".eps-date")?.text()?.takeIf { Regex("^\\d{4}-\\d{2}-\\d{2}$").matches(it) }.orEmpty())
-            }.distinctBy { it.second.id }.sortedWith(compareBy<Pair<EpisodeLabel, Episode>>({ it.first.special }, { it.first.number ?: 0.0 }))
+                Triple(label, url, link.selectFirst(".eps-date")?.text()?.takeIf { Regex("^\\d{4}-\\d{2}-\\d{2}$").matches(it) }.orEmpty())
+            }.distinctBy { it.second }
+            val labelled = found.zip(numberTitled(found.map { it.first })).mapIndexed { position, (row, label) ->
+                label to koreanEpisode(label, row.second, position, row.third)
+            }.sortedWith(compareBy<Pair<EpisodeLabel, Episode>>({ it.first.special }, { it.first.number ?: 0.0 }))
             val episodes = labelled.map { it.second }
             if (episodes.isNotEmpty()) servers += EpisodeServer(index + 1, tabs.getOrNull(index).orEmpty().ifBlank { if (source == "linkani") "링크애니" else "애니24" }, episodes)
         }

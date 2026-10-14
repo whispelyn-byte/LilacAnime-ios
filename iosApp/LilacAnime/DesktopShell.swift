@@ -112,7 +112,7 @@ struct DesktopSavedView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 2) {
-                Button { tab = 0 } label: { LilacChip(text: "내 목록", selected: tab == 0) }.buttonStyle(.plain)
+                Button { tab = 0 } label: { LilacChip(text: "내 목록 \(library.favorites.count)", selected: tab == 0) }.buttonStyle(.plain)
                 Button { tab = 1 } label: { LilacChip(text: "다운로드 완료 \(downloads.entries.filter { $0.localFile != nil }.count)", selected: tab == 1) }.buttonStyle(.plain)
             }.padding(3).background(LilacStyle.card2, in: RoundedRectangle(cornerRadius: 8))
                 .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, LilacStyle.gutter(sizeClass)).padding(.vertical, 12)

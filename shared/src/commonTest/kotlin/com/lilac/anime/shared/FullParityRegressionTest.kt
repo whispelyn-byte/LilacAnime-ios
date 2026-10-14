@@ -19,7 +19,7 @@ class FullParityRegressionTest {
             }
             respond(body, headers = headersOf(HttpHeaders.ContentType, "application/json"))
         })
-        val repository = DesktopMetadataRepository(client)
+        val repository = DesktopMetadataRepository(client, TmdbRequestGate())
         try {
             assertFailsWith<IllegalStateException> { repository.previousEpisodeOffsets(2, "Anime Season 2") }
             assertEquals(listOf(12), repository.previousEpisodeOffsets(2, "Anime Season 2"))

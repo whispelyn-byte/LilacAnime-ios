@@ -97,7 +97,7 @@ final class DesktopSubtitlePreparer {
     func maker(_ item: PlaybackItem, website: String) async throws -> (URL, String)? {
         let context = await context(item)
         let assets: [SubtitleAsset] = await withCheckedContinuation { continuation in
-            service.makerSubtitles(title: context.0, episode: Int32(item.number), episodeKey: item.displayNumber, website: website, anilistId: context.1) { values, _ in continuation.resume(returning: values ?? []) }
+            service.makerSubtitles(title: context.0, episode: Int32(item.number), episodeKey: item.subtitleEpisodeKey, website: website, anilistId: context.1) { values, _ in continuation.resume(returning: values ?? []) }
         }
         var tried = Set<String>()
         let result = await apply(assets, provider: "anissia", item: item, tried: &tried)
@@ -180,9 +180,9 @@ final class DesktopSubtitlePreparer {
             if Task.isCancelled { return [] }
             let assets: [SubtitleAsset] = await withCheckedContinuation { continuation in
                 if fresh {
-                    service.refreshSubtitles(provider: provider, title: title, episode: Int32(item.number), episodeKey: item.displayNumber, anilistId: context.1) { values, _ in continuation.resume(returning: values ?? []) }
+                    service.refreshSubtitles(provider: provider, title: title, episode: Int32(item.number), episodeKey: item.subtitleEpisodeKey, anilistId: context.1) { values, _ in continuation.resume(returning: values ?? []) }
                 } else {
-                    service.findSubtitles(provider: provider, title: title, episode: Int32(item.number), episodeKey: item.displayNumber, anilistId: context.1) { values, _ in continuation.resume(returning: values ?? []) }
+                    service.findSubtitles(provider: provider, title: title, episode: Int32(item.number), episodeKey: item.subtitleEpisodeKey, anilistId: context.1) { values, _ in continuation.resume(returning: values ?? []) }
                 }
             }
             if !assets.isEmpty { return assets }

@@ -35,6 +35,9 @@ struct PlaybackItem {
     var localSubtitles: [URL] = []
     var localSubtitleTracks: [RemoteSubtitle] = []
     var burnedKorean: Bool? = nil
+    /// The episode the subtitle sites are searched for: its label ("12", "9.5", "4a"), or its number when the label is the
+    /// episode's own title ("80000대장경"), as desktop searches by episodeNumberOf.
+    var subtitleEpisodeKey: String { displayNumber.range(of: #"^\d+(?:\.\d+)?[a-z]?$"#, options: [.regularExpression, .caseInsensitive]) != nil ? displayNumber : String(number) }
     init(anime: SavedAnime, episode: Episode) {
         self.anime = anime; episodeID = episode.id; title = episode.title; number = Int(episode.number)
         displayNumber = episode.displayNumber; watchURL = URL(string: episode.videoUrl ?? anime.anime.detailUrl) ?? URL(string: "https://linkkf.app/")!

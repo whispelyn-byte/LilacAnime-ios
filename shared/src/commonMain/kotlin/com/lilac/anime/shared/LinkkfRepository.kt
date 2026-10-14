@@ -141,16 +141,19 @@ internal fun parseServers(root: JsonElement, postId: String): List<EpisodeServer
     (root as? JsonArray).orEmpty().mapNotNull { element ->
         val server = element as? JsonObject ?: return@mapNotNull null
         val id = server.text("id").toIntOrNull()?.takeIf { it > 0 } ?: return@mapNotNull null
-        val episodes = (server["server_data"] as? JsonArray).orEmpty().mapNotNull episode@{ value ->
-            val item = value as? JsonObject ?: return@episode null
-            val display = item.text("name", "slug")
-            val number = Regex("^([0-9]+)").find(display)?.value?.toIntOrNull() ?: return@episode null
+        val items = (server["server_data"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }.filter { it.text("name", "slug").isNotBlank() }
+        // The episode number (next episode, subtitles, OP/ED) from the name ("12", "12화", "12-13"); an episode named by its
+        // title ("80000대장경") is numbered by its place in the list instead.
+        val labels = DesktopSourceParser.numberTitled(items.map { item ->
+            DesktopSourceParser.EpisodeLabel(item.text("name", "slug"), DesktopSourceParser.episodeLabelNumber(item.text("name")) ?: DesktopSourceParser.episodeLabelNumber(item.text("slug")), false)
+        })
+        val episodes = items.zip(labels) { item, label ->
             val slug = item.text("slug")
             val url = io.ktor.http.URLBuilder("https://linkkf.app/up/$postId/watch/").apply {
                 parameters.append("server", id.toString()); parameters.append("slug", slug)
             }.buildString()
             Episode(id = item.text("link").ifBlank { "${postId}v${id}_$slug" },
-                number = number, title = "${display}화", displayNumber = display, videoUrl = url)
+                number = label.number?.toInt() ?: 1, title = DesktopSourceParser.episodeTitle(label.name), displayNumber = label.name, videoUrl = url)
         }.distinctBy { it.id }.sortedWith(compareBy<Episode> { it.number }.thenBy { it.displayNumber })
         EpisodeServer(id, server.text("server_name").ifBlank { "Server $id" }, episodes)
     }

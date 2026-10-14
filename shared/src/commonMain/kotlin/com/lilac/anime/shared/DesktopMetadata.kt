@@ -63,7 +63,7 @@ object DesktopTitleRules {
         return if (hangul.length >= 2) hangul else cleaned.replace(spaces, "")
     }
 }
-class DesktopMetadataRepository(private val client: HttpClient = newSharedClient()) {
+class DesktopMetadataRepository(private val client: HttpClient = newSharedClient(), tmdbGate: TmdbRequestGate = TmdbRequestGate.shared) {
     suspend fun wikidataIndex(): String {
         val query = "SELECT ?anilist ?ko WHERE {?item wdt:P8729 ?anilist; rdfs:label ?ko. FILTER(lang(?ko)=\"ko\")}"
         val root = Json.parseToJsonElement(client.get("https://query.wikidata.org/sparql") {
@@ -100,7 +100,7 @@ class DesktopMetadataRepository(private val client: HttpClient = newSharedClient
             if (prequels.size > 128) prequels.remove(prequels.keys.first())
         }
     }
-    private val tmdb = TmdbTitleResolver(client)
+    private val tmdb = TmdbTitleResolver(client, tmdbGate)
     private suspend fun media(anime: Anime, includeCast: Boolean): JsonObject {
         val query = "query(" + "$" + "id:Int," + "$" + "search:String){Page(perPage:5){media(id:" + "$" + "id,search:" + "$" + "search,type:ANIME,sort:SEARCH_MATCH){id idMal format synonyms title{native romaji english}" + (if (includeCast) " characters(perPage:25,sort:[ROLE,RELEVANCE]){nodes{name{full native first last} gender}}" else "") + "}}}"
         val variables = buildJsonObject { if (anime.anilistId != null) put("id", anime.anilistId) else put("search", anime.native.ifBlank { anime.romaji.ifBlank { anime.title } }) }
@@ -123,13 +123,14 @@ class DesktopMetadataRepository(private val client: HttpClient = newSharedClient
         return root.obj("results").list("bindings").filterIsInstance<JsonObject>().flatMap { listOf(it.obj("ko").text("value"), it.obj("seriesKo").text("value")) }
             .map(DesktopTitleRules::clean).filter { TitleCandidates.isKorean(it) }.distinct()
     }
-    suspend fun resolve(anime: Anime, credential: String, includeCast: Boolean = true): DesktopMetadata {
+    // background: the catalog index's lookup, which gives way to the TMDB requests made for the screen.
+    suspend fun resolve(anime: Anime, credential: String, includeCast: Boolean = true, background: Boolean = false): DesktopMetadata {
         val names = listOf(anime.title, anime.native, anime.romaji, anime.english).filter(String::isNotBlank).distinct()
         val aliases = names.filter { TitleCandidates.isKorean(it) }.toMutableList()
         var titleFailure = ""
         var tmdbFailure: TmdbFailure? = null
         if (aliases.isEmpty() && credential.isNotBlank()) {
-            try { aliases += tmdb.desktopTitles(names, credential, light = !includeCast) }
+            try { aliases += tmdb.desktopTitles(names, credential, light = !includeCast, background = background) }
             catch (error: CancellationException) { throw error }
             catch (error: Exception) { titleFailure = error.message ?: "TMDB 요청 실패"; tmdbFailure = error as? TmdbFailure }
         }

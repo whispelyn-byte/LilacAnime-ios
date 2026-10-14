@@ -17,11 +17,19 @@ class SharedTest {
         assertEquals("https://example.com/a.jpg", list[0].poster)
     }
     @Test fun episodeSuffixAndSlugArePreserved() {
-        val root = Json.parseToJsonElement("""[{"id":12,"server_name":"NR","server_data":[{"name":"4a","slug":"4 a","link":"token-a"},{"name":"4","slug":"4","link":"token"}]}]""")
+        val root = Json.parseToJsonElement("""[{"id":12,"server_name":"NR","server_data":[{"name":"4","slug":"4","link":"token"},{"name":"4a","slug":"4 a","link":"token-a"}]}]""")
         val episodes = parseServers(root, "42").single().episodes
         assertEquals(listOf("4", "4a"), episodes.map { it.displayNumber })
         assertEquals("token-a", episodes.last().id)
         assertTrue(episodes.last().videoUrl!!.contains("slug=4+a") || episodes.last().videoUrl!!.contains("slug=4%20a"))
+    }
+    // desktop 0.5.21: an episode named by its title is numbered by its place in the list, not by a number in the title.
+    @Test fun linkkfEpisodesNamedByTitleAreNumberedByPlace() {
+        val root = Json.parseToJsonElement("""[{"id":1,"server_name":"NR","server_data":[{"name":"1","slug":"1","link":"a"},{"name":"2화","slug":"2","link":"b"},
+            {"name":"80000대장경","slug":"80000대장경","link":"c"},{"name":"팔만대장경","slug":"title","link":"d"},{"name":"12-13","slug":"12-13","link":"e"}]}]""")
+        val episodes = parseServers(root, "42").single().episodes
+        assertEquals(listOf(1, 2, 3, 4, 12), episodes.map { it.number })
+        assertEquals(listOf("1화", "2화", "80000대장경", "팔만대장경", "12-13화"), episodes.map { it.title })
     }
     @Test fun subtitlesHaveExclusiveEndsAndOverlap() {
         val cues = Subtitles.parse("\uFEFFWEBVTT\r\n\r\n00:01.000 --> 00:03.000 align:center\r\n<b>안녕</b>\r\n\r\n2\r\n00:00:02,000 --> 00:00:04,000\r\n세계")

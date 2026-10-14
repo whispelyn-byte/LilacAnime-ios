@@ -86,7 +86,7 @@ class OhliSourceTest {
         val episodes = DesktopSourceParser.ohliDetail(comic, rows, Anime(id = "x", title = "x", source = "ohli24")).servers.single().episodes
         assertEquals(listOf(4, 5, 6), episodes.map { it.number })
         assertEquals(listOf("4화", "80000대장경", "팔만대장경"), episodes.map { it.title })
-        val html = """<div class="ewave-playlist-content"><a href="/watch/7/a/">1화</a><a href="/watch/7/b/">80000대장경</a><a href="/watch/7/k9/">특별한 제목</a></div>"""
+        val html = """<div class="ewave-playlist-content"><a href="/watch/7/a/">1화</a><a href="/watch/7/b/">80000대장경</a><a href="/watch/7/k9/">마지막 이야기</a></div>"""
         val linkani = DesktopSourceParser.koreanDetail(html, Anime(id = "7", title = "작품", detailUrl = "https://linkani.tv/ani/7/"), "linkani").servers.single().episodes
         assertEquals(listOf(1, 2, 9), linkani.map { it.number })
         assertEquals("80000대장경", linkani[1].title)

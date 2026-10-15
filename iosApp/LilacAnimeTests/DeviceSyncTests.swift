@@ -55,6 +55,22 @@ final class DeviceSyncTests: XCTestCase {
         XCTAssertEqual(DeviceSyncMapping.historyID(entry), "ohli24:https://ani.ohli24.com/e/x%203화")
         XCTAssertEqual(DeviceSyncMapping.historyItem(entry)?["progress"] as? Double, 42)
     }
+    /// One history entry past the server's 512-character id refused every sync ("items[14]: id는 512자 이하의 문자열이어야 합니다").
+    @MainActor func testLongEpisodeAddressesAreSentWithIdsTheServerTakes() throws {
+        let title = String(repeating: "아주긴제목", count: 12)
+        let url = "https://ani.ohli24.com/e/" + title.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)! + "%203화"
+        let history: [String: Any] = ["key": "ohli24:" + url, "anime": ["provider": "ohli24", "id": "x", "title": "x"],
+            "episode": ["provider": "ohli24", "url": url, "number": 3, "name": "3"], "progress": 42, "updated": 1791620500000.0]
+        let entry = try XCTUnwrap(DeviceSyncMapping.watchEntry(history))
+        XCTAssertGreaterThan(("ohli24:" + url).utf16.count, 512)
+        let id = try XCTUnwrap(DeviceSyncMapping.historyID(entry))
+        XCTAssertEqual(id, "ohli24:https://ani.ohli24.com/e/" + title + " 3화")
+        XCTAssertEqual(DeviceSyncMapping.historyItem(entry)?["key"] as? String, id)
+        let longer = DeviceSyncMapping.fitted("ohli24:" + String(repeating: "가", count: 600), source: "ohli24")
+        XCTAssertTrue(DeviceSyncPlan.fits(longer)); XCTAssertTrue(longer.hasPrefix("ohli24:#"))
+        let items = DeviceSyncPlan.plan(["library": [:], "history": [String(repeating: "x", count: 600): ["updated": 1.0], id: ["updated": 2.0]]], snapshot: [:], now: 3)
+        XCTAssertEqual(items.compactMap { $0["id"] as? String }, [id])
+    }
 }
 
 final class SavedAnimeTests: XCTestCase {

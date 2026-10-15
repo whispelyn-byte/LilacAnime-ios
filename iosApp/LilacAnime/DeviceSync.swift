@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import Combine
+import CryptoKit
 import LilacShared
 
 /// 기기 동기화 (desktop electron/device-sync.cjs + src/device-sync.js): 내 목록 and 시청 기록 kept in step with the desktop
@@ -58,7 +59,7 @@ enum DeviceSyncPlan {
         for collection in collections {
             let before = snapshot[collection] ?? [:], current = lists[collection] ?? [:]
             for id in current.keys.sorted() {
-                guard let item = current[id], before[id] != hash(item) else { continue }
+                guard let item = current[id], before[id] != hash(item), fits(id) else { continue }
                 let updated = collection == "history" ? (number(item["updated"]) ?? now) : before[id] != nil ? now : (number(item["savedAt"]).flatMap { $0 > 0 ? $0 : nil } ?? 1)
                 items.append(["collection": collection, "id": id, "updated": updated, "data": item])
             }
@@ -66,6 +67,9 @@ enum DeviceSyncPlan {
         }
         return items
     }
+    /// The server takes an id of at most 512 UTF-16 units without a line break (lilacanimeserver checkItem), and refuses
+    /// the whole batch for one it does not take: one such item stopped every sync.
+    static func fits(_ id: String) -> Bool { !id.isEmpty && id.utf16.count <= 512 && !id.contains("\n") }
     static func number(_ value: Any?) -> Double? {
         if let value = value as? NSNumber { return value.doubleValue }
         if let value = value as? String { return Double(value) }
@@ -299,7 +303,14 @@ enum DeviceSyncMapping {
         if let mal = anime.malId?.intValue { item["malId"] = mal }
         return item
     }
-    static func libraryID(_ saved: SavedAnime) -> String { saved.source + ":" + desktopID(saved.anime, source: saved.source) }
+    static func libraryID(_ saved: SavedAnime) -> String { fitted(saved.source + ":" + desktopID(saved.anime, source: saved.source), source: saved.source) }
+    /// An id the server takes (DeviceSyncPlan.fits). An episode address with a long Korean title (애니24 /e/<title>, each
+    /// syllable written %XX%XX%XX) passed 512: it is sent with the address decoded, or else as its source and a SHA-256.
+    static func fitted(_ id: String, source: String) -> String {
+        if DeviceSyncPlan.fits(id) { return id }
+        if let decoded = id.removingPercentEncoding, DeviceSyncPlan.fits(decoded) { return decoded }
+        return source + ":#" + SHA256.hash(data: Data(id.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
     static func libraryItem(_ saved: SavedAnime) -> DeviceSyncPlan.Item {
         let (anime, snapshot) = trimmed(saved)
         var item = animeItem(anime, source: saved.source)
@@ -309,7 +320,7 @@ enum DeviceSyncMapping {
     }
     static func historyID(_ entry: WatchEntry) -> String? {
         guard entry.anime.source != "local", let url = URL(string: entry.watchURL), ["http", "https"].contains(url.scheme ?? "") else { return nil }
-        return entry.anime.source + ":" + entry.watchURL
+        return fitted(entry.anime.source + ":" + entry.watchURL, source: entry.anime.source)
     }
     static func historyItem(_ entry: WatchEntry) -> DeviceSyncPlan.Item? {
         guard let key = historyID(entry) else { return nil }

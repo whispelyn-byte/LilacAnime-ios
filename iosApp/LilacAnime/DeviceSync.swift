@@ -1,7 +1,6 @@
 import Foundation
 import SwiftUI
 import Combine
-import CryptoKit
 import LilacShared
 
 /// 기기 동기화 (desktop electron/device-sync.cjs + src/device-sync.js): 내 목록 and 시청 기록 kept in step with the desktop
@@ -305,11 +304,14 @@ enum DeviceSyncMapping {
     }
     static func libraryID(_ saved: SavedAnime) -> String { fitted(saved.source + ":" + desktopID(saved.anime, source: saved.source), source: saved.source) }
     /// An id the server takes (DeviceSyncPlan.fits). An episode address with a long Korean title (애니24 /e/<title>, each
-    /// syllable written %XX%XX%XX) passed 512: it is sent with the address decoded, or else as its source and a SHA-256.
+    /// syllable written %XX%XX%XX) passed 512: it is sent with the address decoded, or else as its source and an FNV-1a of
+    /// its UTF-8 bytes. The desktop's device-sync.js fits its ids the same way, so both name the entry alike.
     static func fitted(_ id: String, source: String) -> String {
         if DeviceSyncPlan.fits(id) { return id }
         if let decoded = id.removingPercentEncoding, DeviceSyncPlan.fits(decoded) { return decoded }
-        return source + ":#" + SHA256.hash(data: Data(id.utf8)).map { String(format: "%02x", $0) }.joined()
+        var value: UInt32 = 0x811c9dc5
+        for byte in id.utf8 { value ^= UInt32(byte); value = value &* 0x01000193 }
+        return source + ":#" + String(value, radix: 36)
     }
     static func libraryItem(_ saved: SavedAnime) -> DeviceSyncPlan.Item {
         let (anime, snapshot) = trimmed(saved)

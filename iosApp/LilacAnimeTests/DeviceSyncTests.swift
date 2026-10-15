@@ -71,6 +71,12 @@ final class DeviceSyncTests: XCTestCase {
         let items = DeviceSyncPlan.plan(["library": [:], "history": [String(repeating: "x", count: 600): ["updated": 1.0], id: ["updated": 2.0]]], snapshot: [:], now: 3)
         XCTAssertEqual(items.compactMap { $0["id"] as? String }, [id])
     }
+    /// "슬라임 (3기)" is …%20%283기%29 here (Ktor) and …%20(3기) on the desktop (encodeURIComponent): one id for both.
+    @MainActor func testParenthesesInAddressesNameTheSameEntryAsTheDesktop() {
+        XCTAssertEqual(DeviceSyncMapping.fitted("ohli24:https://ani.ohli24.com/e/a%20%283%EA%B8%B0%29", source: "ohli24"), "ohli24:https://ani.ohli24.com/e/a%20(3%EA%B8%B0)")
+        XCTAssertEqual(DeviceSyncMapping.fitted("ohli24:https://ani.ohli24.com/e/a%21%27%2a", source: "ohli24"), "ohli24:https://ani.ohli24.com/e/a!'*")
+        XCTAssertEqual(DeviceSyncMapping.fitted("ohli24:https://ani.ohli24.com/e/a%20(3%EA%B8%B0)", source: "ohli24"), "ohli24:https://ani.ohli24.com/e/a%20(3%EA%B8%B0)")
+    }
 }
 
 final class SavedAnimeTests: XCTestCase {

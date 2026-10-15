@@ -306,7 +306,13 @@ enum DeviceSyncMapping {
     /// An id the server takes (DeviceSyncPlan.fits). An episode address with a long Korean title (애니24 /e/<title>, each
     /// syllable written %XX%XX%XX) passed 512: it is sent with the address decoded, or else as its source and an FNV-1a of
     /// its UTF-8 bytes. The desktop's device-sync.js fits its ids the same way, so both name the entry alike.
-    static func fitted(_ id: String, source: String) -> String {
+    static func fitted(_ raw: String, source: String) -> String {
+        // The desktop (encodeURIComponent) leaves ( ) ! ' * as they are in an 애니24 address, Ktor's encodeURLParameter
+        // escapes them: "슬라임 (3기)" was two entries. The id has them as they are, on both (desktop device-sync.js fitId).
+        var id = raw
+        for (code, mark) in [("%21", "!"), ("%27", "'"), ("%28", "("), ("%29", ")"), ("%2A", "*")] {
+            id = id.replacingOccurrences(of: code, with: mark, options: .caseInsensitive)
+        }
         if DeviceSyncPlan.fits(id) { return id }
         if let decoded = id.removingPercentEncoding, DeviceSyncPlan.fits(decoded) { return decoded }
         var value: UInt32 = 0x811c9dc5

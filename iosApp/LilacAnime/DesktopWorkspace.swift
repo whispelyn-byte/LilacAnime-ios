@@ -9,6 +9,15 @@ struct DesktopCatalogSelection {
     var season = ""
     var active: Bool { [genre, format, year, season].contains { !$0.isEmpty } }
 }
+/// The full catalog's last list and what it was made from.
+@MainActor final class CatalogListCache {
+    private var signature: [AnyHashable]?
+    private var list: [SavedAnime] = []
+    func value(for signature: [AnyHashable], make: () -> [SavedAnime]) -> [SavedAnime] {
+        if signature == self.signature { return list }
+        list = make(); self.signature = signature; return list
+    }
+}
 struct DesktopFullCatalog: View {
     @EnvironmentObject private var library: LibraryStore
     @ObservedObject private var catalog = DesktopCatalog.shared
@@ -18,21 +27,36 @@ struct DesktopFullCatalog: View {
     @State private var draft = DesktopCatalogSelection()
     @State private var applied = DesktopCatalogSelection()
     @State private var validationError: String?
+    @State private var listCache = CatalogListCache()
     private var sorts: [String] {
         if applied.active { return remote.filters?.sorts ?? ["default"] }
         switch library.preferences.source { case "linkkf": return ["default", "year"]; case "linkani": return ["default", "updated"]; case "ohli24": return ["default", "updated"]; default: return ["popular", "year", "updated", "score"] }
     }
     private var remoteSource: Bool { (applied.active && !(library.preferences.source == "reanime" && sort == "year")) || sort == "updated" || ["miruro", "animenosub", "linkani"].contains(library.preferences.source) }
+    /// The list is worked out again only when what it is made from changes: the catalog index publishes its names and
+    /// progress as it gathers, and each of those redraws filtered and sorted every series on the main thread.
     private var values: [SavedAnime] {
-        let wanted = DesktopTitleRules.shared.key(title: query)
+        let wanted = TitleKeys.key(query)
+        let date = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+        let today = (date.year ?? 0) * 10000 + (date.month ?? 0) * 100 + (date.day ?? 0)
+        var signature: [AnyHashable] = [UIShowcase.enabled, remoteSource, library.preferences.source, wanted, sort]
+        signature += [applied.genre, applied.format, applied.year, applied.season, today]
+        if remoteSource {
+            let first: String = remote.items.first?.id ?? "", last: String = remote.items.last?.id ?? ""
+            signature += [remote.items.count, first, last]
+        } else {
+            signature.append(catalog.catalogsRevision)
+            if !wanted.isEmpty { signature.append(catalog.namesRevision) }
+        }
+        return listCache.value(for: signature) { makeValues(wanted: wanted, today: today) }
+    }
+    private func makeValues(wanted: String, today: Int) -> [SavedAnime] {
         let items = UIShowcase.enabled ? UIShowcase.items.map { SavedAnime($0, source: library.preferences.source) } : remoteSource ? remote.items.map { SavedAnime($0, source: library.preferences.source) } : (catalog.catalogs[library.preferences.source] ?? [])
         let result = items.filter { item in
             (!(UIShowcase.enabled || !remoteSource) || ((applied.format.isEmpty || item.anime.format.caseInsensitiveCompare(applied.format) == .orderedSame) && (applied.year.isEmpty || item.anime.year == applied.year) && (applied.genre.isEmpty || item.anime.genres.contains(applied.genre)) && (applied.season.isEmpty || item.anime.season.caseInsensitiveCompare(applied.season) == .orderedSame))) &&
-            (remoteSource || wanted.isEmpty || ([item.title, catalog.record(item)?.korean ?? "", catalog.record(item)?.english ?? ""] + (catalog.record(item)?.aliases ?? [])).contains { DesktopTitleRules.shared.key(title: $0).contains(wanted) })
+            (remoteSource || wanted.isEmpty || ([item.title, catalog.record(item)?.korean ?? "", catalog.record(item)?.english ?? ""] + (catalog.record(item)?.aliases ?? [])).contains { TitleKeys.key($0).contains(wanted) })
         }
         if sort == "default" || remoteSource { return result }
-        let date = Calendar.current.dateComponents([.year, .month, .day], from: Date())
-        let today = (date.year ?? 0) * 10000 + (date.month ?? 0) * 100 + (date.day ?? 0)
         // The sorted list points back at the saved items: encoding thousands of them again on every redraw was slow.
         let saved = Dictionary(result.map { ($0.id, $0) }) { first, _ in first }
         let source = library.preferences.source

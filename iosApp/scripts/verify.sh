@@ -73,11 +73,11 @@ if [ -n "$IPAD_ID" ]; then
   fi
   xcrun simctl shutdown "$IPAD_ID"
 fi
-xcodebuild -project LilacAnime.xcodeproj -scheme LilacAnime -configuration Debug -derivedDataPath build/DerivedData -destination "generic/platform=iOS" CODE_SIGNING_ALLOWED=NO MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$APP_BUILD" build
+xcodebuild -project LilacAnime.xcodeproj -scheme LilacAnime -configuration Release -derivedDataPath build/DerivedData -destination "generic/platform=iOS" CODE_SIGNING_ALLOWED=NO MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$APP_BUILD" build
 python3 - <<'PY'
 from pathlib import Path
 import plistlib
-app = Path('build/DerivedData/Build/Products/Debug-iphoneos/LilacAnime.app')
+app = Path('build/DerivedData/Build/Products/Release-iphoneos/LilacAnime.app')
 info = plistlib.loads((app/'Info.plist').read_bytes())
 for key in ['CFBundleIcons', 'CFBundleIcons~ipad']:
     primary = info[key]['CFBundlePrimaryIcon']
@@ -87,5 +87,5 @@ print('Verified installed iPhone and iPad app icons in universal device build')
 PY
 
 ditto -c -k --sequesterRsrc --keepParent build/DerivedData/Build/Products/Debug-iphonesimulator/LilacAnime.app build/LilacAnime-simulator.zip
-ditto -c -k --sequesterRsrc --keepParent build/DerivedData/Build/Products/Debug-iphoneos/LilacAnime.app build/LilacAnime-device-unsigned.zip
-sh scripts/package-ipa.sh build/DerivedData/Build/Products/Debug-iphoneos/LilacAnime.app build/LilacAnime-SideStore.ipa
+ditto -c -k --sequesterRsrc --keepParent build/DerivedData/Build/Products/Release-iphoneos/LilacAnime.app build/LilacAnime-device-unsigned.zip
+sh scripts/package-ipa.sh build/DerivedData/Build/Products/Release-iphoneos/LilacAnime.app build/LilacAnime-SideStore.ipa

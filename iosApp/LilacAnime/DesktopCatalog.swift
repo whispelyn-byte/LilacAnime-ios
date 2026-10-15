@@ -16,11 +16,27 @@ struct CatalogName: Codable {
             now.timeIntervalSince(updated) < (bulk ? 30 : 7) * 86400 && (!cast || castPrepared == true || !self.cast.isEmpty)
     }
 }
+/// DesktopTitleRules.key runs several Kotlin regexes. The full catalog asked it for every title of thousands of series on
+/// each redraw and held the main thread until the system ended the app (0x8BADF00D); each title's key is now worked out once.
+final class TitleKeys: @unchecked Sendable {
+    private static let lock = NSLock()
+    private static var cache: [String: String] = [:]
+    static func key(_ title: String) -> String {
+        lock.lock(); let found = cache[title]; lock.unlock()
+        if let found { return found }
+        let value = DesktopTitleRules.shared.key(title: title)
+        lock.lock(); if cache.count > 100_000 { cache.removeAll(keepingCapacity: true) }; cache[title] = value; lock.unlock()
+        return value
+    }
+}
 @MainActor
 final class DesktopCatalog: ObservableObject {
     static let shared = DesktopCatalog(deferLoading: true)
-    @Published private(set) var names: [String: CatalogName] = [:]
-    @Published private(set) var catalogs: [String: [SavedAnime]] = [:]
+    @Published private(set) var names: [String: CatalogName] = [:] { didSet { namesRevision &+= 1 } }
+    @Published private(set) var catalogs: [String: [SavedAnime]] = [:] { didSet { catalogsRevision &+= 1 } }
+    /// Counted changes, so a list made from them is worked out again only when they change.
+    private(set) var namesRevision = 0
+    private(set) var catalogsRevision = 0
     @Published private(set) var status = "대기"
     @Published private(set) var source = ""
     @Published private(set) var running = false
@@ -112,13 +128,13 @@ final class DesktopCatalog: ObservableObject {
         guard !Task.isCancelled else { return [] }
         let catalog = catalogs[source] ?? [], names = names
         let worker = Task.detached(priority: .userInitiated) { () -> [Anime] in
-        let wanted = DesktopTitleRules.shared.key(title: query)
+        let wanted = TitleKeys.key(query)
         guard !wanted.isEmpty else { return [] }
         return catalog.filter { saved in
             guard !Task.isCancelled else { return false }
             let name = names[saved.id]
             return ([saved.title, saved.anime.native, saved.anime.english, saved.anime.romaji, name?.korean ?? "", name?.english ?? ""] + (name?.aliases ?? []))
-                .contains { DesktopTitleRules.shared.key(title: $0).contains(wanted) }
+                .contains { TitleKeys.key($0).contains(wanted) }
         }.map(\.anime)
         }
         return await withTaskCancellationHandler(operation: { await worker.value }, onCancel: { worker.cancel() })
@@ -130,14 +146,14 @@ final class DesktopCatalog: ObservableObject {
         guard !Task.isCancelled else { return [] }
         let names = names
         let worker = Task.detached(priority: .userInitiated) { () -> [String] in
-        let key = DesktopTitleRules.shared.key(title: query)
+        let key = TitleKeys.key(query)
         guard !key.isEmpty else { return [] }
         let korean = TitleCandidates.shared.isKorean(title: query)
         var found: [String] = []
         for name in names.values {
             if Task.isCancelled { return [] }
             let from = korean ? name.korean : name.english, to = korean ? name.english : name.korean
-            if !from.isEmpty, !to.isEmpty, !found.contains(to), DesktopTitleRules.shared.key(title: from).contains(key) { found.append(to) }
+            if !from.isEmpty, !to.isEmpty, !found.contains(to), TitleKeys.key(from).contains(key) { found.append(to) }
         }
         return found
         }

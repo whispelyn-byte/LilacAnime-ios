@@ -109,8 +109,8 @@ final class CatalogModel: ObservableObject {
             }
             for value in remote where TitleCandidates.shared.isKorean(title: value) != korean && !variants.contains(value) { variants.append(value) }
         }
-        let key = DesktopTitleRules.shared.key(title: query)
-        let usable = Array(variants.filter { DesktopTitleRules.shared.key(title: $0) != key && !Self.englishOnly(source, query: $0) }.prefix(30))
+        let key = TitleKeys.key(query)
+        let usable = Array(variants.filter { TitleKeys.key($0) != key && !Self.englishOnly(source, query: $0) }.prefix(30))
         guard token == generation else { return }
         guard !usable.isEmpty else { searchNote = nil; return }
         var added = 0

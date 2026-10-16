@@ -12,6 +12,7 @@ final class EpisodePlayerModel: ObservableObject {
     @Published var previous: [PlaybackItem] = []
     @Published var active: ResolvedStream?
     @Published var error: String?
+    @Published private(set) var playbackError: String?
     @Published var assets: [SubtitleAsset] = []
     @Published var subtitleFiles: [URL] = []
     @Published var subtitle: URL?
@@ -106,6 +107,12 @@ final class EpisodePlayerModel: ObservableObject {
         NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification).sink { [weak self] _ in Task { @MainActor in self?.enteringForeground() } }.store(in: &observers)
         // Paused from the lock screen while playing in the background: the app is suspended from then on too.
         engine.$paused.dropFirst().sink { [weak self] paused in Task { @MainActor in if paused { self?.pausedInBackground() } } }.store(in: &observers)
+        engine.$error.dropFirst().sink { [weak self] message in
+            Task { @MainActor in
+                guard let self, self.playbackError != message else { return }
+                self.playbackError = message
+            }
+        }.store(in: &observers)
         resolver.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observers)
         translation.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observers)
         jimaku.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observers)
@@ -825,10 +832,10 @@ struct EpisodePlayerView: View {
             } else {
                 VStack { HStack { Button { dismiss() } label: { Image(systemName: "arrow.left") }; Spacer(); Button { settings = true } label: { Image(systemName: "gearshape") } }.font(.title3).padding(20).background(.black.opacity(0.65)); Spacer() }.foregroundStyle(.white)
             }
-            if !showWeb && model.active == nil && !UIShowcase.enabled {
+            if !showWeb && (model.active == nil || model.playbackError != nil) && !UIShowcase.enabled {
                 VStack(spacing: 12) {
                     if model.resolver.loading { ProgressView("영상을 준비하고 있어요").tint(.white) }
-                    if let error = model.error ?? model.resolver.error ?? model.engine.error { Text(error).font(.caption).multilineTextAlignment(.center); Button("다시 시도") { model.begin(library: library) }; Button("웹 플레이어 열기") { showWeb = true } }
+                    if let error = model.playbackError ?? model.error ?? model.resolver.error { Text(error).font(.caption).multilineTextAlignment(.center); Button("다시 시도") { model.begin(library: library) }; Button("웹 플레이어 열기") { showWeb = true } }
                 }.padding(24).foregroundStyle(.white).background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 16))
             }
             if settings { playerSettings.zIndex(10) }

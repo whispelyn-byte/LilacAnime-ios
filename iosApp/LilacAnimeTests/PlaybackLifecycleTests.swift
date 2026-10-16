@@ -1,9 +1,24 @@
 import XCTest
 import AVFoundation
 import QuartzCore
+import LilacShared
 @testable import LilacAnime
 
 final class PlaybackLifecycleTests: XCTestCase {
+    @MainActor func testNativeStartupFailureReachesThePlayerModelAndClearsOnRetry() async throws {
+        let anime = SavedAnime(AnimeSnapshot.shared.decode(content: #"{"id":"error-fixture","title":"Fixture","episodes":[{"id":"1","number":1,"title":"1"}]}"#), source: "local")
+        let model = EpisodePlayerModel(item: PlaybackItem(anime: anime, episode: anime.anime.episodes[0]))
+        model.engine.error = "영상 재생을 시작하지 못했습니다."
+        let failed = Date().addingTimeInterval(5)
+        while model.playbackError == nil && Date() < failed { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(model.playbackError, "영상 재생을 시작하지 못했습니다.")
+        XCTAssertNil(model.error, "Native playback errors stay separate from subtitle/settings failures")
+        model.engine.error = nil
+        let cleared = Date().addingTimeInterval(5)
+        while model.playbackError != nil && Date() < cleared { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertNil(model.playbackError)
+        model.engine.shutdown()
+    }
     @MainActor func testTwoTimesPlaybackSurvivesRepeatedOutputSuspensionWithoutSeeking() async throws {
         let movie = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mp4")
         defer { try? FileManager.default.removeItem(at: movie) }

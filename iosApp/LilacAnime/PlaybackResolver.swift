@@ -45,7 +45,7 @@ struct PlaybackItem {
     }
     init(entry: WatchEntry) {
         anime = entry.anime; episodeID = entry.episodeID; title = entry.episodeTitle; number = entry.number
-        displayNumber = String(entry.number); watchURL = URL(string: entry.watchURL) ?? URL(string: "https://linkkf.app/")!
+        displayNumber = entry.episodeLabel; watchURL = URL(string: entry.watchURL) ?? URL(string: "https://linkkf.app/")!
         directURL = entry.directURL.flatMap(URL.init(string:)).flatMap { $0.isFileURL ? $0 : nil }
         let episodes = entry.anime.anime.episodes
         if let index = episodes.firstIndex(where: { $0.id == entry.episodeID }) {
@@ -78,6 +78,7 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
     private var pendingOhli: [(url: URL, frame: URL?, kind: String, manifest: String?)] = []
     private var lastOhliCandidate: Task<Void, Never>?
     private var flixKey: String?
+    private var webPlaybackActive = false
     private let desktop = IosServices()
     private let agent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1"
 
@@ -101,7 +102,16 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
         if silent {
             controller.addUserScript(WKUserScript(source: """
             (() => {
-              const mute = element => { if (element instanceof HTMLMediaElement) { if (!element.muted) element.muted = true; if (element.volume !== 0) element.volume = 0; } };
+              const mute = element => { if (!window.__lilacWebPlayback && element instanceof HTMLMediaElement) { if (!element.muted) element.muted = true; if (element.volume !== 0) element.volume = 0; } };
+              window.addEventListener('message', event => {
+                if (typeof event.data?.lilacWebPlayback !== 'boolean') return;
+                window.__lilacWebPlayback = event.data.lilacWebPlayback;
+                document.querySelectorAll('video,audio').forEach(media => {
+                  if (window.__lilacWebPlayback) { media.muted = false; media.volume = 1; }
+                  else { media.pause(); mute(media); }
+                });
+                document.querySelectorAll('iframe').forEach(frame => frame.contentWindow?.postMessage(event.data,'*'));
+              });
               const play = HTMLMediaElement.prototype.play;
               HTMLMediaElement.prototype.play = function() { mute(this); return play.apply(this, arguments); };
               document.addEventListener('play', event => mute(event.target), true);
@@ -112,6 +122,9 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
         controller.addUserScript(WKUserScript(source: Self.captureScript, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         if ohli, let file = Bundle.main.url(forResource: "ohli-capture", withExtension: "js"), let script = try? String(contentsOf: file) {
             controller.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        }
+        if let url = Bundle.main.url(forResource: "flix-discovery", withExtension: "js"), let script = try? String(contentsOf: url) {
+            controller.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentEnd, forMainFrameOnly: false))
         }
         if let url = Bundle.main.url(forResource: "flix-bootstrap", withExtension: "js"),
            let bootstrap = try? String(contentsOf: url) {
@@ -197,6 +210,18 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
         }
         loadPage(item.watchURL, seconds: 45)
     }
+    func setWebPlaybackActive(_ active: Bool) {
+        webPlaybackActive = active
+        let target = selectedResolver ?? self
+        target.webPlaybackActive = active
+        if active { target.timeout?.cancel(); target.webView.evaluateJavaScript("window.__lilacFlixDiscovery?.finish()", completionHandler: nil) }
+        target.webView.evaluateJavaScript("window.postMessage({lilacWebPlayback: \(active ? "true" : "false")}, '*')", completionHandler: nil)
+        if active { target.webView.configuration.userContentController.removeAllUserScripts() }
+        else { target.installCaptureScripts(ohli: target.currentItem?.anime.source == "ohli24") }
+        if active, target.webView.url == nil, let url = currentItem?.watchURL {
+            target.webView.load(URLRequest(url: url))
+        } else if !active { target.webView.pauseAllMediaPlayback(completionHandler: nil) }
+    }
     func selectServer(_ server: DesktopPlaybackServer) {
         serverRace?.cancel(); serverRace = nil
         clearSelectedResolver()
@@ -273,7 +298,15 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
                 for index in resolver.streams.indices { resolver.streams[index].manifestKey = key }
             }
             try Task.checkCancellation()
-            if let selected = try readiness.select(resolver.streams, now: Date().timeIntervalSinceReferenceDate) {
+            if var selected = try readiness.select(resolver.streams, now: Date().timeIntervalSinceReferenceDate) {
+                let result = try? await resolver.webView.evaluateJavaScript("window.__lilacFlixDiscovery?.finish() || []")
+                try Task.checkCancellation()
+                for track in result as? [[String: String]] ?? [] {
+                    guard let raw = track["url"], let url = URL(string: raw), !resolver.subtitles.contains(where: { $0.url == url }) else { continue }
+                    resolver.subtitles.append(RemoteSubtitle(label: track["label"] ?? track["language"] ?? "자막", url: url, language: track["language"] ?? "und", headers: selected.headers))
+                }
+                selected.subtitles = resolver.subtitles
+                resolver.webView.pauseAllMediaPlayback(completionHandler: nil)
                 resolver.streams = [selected]
                 return resolver
             }
@@ -282,7 +315,7 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
     }
 
     private func loadPage(_ url: URL, seconds: Double) {
-        flixKey = nil
+        flixKey = nil; webPlaybackActive = false
         let token = generation
         var request = URLRequest(url: url)
         request.setValue(currentItem?.watchURL.absoluteString ?? "", forHTTPHeaderField: "Referer")
@@ -303,6 +336,7 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
     }
     func shutdown() { cancel(); webView.configuration.userContentController.removeScriptMessageHandler(forName: "lilacMedia"); webView.navigationDelegate = nil; webView.loadHTMLString("", baseURL: nil) }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard !webPlaybackActive else { return }
         guard webView.url?.host?.contains("flixcloud") == true,
               let scriptURL = Bundle.main.url(forResource: "flix-bootstrap", withExtension: "js"),
               let script = try? String(contentsOf: scriptURL) else { return }
@@ -310,9 +344,9 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
         pollFlix(generation: generation, attempt: 0)
     }
     private func pollFlix(generation token: UUID, attempt: Int) {
-        guard token == generation, attempt < 200 else { return }
+        guard token == generation, !webPlaybackActive, attempt < 200 else { return }
         webView.evaluateJavaScript("window.__lilacReAnimeFlixResult || ''") { [weak self] value, _ in
-            guard let self, self.generation == token else { return }
+            guard let self, self.generation == token, !self.webPlaybackActive else { return }
             if let text = value as? String, !text.isEmpty, let data = text.data(using: .utf8),
                let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 if object["ok"] as? Bool == true, let value = object["m3u8"] as? String {
@@ -324,6 +358,7 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
         }
     }
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard !webPlaybackActive else { return }
         guard let body = message.body as? [String: String], let value = body["url"],
               let url = URL(string: value), url.scheme == "https" || url.scheme == "http" else { return }
         if currentItem?.anime.source == "ohli24" {
@@ -344,6 +379,12 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
             guard OhliPlayback.accepts(kind: kind, frame: message.frameInfo.request.url, selected: ohliPlayer) else { return }
             if kind == "ohliCaption" { addOhliCaption(url, referer: message.frameInfo.request.url?.absoluteString ?? ""); return }
             verifyOhli(url, hls: body["kind"] == "ohliVariant", manifest: body["manifest"])
+            return
+        }
+        if body["kind"] == "flixError" {
+            if streams.isEmpty {
+                error = body["error"]; loading = false; timeout?.cancel()
+            }
             return
         }
         if body["kind"] == "flixKey" {
@@ -423,7 +464,7 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
         }
         let token = generation
         webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
-            guard let self, self.generation == token else { return }
+            guard let self, self.generation == token, !self.webPlaybackActive else { return }
             let relevant = cookies.filter { cookie in
                 let domain = cookie.domain.trimmingCharacters(in: CharacterSet(charactersIn: "."))
                 return (url.host == domain || url.host?.hasSuffix("." + domain) == true) &&
@@ -454,23 +495,8 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
           window.webkit.messageHandlers.lilacMedia.postMessage({url,kind,label,language,referer,pk:typeof window.__pk==='string'?window.__pk:''});
         } catch (_) {}
       };
-      let reportedKey = '';
       const scan = () => {
-        if (location.hostname.includes('flixcloud')) {
-          let key = typeof window.__pk === 'string' ? window.__pk : '';
-          try { key = key || JSON.parse(window.__lilacReAnimeFlixResult || '{}').pk || ''; } catch (_) {}
-          if (key && key !== reportedKey) {
-            reportedKey = key;
-            window.webkit.messageHandlers.lilacMedia.postMessage({url:location.href,kind:'flixKey',pk:key});
-          }
-          document.querySelectorAll('video').forEach(v=>{v.muted=true;v.play().catch(()=>{})});
-          try {
-            const api=window.jwplayer?.(), item=api?.getPlaylistItem?.();
-            [item?.file,...(item?.sources||[]).map(s=>s.file)].filter(Boolean).forEach(u=>emit(u));
-            api?.play?.();
-          } catch (_) {}
-          performance.getEntriesByType('resource').forEach(e=>emit(e.name));
-        }
+        if (window.__lilacFlixDiscovery?.stopped) return;
         document.querySelectorAll('video,source').forEach(v=>emit(v.currentSrc||v.src));
         document.querySelectorAll('track[src]').forEach(t=>emit(t.src,'subtitle',t.label,t.srclang));
       };

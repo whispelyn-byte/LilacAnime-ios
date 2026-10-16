@@ -776,7 +776,7 @@ final class EpisodePlayerModel: ObservableObject {
         // Only a position mpv reports for an open video, and none while suspended (it may read as the end).
         guard active != nil, !systemPlayback, !holdProgress, engine.canSaveProgress else { return }
         library.progress(anime: item.anime, episodeID: item.episodeID, title: item.title, number: item.number,
-            watchURL: item.watchURL.absoluteString, directURL: active?.url.absoluteString, position: engine.position, duration: engine.duration)
+            watchURL: item.watchURL.absoluteString, directURL: active?.url.absoluteString, position: engine.position, duration: engine.duration, displayNumber: item.displayNumber)
     }
     func shutdown(library: LibraryStore) {
         pictureInPicture.stop()
@@ -810,7 +810,7 @@ struct EpisodePlayerView: View {
             if model.systemPlayback, let stream = model.systemStream {
                 SystemPlayerView(stream: stream, resume: library.resume(model.item.anime, episodeID: model.item.episodeID), onProgress: { position, duration in
                     library.progress(anime: model.item.anime, episodeID: model.item.episodeID, title: model.item.title,
-                        number: model.item.number, watchURL: model.item.watchURL.absoluteString, directURL: stream.url.absoluteString, position: position, duration: duration)
+                        number: model.item.number, watchURL: model.item.watchURL.absoluteString, directURL: stream.url.absoluteString, position: position, duration: duration, displayNumber: model.item.displayNumber)
                 })
             }
             if !showWeb && !model.systemPlayback {
@@ -886,6 +886,10 @@ struct EpisodePlayerView: View {
             .onDisappear { model.shutdown(library: library); OrientationController.restore(originalOrientation) }
             .onChange(of: model.resolver.streams) { streams in
                 model.selectResolved(streams, library: library); showWeb = false
+            }
+            .onChange(of: showWeb) { active in
+                if active { model.engine.pause() }
+                model.resolver.setWebPlaybackActive(active)
             }
             .onChange(of: model.resolver.subtitles) { model.siteSubtitlesArrived($0, library: library) }
             .fileImporter(isPresented: $importer, allowedContentTypes: [.data, .text]) { result in

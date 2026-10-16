@@ -1,6 +1,6 @@
 {
-  "desktopCommit": "16c9a3d1631061a72831e0657434003940daf531",
-  "desktopVersion": "0.5.15",
+  "desktopCommit": "aadf40a12f511c334d4edc242b2d60518473e56d",
+  "desktopVersion": "0.5.25",
   "files": [
     {
       "desktop": ".github/workflows/build.yml",
@@ -25,7 +25,7 @@
     },
     {
       "desktop": "electron/catalog-browser.cjs",
-      "sha256": "3132bf88944387e3cd0059054fc56b3025f3d43bcba528822da6ec6480a1f878",
+      "sha256": "200ae699deec19990daf7ae74555a89a9eb43d27eef802748315376e805e48dc",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -76,7 +76,7 @@
     },
     {
       "desktop": "electron/download-manager.cjs",
-      "sha256": "975d1f4c35e32648a40f3feb09b00b079e01626388ad72789d9af2115b3dea75",
+      "sha256": "b14d83d733db8f365535ce33b61c7062f92990a2cbd7bcb01d9e1d125262497d",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -117,7 +117,7 @@
     },
     {
       "desktop": "electron/main.cjs",
-      "sha256": "919166ce5f9c1b84af052b4ae6c02a387589a0fd6c1fe3e58bcf164dd048dc88",
+      "sha256": "5a48c3d3d32d37ff118fe4c2ce815257bca3a80818ca55be0c6a3ab2de7a006c",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -129,6 +129,8 @@
         "shared/src/commonMain/kotlin/com/lilac/anime/shared/SubtitleDiscovery.kt",
         "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopCommunity.kt",
         "iosApp/LilacAnime/PlaybackResolver.swift",
+        "iosApp/LilacAnime/DesktopFlixReadiness.swift",
+        "iosApp/LilacAnime/Resources/flix-discovery.js",
         "iosApp/LilacAnime/OhliPlayback.swift",
         "iosApp/LilacAnime/Resources/ohli-capture.js",
         "iosApp/LilacAnime/WinPNGReader.swift"
@@ -167,7 +169,7 @@
     },
     {
       "desktop": "electron/subtitle-translator.cjs",
-      "sha256": "4fde938ab921ee375505267b74fdf04284c91a3ac6f1c6e9fc6436ceff546b2f",
+      "sha256": "f1102eeb0ff0e3730722f0e917c4f4c6a7c941bdc76988fd1ef50ff2c542e6dd",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -179,7 +181,7 @@
     },
     {
       "desktop": "electron/tmdb-client.cjs",
-      "sha256": "e7a98e598626f7ecd041a7f7122565de3ff32268cbaf0d735e173b129995dc82",
+      "sha256": "6d775daf6d4194446df488941aeffd7eb31edbac6097496c12ff5af2897492cb",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -199,7 +201,7 @@
     },
     {
       "desktop": "package-lock.json",
-      "sha256": "e8af04dfd3f84f6e74a80997bc41da022ff6f0932f120ec5f204c3ae1479f8f1",
+      "sha256": "2eb72d4217abe81e8a0dbaba16cf31cd25ceec695269196b9cac440cbacb8370",
       "uncommitted": false,
       "category": "platform-build",
       "ios": [
@@ -211,7 +213,7 @@
     },
     {
       "desktop": "package.json",
-      "sha256": "4f685a6ea30c76816488155ff91596ea395ae9ac251ad983619e6d68e7ff158b",
+      "sha256": "c1372101be3ff9892ce1a531cc1555938102c2a8c40d2f7d147e8ca92fcc8ba8",
       "uncommitted": false,
       "category": "platform-build",
       "ios": [
@@ -219,6 +221,25 @@
         "shared/build.gradle.kts",
         ".github/workflows/kmp.yml",
         ".github/workflows/ipa.yml"
+      ]
+    },
+    {
+      "desktop": "scripts/anime4k-entry.mjs",
+      "sha256": "910d3be380f1fe64e5b0e0789cc9d4555c800d781f050b33ad8ef0a323fb6f73",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "iosApp/LilacAnime/Anime4K.swift",
+        "iosApp/LilacAnime/Resources/Anime4K/upstream.json"
+      ]
+    },
+    {
+      "desktop": "scripts/build-anime4k.cjs",
+      "sha256": "ea6a612186b2a2e786568ff3d8e03bb9066de924dcf9b7607736ad0fc350197a",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "iosApp/scripts/verify-anime4k.py"
       ]
     },
     {
@@ -251,8 +272,18 @@
       ]
     },
     {
+      "desktop": "src/anime4k.js",
+      "sha256": "80703e310b404bd825fff0c95302255b3d33b5abc7242951df89d2af2c414ff7",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "iosApp/LilacAnime/Anime4K.swift",
+        "iosApp/LilacAnime/MPVEngine.swift"
+      ]
+    },
+    {
       "desktop": "src/app.js",
-      "sha256": "75c3cab39ea2b8cd5114a53ebc1731a5c24c002317bed1e2bd5fe31d4a31dee0",
+      "sha256": "e75987fbc3009153d6c4062ff64d62d6b83f3780469eafff85ea4b32458b420a",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -277,7 +308,7 @@
     },
     {
       "desktop": "src/catalog-browser.js",
-      "sha256": "8d2b70144550fd7bb9bad813b382ed0babffced3491585fce400b464e5120d3e",
+      "sha256": "e74fab505f50469f92960fc5495ce07486d1df7f0ea7cf8faeaa792b0d6db89a",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -298,7 +329,7 @@
     },
     {
       "desktop": "src/device-sync.js",
-      "sha256": "5639e2464bc7f2468c1f2b876f6884e831ea900a95b0aeade3848e07b8edee96",
+      "sha256": "558a6ad988e1a99f073327863d5a7b4403e249eec301172e40985e98c70013b0",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -344,7 +375,7 @@
     },
     {
       "desktop": "src/index.html",
-      "sha256": "81f417858de1e792bf163910aae8b9109f1248924d6204696e5984cd86a995c7",
+      "sha256": "b6c8fdb5d68f3451e31a3813302cbc128b17a5cbd21f33af1eb7b5be23f22a49",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -402,7 +433,7 @@
     },
     {
       "desktop": "src/ott.css",
-      "sha256": "a4a98eb6daec94175e073a79d1a60bf14ad7b57d72ad8c825e342cc09fc1df36",
+      "sha256": "348c128045951a0658dfc1fd6087d8a9163a3a0574072544bd93b0523f002e5e",
       "uncommitted": false,
       "category": "native-layout",
       "ios": [
@@ -436,7 +467,7 @@
     },
     {
       "desktop": "src/player-android.css",
-      "sha256": "9734c2a63695f300e6518d6ffe7cb1d296d3e8b36a6f0b7c145d28420e3d0b2c",
+      "sha256": "39cd8be837a3fa0de60e4ddf51abcbae09a9a0e42f5fa5159a4d67141143da1c",
       "uncommitted": false,
       "category": "native-layout",
       "ios": [
@@ -460,7 +491,7 @@
     },
     {
       "desktop": "src/player.js",
-      "sha256": "0dc7c63ce0717952b8218d4faba93d09dcb7326f6511d6591b51d29a9b6f39a9",
+      "sha256": "bc37742344309c23a72ad09381cba77971ba3b7bfd945e77b8cbfa246c033fb7",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -542,8 +573,19 @@
       ]
     },
     {
+      "desktop": "tests/anime4k.electron.cjs",
+      "sha256": "91292812274ad5869fb95db1264116e0bc14ccf0355a15dd17d74327eca66166",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
       "desktop": "tests/catalog-browser-ui.test.cjs",
-      "sha256": "f17638ebefc3d463d9ca4720518b841a92824270c74280a45174ef820f21d5db",
+      "sha256": "2b808d42ad34fb3e04b1cfc3b5232286b358b7dadd0346834d2e163e60bf1e42",
       "uncommitted": false,
       "category": "validation",
       "ios": [
@@ -554,7 +596,29 @@
     },
     {
       "desktop": "tests/catalog-browser.test.cjs",
-      "sha256": "2db4a774f774c9df68e9a36381c0856454e5d6e0221e4173d7a7d072f7f040eb",
+      "sha256": "bacac96c36f7349867dcca9d99a4d62bfc58a6a5b0fc91ee4c392e03d9594461",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/catalog-filters.electron.cjs",
+      "sha256": "b65bc9813df705bca18e2f4308653d62d41da77ac24b6e347986593fe795a5fd",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/catalog-filters.live.cjs",
+      "sha256": "9941c9f9496ff43f9610bc17d8310b819f0be52cc2e0c57ba94ae3cf87d5a44e",
       "uncommitted": false,
       "category": "validation",
       "ios": [
@@ -631,7 +695,7 @@
     },
     {
       "desktop": "tests/device-sync.test.cjs",
-      "sha256": "f578d77415d1dab960431d851549a975473b9ab246771808c56f54c675691723",
+      "sha256": "771beb2c52ae1b4b089b97dea2a5fe32ef96409eb1c646b3900416be2fce6026",
       "uncommitted": false,
       "category": "validation",
       "ios": [
@@ -664,7 +728,7 @@
     },
     {
       "desktop": "tests/episode-labels.test.cjs",
-      "sha256": "5de26de4e9dfa59970f3a63588e48e67d52b8c9818d4039638cff2b1b9ee260f",
+      "sha256": "c0a1553fd51199ea3b765c6330183fffcabfab5488c0d30759773fbe08dac1fc",
       "uncommitted": false,
       "category": "validation",
       "ios": [
@@ -719,7 +783,7 @@
     },
     {
       "desktop": "tests/player-interactions.test.cjs",
-      "sha256": "e06262ccf2f1c407e91054eb3d7ba1740f11a334da450cfcb5208b881f2754f5",
+      "sha256": "08925950c8581ac8ab3a96e7abc109b5583d2d0fc57d62b8e911f2a65a2ad58b",
       "uncommitted": false,
       "category": "validation",
       "ios": [
@@ -731,6 +795,17 @@
     {
       "desktop": "tests/provider-race.test.cjs",
       "sha256": "80a78234a420208b6405d7051015ad98cf5a0bb678ddbd87b2de3ec08286af57",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/startup.test.cjs",
+      "sha256": "dfcdf9d8e9e7706269d35d5625e23bb3eb148455e7cb396f0590fb9571428df2",
       "uncommitted": false,
       "category": "validation",
       "ios": [
@@ -762,8 +837,19 @@
       ]
     },
     {
+      "desktop": "tests/subtitle-translator.test.cjs",
+      "sha256": "4ea0fc4b6a8fe1fd592ad447e21d6fd80666e02af9879dc7bca9d178c1d0fe31",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
       "desktop": "tests/tmdb-client.test.cjs",
-      "sha256": "590dab64c68dd33f816995dc50f19af8181e9814d1be28afbf4e0200c1837ba1",
+      "sha256": "38197c487d61c3fbc014bc8759ec48b1864e4ac9fd19099fd99f477151854f93",
       "uncommitted": false,
       "category": "validation",
       "ios": [

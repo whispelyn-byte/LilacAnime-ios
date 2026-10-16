@@ -48,6 +48,10 @@ struct WatchEntry: Codable, Identifiable {
     var updatedAt: Date
     /// How far it was watched (0–100) when only that is known: an entry from the desktop app through 기기 동기화.
     var progressPercent: Double? = nil
+    var displayNumber: String? = nil
+    var episodeLabel: String {
+        displayNumber ?? anime.anime.episodes.first(where: { $0.id == episodeID })?.displayNumber ?? String(number)
+    }
 }
 struct SubtitleChoice: Codable { var relativeFile: String?; var offset: Double }
 struct AppPreferences: Codable, Equatable {
@@ -178,7 +182,7 @@ final class LibraryStore: ObservableObject {
         persist()
     }
     func progress(anime: SavedAnime, episodeID: String, title: String, number: Int, watchURL: String,
-                  directURL: String?, position: Double, duration: Double) {
+                  directURL: String?, position: Double, duration: Double, displayNumber: String? = nil) {
         guard position.isFinite, duration.isFinite, position >= 0 else { return }
         let id = anime.id + "#" + episodeID
         history.removeAll { $0.id == id }
@@ -186,12 +190,13 @@ final class LibraryStore: ObservableObject {
         // made library.json grow without end. An older entry asks for the list again when it is played.
         for index in history.indices where history[index].anime.id == anime.id && !history[index].anime.snapshot.contains("\"episodes\":[]") {
             let old = history[index].anime
+            history[index].displayNumber = history[index].episodeLabel
             var trimmed = SavedAnime(AnimeSnapshot.shared.withEpisodes(anime: old.anime, episodes: []), source: old.source)
             trimmed.savedAt = old.savedAt
             history[index].anime = trimmed
         }
         history.insert(WatchEntry(id: id, anime: anime, episodeID: episodeID, episodeTitle: title, number: number,
-                                  watchURL: watchURL, directURL: directURL, position: position, duration: duration, updatedAt: Date()), at: 0)
+                                  watchURL: watchURL, directURL: directURL, position: position, duration: duration, updatedAt: Date(), displayNumber: displayNumber), at: 0)
         history = Array(history.prefix(500)); persist()
     }
     func resume(_ anime: SavedAnime, episodeID: String) -> Double {

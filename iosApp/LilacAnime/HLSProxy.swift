@@ -322,11 +322,24 @@ final class HLSProxy {
     func stop() { listener?.cancel(); listener = nil; Task { await media.stop() } }
 }
 
+/// Desktop flix-proxy keeps each URL's place in its own playlist. Audio and
+/// video manifests must not overwrite one another's prefetch sequence.
+struct HLSMediaOrder {
+    private var positions: [URL: (list: [URL], index: Int)] = [:]
+    mutating func insert(_ urls: [URL]) {
+        for (index, url) in urls.enumerated() { positions[url] = (urls, index) }
+    }
+    func following(_ url: URL) -> [URL] {
+        guard let place = positions[url] else { return [] }
+        return Array(place.list.dropFirst(place.index + 1).prefix(5))
+    }
+}
+
 private actor HLSMediaCache {
     private var tasks: [URL: Task<(Data, HTTPURLResponse), Error>] = [:]
     private var used: [URL] = []
-    private var sequence: [URL] = []
-    func order(_ urls: [URL]) { sequence = urls }
+    private var sequence = HLSMediaOrder()
+    func order(_ urls: [URL]) { sequence.insert(urls) }
     private func task(_ url: URL, stream: ResolvedStream) -> Task<(Data, HTTPURLResponse), Error> {
         used.removeAll { $0 == url }; used.append(url)
         if let task = tasks[url] { return task }
@@ -336,9 +349,9 @@ private actor HLSMediaCache {
     }
     func load(_ url: URL, stream: ResolvedStream) async throws -> (Data, HTTPURLResponse) {
         let current = task(url, stream: stream)
-        if let index = sequence.firstIndex(of: url) { for next in sequence.dropFirst(index + 1).prefix(5) { _ = task(next, stream: stream) } }
+        for next in sequence.following(url) { _ = task(next, stream: stream) }
         do { return try await current.value }
         catch { tasks[url] = nil; used.removeAll { $0 == url }; throw error }
     }
-    func stop() { tasks.values.forEach { $0.cancel() }; tasks = [:]; used = []; sequence = [] }
+    func stop() { tasks.values.forEach { $0.cancel() }; tasks = [:]; used = []; sequence = HLSMediaOrder() }
 }

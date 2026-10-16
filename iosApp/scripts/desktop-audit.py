@@ -13,6 +13,10 @@ def git(*args):
 shared = 'shared/src/commonMain/kotlin/com/lilac/anime/shared/'
 ios = 'iosApp/LilacAnime/'
 mapping = {
+ 'src/anime4k.js': [ios+'Anime4K.swift',ios+'MPVEngine.swift'],
+ 'scripts/anime4k-entry.mjs': [ios+'Anime4K.swift',ios+'Resources/Anime4K/upstream.json'],
+ 'scripts/build-anime4k.cjs': ['iosApp/scripts/verify-anime4k.py'],
+
  'electron/anime-glossary.cjs': [shared+'AnimeGlossary.kt'],
  'electron/tmdb-client.cjs': [shared+'TmdbRequestGate.kt',shared+'TmdbTitleResolver.kt'],
  'electron/desktop-state.cjs': [ios+'LilacAnimeApp.swift',ios+'LibraryStore.swift'],
@@ -23,7 +27,7 @@ mapping = {
  'electron/download-manager.cjs': [ios+'DownloadStore.swift',ios+'DownloadTransfer.swift',ios+'DesktopDownloads.swift'],
  'electron/flix-proxy.cjs': [ios+'HLSProxy.swift'],
  'electron/local-ai.cjs': [ios+'LocalModelsView.swift',ios+'DesktopModelInstaller.swift',shared+'DesktopTranslationPrompt.kt'],
- 'electron/main.cjs': [shared+'SourceRepository.kt',shared+'DesktopSources.kt',shared+'DesktopMetadata.kt',shared+'DesktopTmdbRules.kt',shared+'TmdbTitleResolver.kt',shared+'SubtitleDiscovery.kt',shared+'DesktopCommunity.kt',ios+'PlaybackResolver.swift',ios+'OhliPlayback.swift',ios+'Resources/ohli-capture.js',ios+'WinPNGReader.swift'],
+ 'electron/main.cjs': [shared+'SourceRepository.kt',shared+'DesktopSources.kt',shared+'DesktopMetadata.kt',shared+'DesktopTmdbRules.kt',shared+'TmdbTitleResolver.kt',shared+'SubtitleDiscovery.kt',shared+'DesktopCommunity.kt',ios+'PlaybackResolver.swift',ios+'DesktopFlixReadiness.swift',ios+'Resources/flix-discovery.js',ios+'OhliPlayback.swift',ios+'Resources/ohli-capture.js',ios+'WinPNGReader.swift'],
  'electron/oped-fingerprint.cjs': [shared+'AudioFingerprint.kt',shared+'DesktopAudioFingerprint.kt',ios+'OfflineAnalyzer.swift',ios+'NativeAudio.m'],
  'electron/preload.cjs': [shared+'IosServices.kt',ios+'LibraryStore.swift'],
  'electron/device-sync.cjs': [ios+'DeviceSync.swift'],

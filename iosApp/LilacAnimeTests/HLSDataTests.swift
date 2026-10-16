@@ -43,4 +43,15 @@ final class HLSDataTests: XCTestCase {
         let media = Data([71,0,20,30])
         XCTAssertEqual(HLSData.fragment(Data([137,80,78,71,13,10,26,10]) + media), media)
     }
+    func testAudioAndVideoKeepIndependentPrefetchOrder() {
+        let video = (1...7).map { URL(string: "https://fixture.test/video/\($0).png")! }
+        let audio = (1...7).map { URL(string: "https://fixture.test/audio/\($0).png")! }
+        var order = HLSMediaOrder()
+        order.insert(video); order.insert(audio)
+        XCTAssertEqual(order.following(video[0]), Array(video[1...5]))
+        XCTAssertEqual(order.following(audio[0]), Array(audio[1...5]))
+        XCTAssertTrue(order.following(video.last!).isEmpty)
+        order.insert(Array(video.dropFirst()))
+        XCTAssertEqual(order.following(audio[1]), Array(audio[2...6]))
+    }
 }

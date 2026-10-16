@@ -63,4 +63,18 @@ final class DesktopFlixReadinessTests: XCTestCase {
         XCTAssertNil(try readiness.select([stream("episode.m3u8")], now: 10))
         XCTAssertNotNil(try readiness.select([stream("episode.m3u8", key: "key")], now: 24))
     }
+    func testLateKeyDoesNotChangeTheCollectedPlaylistSelection() throws {
+        var readiness = DesktopFlixReadiness()
+        let original = stream("original.m3u8")
+        XCTAssertNil(try readiness.select([original], now: 0))
+        XCTAssertNil(try readiness.select([original], now: 10))
+        let selected = try XCTUnwrap(readiness.select([original, stream("master.m3u8", key: "late")], now: 12))
+        XCTAssertEqual(selected.url, original.url)
+        XCTAssertEqual(selected.manifestKey, "late")
+    }
+    func testDesktopRecognisesMasterSuffixWithoutSlashPrefix() throws {
+        var readiness = DesktopFlixReadiness()
+        let selected = try XCTUnwrap(readiness.select([stream("audio.m3u8"), stream("hd-master.m3u8", key: "key")], now: 0))
+        XCTAssertEqual(selected.url.lastPathComponent, "hd-master.m3u8")
+    }
 }

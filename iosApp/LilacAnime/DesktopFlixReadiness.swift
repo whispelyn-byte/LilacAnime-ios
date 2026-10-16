@@ -7,25 +7,34 @@ struct DesktopFlixReadiness {
     private var stableSince: TimeInterval = 0
     private var count = -1
     private var keyDeadline: TimeInterval?
+    private var collected: [ResolvedStream]?
 
     mutating func select(_ streams: [ResolvedStream], now: TimeInterval) throws -> ResolvedStream? {
         guard !streams.isEmpty else { return nil }
         if firstSeen == nil { firstSeen = now }
         if count != streams.count { count = streams.count; stableSince = now }
         let key = streams.compactMap(\.manifestKey).first { !$0.isEmpty }
-        let master = streams.first { $0.url.path.lowercased().contains("/master") }
-        let video = streams.first { Self.track($0.url, name: "video") }
-        let audio = streams.first { Self.track($0.url, name: "audio") }
-        let complete = master != nil || (video != nil && audio != nil)
+        let completeMaster = streams.contains { $0.url.path.lowercased().contains("master") }
+        let collectingVideo = streams.first { Self.track($0.url, name: "video") }
+        let collectingAudio = streams.first { Self.track($0.url, name: "audio") }
+        let complete = completeMaster || (collectingVideo != nil && collectingAudio != nil)
         if keyDeadline == nil {
             guard (key != nil && (complete || now - stableSince >= 1.5)) || now - firstSeen! >= 10 else { return nil }
             keyDeadline = now + 15
+            collected = streams
         }
         guard let key else {
             if now >= keyDeadline! { throw SubtitleFiles.failure("FlixCloud 복호화 키를 찾지 못했습니다.") }
             return nil
         }
-        var selected = master ?? video ?? streams.first { !Self.track($0.url, name: "audio") } ?? streams[0]
+        let candidates = collected ?? streams
+        let master = candidates.first { $0.url.path.lowercased().hasSuffix("master.m3u8") || $0.url.path.lowercased().contains("/master") }
+        let video = candidates.first { Self.track($0.url, name: "video") }
+        let audio = candidates.first { Self.track($0.url, name: "audio") }
+        var selected = master ?? video ?? candidates.first {
+            let path = $0.url.path.lowercased()
+            return !path.contains("/audio/") && !path.hasSuffix("/audio.m3u8")
+        } ?? candidates.first { !$0.url.path.lowercased().hasSuffix("/audio.m3u8") } ?? candidates[0]
         selected.manifestKey = key
         // Desktop createFlixAvProxyUrl combines separate video/audio playlists.
         // Use the existing iOS in-memory manifest and proxy for the same result.

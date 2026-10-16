@@ -335,10 +335,11 @@ enum DeviceSyncMapping {
         let (anime, snapshot) = trimmed(entry.anime)
         let progress = entry.duration > 0 ? (min(1, max(0, entry.position / entry.duration)) * 100).rounded() : (entry.progressPercent ?? 0)
         return ["key": key, "src": "", "name": anime.title + " · " + entry.episodeTitle, "subtitleTitle": anime.title, "image": anime.poster,
-                "episode": ["provider": entry.anime.source, "url": entry.watchURL, "id": entry.episodeID, "number": entry.number, "name": String(entry.number)],
+                "episode": ["provider": entry.anime.source, "url": entry.watchURL, "id": entry.episodeID, "number": Double(entry.episodeLabel) ?? Double(entry.number), "name": entry.episodeLabel,
+                            "special": entry.episodeLabel.range(of: #"^\d+(?:\.\d+)?[a-z]?$"#, options: [.regularExpression, .caseInsensitive]) == nil],
                 "anime": animeItem(anime, source: entry.anime.source), "resolveKind": entry.anime.source == "linkkf" ? "linkkf" as Any : NSNull(),
                 "progress": progress, "updated": (entry.updatedAt.timeIntervalSince1970 * 1000).rounded(),
-                "ios": ["animeID": entry.anime.id, "episodeID": entry.episodeID, "title": entry.episodeTitle, "position": entry.position, "duration": entry.duration, "snapshot": snapshot]]
+                "ios": ["animeID": entry.anime.id, "episodeID": entry.episodeID, "title": entry.episodeTitle, "displayNumber": entry.episodeLabel, "position": entry.position, "duration": entry.duration, "snapshot": snapshot]]
     }
     static func lists(_ library: LibraryStore) -> DeviceSyncPlan.Lists {
         var favorites: [String: DeviceSyncPlan.Item] = [:], history: [String: DeviceSyncPlan.Item] = [:]
@@ -393,6 +394,7 @@ enum DeviceSyncMapping {
         let updated = Date(timeIntervalSince1970: (DeviceSyncPlan.number(data["updated"]) ?? 0) / 1000)
         var entry = WatchEntry(id: anime.id + "#" + episodeID, anime: anime, episodeID: episodeID, episodeTitle: title, number: number,
             watchURL: url, directURL: nil, position: DeviceSyncPlan.number(ios?["position"]) ?? 0, duration: DeviceSyncPlan.number(ios?["duration"]) ?? 0, updatedAt: updated)
+        entry.displayNumber = ios?["displayNumber"] as? String ?? name
         if ios == nil { entry.progressPercent = DeviceSyncPlan.number(data["progress"]) }
         return entry
     }

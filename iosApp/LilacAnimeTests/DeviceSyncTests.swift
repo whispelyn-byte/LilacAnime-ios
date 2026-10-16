@@ -112,4 +112,18 @@ final class BackgroundWriterTests: XCTestCase {
         func add() { lock.lock(); count += 1; lock.unlock() }
         var value: Int { lock.lock(); defer { lock.unlock() }; return count }
     }
+    @MainActor func testFractionalSuffixedAndSpecialEpisodeLabelsSurviveSyncAndHistory() throws {
+        for label in ["12.5", "4a", "OVA 1"] {
+            let history: [String: Any] = ["key": "reanime:https://fixture.test/episode", "anime": ["provider": "reanime", "id": "x", "title": "x"],
+                "episode": ["provider": "reanime", "url": "https://fixture.test/episode", "number": Double(label) ?? 4, "name": label], "progress": 42, "updated": 1791620500000.0]
+            let entry = try XCTUnwrap(DeviceSyncMapping.watchEntry(history))
+            XCTAssertEqual(PlaybackItem(entry: entry).displayNumber, label)
+            let restored = try JSONDecoder().decode(WatchEntry.self, from: JSONEncoder().encode(entry))
+            XCTAssertEqual(restored.episodeLabel, label)
+            let exported = try XCTUnwrap(DeviceSyncMapping.historyItem(restored)?["episode"] as? [String: Any])
+            XCTAssertEqual(exported["name"] as? String, label)
+            XCTAssertEqual(exported["special"] as? Bool, label == "OVA 1")
+            if label == "12.5" { XCTAssertEqual(exported["number"] as? Double, 12.5) }
+        }
+    }
 }

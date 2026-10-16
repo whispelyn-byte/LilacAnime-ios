@@ -150,7 +150,7 @@ final class EpisodePlayerModel: ObservableObject {
     }
     func begin(library: LibraryStore) {
         lifecycleLibrary = library; suspended = nil; holdProgress = false
-        active = nil; loadedSkip = false; systemPlayback = false
+        active = nil; loadedSkip = false; systemPlayback = false; engine.error = nil
         let token = generation
         subtitleOffset = library.subtitleChoice(animeID: item.anime.id, episodeID: item.episodeID)?.offset ?? library.preferences.subtitleOffset
         pendingFraction = library.resume(item.anime, episodeID: item.episodeID) > 0 ? nil : library.resumeFraction(item.anime, episodeID: item.episodeID)
@@ -767,7 +767,7 @@ final class EpisodePlayerModel: ObservableObject {
     }
     func save(library: LibraryStore) {
         // Only a position mpv reports for an open video, and none while suspended (it may read as the end).
-        guard active != nil, !systemPlayback, !holdProgress, engine.canCaptureVideo else { return }
+        guard active != nil, !systemPlayback, !holdProgress, engine.canSaveProgress else { return }
         library.progress(anime: item.anime, episodeID: item.episodeID, title: item.title, number: item.number,
             watchURL: item.watchURL.absoluteString, directURL: active?.url.absoluteString, position: engine.position, duration: engine.duration)
     }
@@ -828,7 +828,7 @@ struct EpisodePlayerView: View {
             if !showWeb && model.active == nil && !UIShowcase.enabled {
                 VStack(spacing: 12) {
                     if model.resolver.loading { ProgressView("영상을 준비하고 있어요").tint(.white) }
-                    if let error = model.error ?? model.resolver.error { Text(error).font(.caption).multilineTextAlignment(.center); Button("다시 시도") { model.begin(library: library) }; Button("웹 플레이어 열기") { showWeb = true } }
+                    if let error = model.error ?? model.resolver.error ?? model.engine.error { Text(error).font(.caption).multilineTextAlignment(.center); Button("다시 시도") { model.begin(library: library) }; Button("웹 플레이어 열기") { showWeb = true } }
                 }.padding(24).foregroundStyle(.white).background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 16))
             }
             if settings { playerSettings.zIndex(10) }

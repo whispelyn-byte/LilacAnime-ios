@@ -24,12 +24,13 @@ enum HLSData {
         return lines.enumerated().filter { !omitted.contains($0.offset) }.map(\.element).joined(separator: "\n")
     }
 
-    static func fetch(_ url: URL, stream: ResolvedStream, range: String? = nil) async throws -> (Data, HTTPURLResponse) {
+    static func fetch(_ url: URL, stream: ResolvedStream, range: String? = nil, timeout: TimeInterval = 60) async throws -> (Data, HTTPURLResponse) {
         try Task.checkCancellation()
         if url == stream.url, let manifest = stream.hlsManifest {
             return (Data(manifest.utf8), HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/vnd.apple.mpegurl"])!)
         }
-        let (data, response) = try await URLSession.shared.data(for: request(url, stream: stream, range: range))
+        var request = request(url, stream: stream, range: range); request.timeoutInterval = timeout
+        let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw SubtitleFiles.failure("영상 요청 실패") }
         return (data, http)
     }

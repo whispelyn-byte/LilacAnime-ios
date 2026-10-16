@@ -239,14 +239,28 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
         guard let url = URL(string: server.url) else { throw SubtitleFiles.failure("영상 서버 주소가 올바르지 않습니다.") }
         resolver.currentItem = item; resolver.silent = true; resolver.serverLabel = server.label; resolver.loading = true
         resolver.loadPage(url, seconds: 30)
-        while resolver.loading {
+        let deadline = Date().addingTimeInterval(30)
+        var checked = Set<ResolvedStream>()
+        var failure: Error?
+        while Date() < deadline {
             try Task.checkCancellation()
-            if !resolver.streams.isEmpty { return resolver }
+            for stream in resolver.streams where checked.insert(stream).inserted {
+                do {
+                    try await PlaybackStreamProbe.validate(stream)
+                    try Task.checkCancellation()
+                    // Publish the verified candidate first, not an earlier URL
+                    // captured without its playlist key.
+                    let latest = resolver.streams.first { $0.url == stream.url } ?? stream
+                    resolver.streams = [latest]
+                    return resolver
+                } catch is CancellationError { throw CancellationError() }
+                catch { failure = error }
+            }
+            if !resolver.loading && resolver.streams.isEmpty { break }
             try await Task.sleep(nanoseconds: 100_000_000)
         }
         try Task.checkCancellation()
-        if !resolver.streams.isEmpty { return resolver }
-        throw SubtitleFiles.failure(resolver.error ?? "영상 서버 연결에 실패했습니다.")
+        throw failure ?? SubtitleFiles.failure(resolver.error ?? "영상 서버 연결에 실패했습니다.")
     }
     private func loadPage(_ url: URL, seconds: Double) {
         let token = generation

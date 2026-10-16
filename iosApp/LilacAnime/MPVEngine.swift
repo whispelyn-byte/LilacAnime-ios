@@ -13,6 +13,8 @@ struct MediaTrack: Identifiable {
 }
 @MainActor
 final class MPVEngine: ObservableObject {
+    private let activeVideoOutput: String
+    init(activeVideoOutput: String = "gpu-next") { self.activeVideoOutput = activeVideoOutput }
     @Published var position = 0.0
     @Published var duration = 0.0
     @Published var volume = 100.0
@@ -44,6 +46,11 @@ final class MPVEngine: ObservableObject {
     private(set) var translatedSubtitle = false
     private(set) var pictureInPictureOutput = false
     private var softwareOutput = false
+    private var videoOutputHidden = false
+    private var videoOutputReply: UInt64 = 0x10000000
+    private(set) var restoringVideoOutput = false
+    private var pendingEnd = false
+    private var loadTimeout: Task<Void, Never>?
     private var mediaLayer: CAMetalLayer?
     private var preferences = AppPreferences()
     private var notifications: [NSObjectProtocol] = []
@@ -74,7 +81,7 @@ final class MPVEngine: ObservableObject {
         handle = context
         var window = Int64(Int(bitPattern: Unmanaged.passUnretained(layer).toOpaque()))
         mpv_set_option(context, "wid", MPV_FORMAT_INT64, &window)
-        for (key, value) in ["vo": "gpu-next", "gpu-api": "vulkan", "gpu-context": "moltenvk",
+        for (key, value) in ["vo": activeVideoOutput, "gpu-api": "vulkan", "gpu-context": "moltenvk",
                              "hwdec": "videotoolbox", "keep-open": "yes", "idle": "yes", "cache": "yes", "input-default-bindings": "no"] {
             mpv_set_option_string(context, key, value)
         }
@@ -82,6 +89,7 @@ final class MPVEngine: ObservableObject {
         guard result >= 0 else { error = String(cString: mpv_error_string(result)); mpv_terminate_destroy(context); handle = nil; return }
         configured = [:]; configuredSpeed = nil; observed = [:]
         configuredAnime4K = nil
+        videoOutputHidden = false; restoringVideoOutput = false
         mpv_request_log_messages(context, "error")
         for property in ObservedProperty.allCases { mpv_observe_property(context, property.rawValue, property.name, property.format) }
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in self?.poll() }
@@ -146,13 +154,19 @@ final class MPVEngine: ObservableObject {
     private var startPaused = false
     func load(_ stream: ResolvedStream, resume: Double = 0, paused: Bool = false) {
         finishSpaceHold()
+        loadTimeout?.cancel()
         pendingStream = stream; resumePosition = resume; pendingSubtitle = nil; translatedSubtitle = false; startPaused = paused
-        completion.reset(); observed[.eof] = 0
+        completion.reset(); pendingEnd = false; observed[.eof] = 0
         guard handle != nil else { return }
         error = nil; fileLoaded = false
         set("http-header-fields", stream.headers.map { $0.key + ": " + $0.value.replacingOccurrences(of: ",", with: "\\,") }.joined(separator: ","))
         set("referrer", stream.referer)
         command(["loadfile", stream.url.isFileURL ? stream.url.path : stream.url.absoluteString, "replace"])
+        loadTimeout = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds: 30_000_000_000) } catch { return }
+            guard let self, !Task.isCancelled else { return }
+            self.error = "영상 재생을 시작하지 못했습니다. 다른 영상 서버를 선택하거나 다시 시도하세요."
+        }
     }
     func setVolume(_ value: Double) { volume = max(0, min(100, value)); set("volume", String(volume)); UserDefaults.standard.set(volume, forKey: "player.volume") }
     func toggleMute() { muted.toggle(); set("mute", muted ? "yes" : "no"); UserDefaults.standard.set(muted, forKey: "player.muted") }
@@ -223,6 +237,17 @@ final class MPVEngine: ObservableObject {
     /// being stopped.
     private static let blocking = DispatchQueue(label: "Lilac.MPV", qos: .userInitiated)
     var canCaptureVideo: Bool { handle != nil && fileLoaded }
+    var canSaveProgress: Bool { canCaptureVideo && !restoringVideoOutput }
+    /// Keep the video track selected: toggling vid reselects the demux stream on
+    /// return and can discard buffered audio/video while synchronizing again.
+    /// A null output submits no Metal work and leaves the media timeline intact.
+    func setVideoOutputActive(_ active: Bool) {
+        guard handle != nil, !pictureInPictureOutput, videoOutputHidden == active else { return }
+        videoOutputHidden = !active; restoringVideoOutput = active
+        videoOutputReply &+= 1
+        let status = set("vo", active ? activeVideoOutput : "null", replyID: videoOutputReply)
+        if status < 0 { restoringVideoOutput = false; error = String(cString: mpv_error_string(status)) }
+    }
     /// PiP receives software frames with mpv's subtitles already drawn into them. The normal
     /// Metal output is stopped before PiP starts, so background playback never submits GPU work.
     func beginPictureInPictureOutput() async throws {
@@ -249,19 +274,16 @@ final class MPVEngine: ObservableObject {
     func endPictureInPictureOutput() {
         guard pictureInPictureOutput || softwareOutput else { return }
         pictureInPictureOutput = false
-        guard let handle else { return }
+        guard handle != nil else { return }
         let foreground = UIApplication.shared.applicationState != .background
         if foreground { softwareOutput = false }
         if !foreground && !preferences.backgroundAudio { pause() }
-        Self.blocking.async {
-            if foreground {
-                mpv_set_property_string(handle, "vo", "gpu-next")
-                mpv_set_property_string(handle, "hwdec", "videotoolbox")
-                mpv_set_property_string(handle, "vid", "auto")
-            } else {
-                // Keep the software output until the app is foreground again.
-                mpv_set_property_string(handle, "vid", "no")
-            }
+        if foreground {
+            set("hwdec", "videotoolbox")
+            videoOutputHidden = true; setVideoOutputActive(true)
+        } else {
+            videoOutputHidden = true; restoringVideoOutput = false
+            set("vo", "null")
         }
     }
     /// 스크린샷 (desktop takeScreenshot): the frame on screen at the video's own size (1920×1080 for a 1080p episode),
@@ -295,6 +317,10 @@ final class MPVEngine: ObservableObject {
             switch event.pointee.event_id {
             case MPV_EVENT_SET_PROPERTY_REPLY:
                 if event.pointee.reply_userdata == anime4kReply, event.pointee.error < 0 { failAnime4K() }
+                if event.pointee.reply_userdata == videoOutputReply {
+                    restoringVideoOutput = false
+                    if event.pointee.error < 0 { error = String(cString: mpv_error_string(event.pointee.error)) }
+                }
             case MPV_EVENT_LOG_MESSAGE:
                 if let data = event.pointee.data {
                     let message = data.assumingMemoryBound(to: mpv_event_log_message.self).pointee
@@ -316,13 +342,16 @@ final class MPVEngine: ObservableObject {
                 configure(preferences)
                 if resumePosition > 0 { seek(resumePosition); resumePosition = 0 }
                 if let pendingSubtitle { command(["sub-add", pendingSubtitle.path, "select"]) }
-                if startPaused { startPaused = false; pause() } else { play() }
+                if startPaused { startPaused = false; loadTimeout?.cancel(); pause() } else { play() }
+            case MPV_EVENT_PLAYBACK_RESTART:
+                loadTimeout?.cancel(); loadTimeout = nil
             case MPV_EVENT_END_FILE:
+                loadTimeout?.cancel(); loadTimeout = nil
                 finishSpaceHold()
                 fileLoaded = false
                 if let data = event.pointee.data {
                     let end = data.assumingMemoryBound(to: mpv_event_end_file.self).pointee
-                    if end.reason == MPV_END_FILE_REASON_EOF { ended = true }
+                    if end.reason == MPV_END_FILE_REASON_EOF { ended = true; pendingEnd = true }
                     if end.reason == MPV_END_FILE_REASON_ERROR { error = String(cString: mpv_error_string(end.error)) }
                 }
             default: break
@@ -338,10 +367,11 @@ final class MPVEngine: ObservableObject {
         if let mute = observed[.mute], muted != (mute != 0) { muted = mute != 0 }
         if let speed = observed[.speed], speed > 0, self.speed != speed { self.speed = speed }
         if paused { finishSpaceHold() }
-        if fileLoaded { onProgress?(position, duration) }
+        if fileLoaded && !restoringVideoOutput { onProgress?(position, duration) }
         // keep-open retains the last frame without END_FILE; eof-reached is its completion signal.
         // Notify after progress so history is saved before the next episode replaces this one.
-        if ended || (fileLoaded && observed[.eof] == 1) {
+        if !restoringVideoOutput && (ended || pendingEnd || (fileLoaded && observed[.eof] == 1)) {
+            pendingEnd = false
             if completion.reachedEnd() { onEnd?() }
         } else if fileLoaded, observed[.eof] == 0 { completion.resume() }
         // The system extrapolates the elapsed time from the rate, so it is told again only when something changes.
@@ -391,23 +421,25 @@ final class MPVEngine: ObservableObject {
         notifications.append(NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
             guard let self else { return }
             if !self.pictureInPictureOutput {
-                self.set("vid", "no"); if !self.preferences.backgroundAudio { self.pause() }
+                self.setVideoOutputActive(false); if !self.preferences.backgroundAudio { self.pause() }
             }
         })
         notifications.append(NotificationCenter.default.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.finishSpaceHold(); self?.screenAwake.release()
+            self?.finishSpaceHold(); self?.screenAwake.release(); self?.setVideoOutputActive(false)
         })
-        notifications.append(NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.updateScreenAwake() })
-        notifications.append(NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
-            guard let self, !self.pictureInPictureOutput else { return }
-            if self.softwareOutput { self.endPictureInPictureOutput() }
-            else { self.set("vid", "auto") }
+        notifications.append(NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            guard let self else { return }
+            self.updateScreenAwake()
+            do { try AVAudioSession.sharedInstance().setActive(true) } catch { self.error = error.localizedDescription }
+            if !self.pictureInPictureOutput && self.softwareOutput { self.endPictureInPictureOutput() }
+            else { self.setVideoOutputActive(true) }
         })
         notifications.append(NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
             if (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) == AVAudioSession.InterruptionType.began.rawValue { self?.pause() }
         })
     }
     func shutdown() {
+        loadTimeout?.cancel(); loadTimeout = nil
         pictureInPictureOutput = false; softwareOutput = false
         finishSpaceHold()
         timer?.invalidate(); timer = nil
@@ -426,6 +458,7 @@ final class MPVEngine: ObservableObject {
         mediaLayer = nil; pendingStream = nil; pendingSubtitle = nil; fileLoaded = false; position = 0; duration = 0
         observed = [:]; configured = [:]; configuredSpeed = nil; lastNowPlaying = nil
         configuredAnime4K = nil; anime4kError = nil
+        videoOutputHidden = false; restoringVideoOutput = false; pendingEnd = false
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
 }

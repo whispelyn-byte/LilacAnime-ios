@@ -344,13 +344,15 @@ final class MPVEngine: ObservableObject {
                 if let pendingSubtitle { command(["sub-add", pendingSubtitle.path, "select"]) }
                 if startPaused { startPaused = false; loadTimeout?.cancel(); pause() } else { play() }
             case MPV_EVENT_PLAYBACK_RESTART:
-                loadTimeout?.cancel(); loadTimeout = nil
+                if fileLoaded { loadTimeout?.cancel(); loadTimeout = nil }
             case MPV_EVENT_END_FILE:
-                loadTimeout?.cancel(); loadTimeout = nil
                 finishSpaceHold()
                 fileLoaded = false
                 if let data = event.pointee.data {
                     let end = data.assumingMemoryBound(to: mpv_event_end_file.self).pointee
+                    // Replacing a file reports STOP for the old file; it must
+                    // not cancel the new file's startup deadline.
+                    if end.reason == MPV_END_FILE_REASON_EOF || end.reason == MPV_END_FILE_REASON_ERROR { loadTimeout?.cancel(); loadTimeout = nil }
                     if end.reason == MPV_END_FILE_REASON_EOF { ended = true; pendingEnd = true }
                     if end.reason == MPV_END_FILE_REASON_ERROR { error = String(cString: mpv_error_string(end.error)) }
                 }

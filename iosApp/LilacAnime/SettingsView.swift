@@ -253,7 +253,7 @@ struct SettingsView: View {
                 SecureField(SubtitleLabels.engine(provider) + " API 키", text: $apiKey).textInputAutocapitalization(.never).autocorrectionDisabled().settingField()
                 Button("저장") {
                     fetchCloudModels(save: true)
-                }.buttonStyle(SettingButtonStyle()).disabled(testingAPI || apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }.buttonStyle(SettingButtonStyle()).disabled(testingAPI)
             }
         }
         if provider != "deepl" {
@@ -318,6 +318,11 @@ struct SettingsView: View {
         }
     }
     private func fetchCloudModels(save: Bool = false) {
+        if save && apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            do { try SecureKeys.save("", name: store.preferences.translationProvider); apiModels = []; apiStatus = "API 키를 지웠습니다."; error = nil }
+            catch { apiStatus = error.localizedDescription }
+            return
+        }
         testingAPI = true
         let provider = store.preferences.translationProvider
         let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines), region = draftQwenRegion

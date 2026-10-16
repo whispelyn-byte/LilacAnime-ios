@@ -6,14 +6,40 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.*
 import io.ktor.http.*
 import kotlinx.serialization.json.*
+import kotlin.io.encoding.Base64
 
 class DesktopNewFiltersTest {
+    @Test fun miruroSendsCombinedFiltersAndCursorWithoutDiscardingUpcomingShows() = runTest {
+        var requests = 0
+        val client = HttpClient(MockEngine { request ->
+            requests++
+            assertEquals("-started_on", request.url.parameters["sort"])
+            assertEquals("Action", request.url.parameters["genre_all"]); assertEquals("JP", request.url.parameters["country_of_origin"])
+            assertEquals("ORIGINAL", request.url.parameters["source"]); assertEquals("false", request.url.parameters["is_adult"])
+            assertEquals("Magic,Isekai", request.url.parameters["tag_all"])
+            assertEquals("NOT_YET_RELEASED", request.url.parameters["status"])
+            assertEquals(if (requests == 1) null else "cursor-two", request.url.parameters["cursor"])
+            respond(Base64.decode("cuJ6dXJvL2Nhi0SlLm2vWWJwotTTFmVdZA0Z5bTg8KP356vCfEABf/YrPUDPzvrUKAyjtKfMpONV6aijs80SZ+Wn0qMMK1pRZhbZaqu+338Gs+rkspOHpB0RCD8Tfn4NalKmD0cqb4FzofkhIco6e//VX4EnJHlznyy5RwyZb/ujeZnuL2Nh"), headers = headersOf(HttpHeaders.ContentType, "application/octet-stream"))
+        })
+        val repository = SourceRepository(client)
+        val filter = BrowseFilter(genres = listOf("Action"), sort = "year", extras = mapOf("country" to "JP", "source" to "ORIGINAL", "adult" to "false", "tag" to "Magic, Isekai, Magic", "status" to "NOT_YET_RELEASED"))
+        try {
+            assertEquals("2027", repository.catalog("miruro", 1, filter).items.single().year)
+            assertTrue(repository.catalog("miruro", 2, filter).hasMore)
+            assertEquals(2, requests)
+        } finally { repository.close() }
+    }
     @Test fun linkaniCombinesTaxonomyRoutesAndKeepsServerFormat() = runTest {
         val client = HttpClient(MockEngine { request ->
             assertEquals("/list/2/class/Slice%20of%20Life/year/2025/lang/OVA/page/2/", request.url.encodedPath)
-            respond("<div class='vod-item'><a href='/view/example/'><span class='vod-item-title'>Example</span></a></div>", headers = headersOf(HttpHeaders.ContentType, "text/html"))
+            respond("<div class='vod-item'><a href='/ani/123/'><span class='vod-item-title'>Example</span></a></div><a href='javascript:;'>→</a>", headers = headersOf(HttpHeaders.ContentType, "text/html"))
         })
-        try { DesktopSourceRepository(client).browse("linkani", "", 2, BrowseFilter(genres = listOf("Slice of Life"), year = "2025", format = "OVA")) } finally { client.close() }
+        try {
+            val repository = DesktopSourceRepository(client)
+            val filter = BrowseFilter(genres = listOf("Slice of Life"), year = "2025", format = "OVA")
+            assertEquals("OVA", repository.browse("linkani", "", 2, filter).single().format)
+            assertFalse(repository.hasNextLinkaniPage(2, filter, ""))
+        } finally { client.close() }
     }
     @Test fun sourceTaxonomiesExposeRealOptionsAndDecades() {
         val link = DesktopCatalogTaxonomy.linkani("""<a href="/list/2/class/Slice+of+Life/">일상</a><a href="/list/2/class/월/">월</a><a href="/list/2/year/2025/">2025</a><a href="/list/2/lang/OVA/">OVA</a>""")

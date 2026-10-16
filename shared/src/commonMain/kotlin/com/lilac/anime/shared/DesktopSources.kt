@@ -407,7 +407,9 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
         val decoded = ByteArray(body.size) { body[it] xor key[it % key.size] }
         return Json.parseToJsonElement(inflateCatalogGzip(decoded).decodeToString()).jsonObject
     }
-    suspend fun browse(source: String, query: String, page: Int, filter: BrowseFilter): List<Anime> {
+    private val linkaniNext = mutableMapOf<String, Boolean>()
+    fun hasNextLinkaniPage(page: Int, filter: BrowseFilter, query: String): Boolean = linkaniNext[query + filter.toString() + ":" + page] == true
+    suspend fun browse(source: String, query: String, page: Int, filter: BrowseFilter, catalogSearch: Boolean = false): List<Anime> {
         if (source == "miruro") {
             val key = query + filter.toString()
             if (page == 1) cursors[key] = mutableMapOf()
@@ -425,9 +427,9 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
             mapOf("status" to "status", "country" to "country_of_origin", "source" to "source", "adult" to "is_adult", "scoreMin" to "score_gte", "scoreMax" to "score_lte").forEach { (key, api) -> filter.extras[key]?.takeIf(String::isNotBlank)?.let { params[api] = it } }
             filter.extras["tag"]?.takeIf(String::isNotBlank)?.let { params["tag_all"] = it.split(',').map(String::trim).filter(String::isNotBlank).distinct().joinToString(",") }
             val values = mutableListOf<JsonObject>()
-            repeat(if(filter.sort == "year") 20 else 1) {
+            repeat(if(filter.sort == "year" && !catalogSearch) 20 else 1) {
                 val root = miruro("anime", params)
-                values += root.list("data").filterIsInstance<JsonObject>().filter { raw -> filter.sort != "year" || filter.extras.isNotEmpty() ||
+                values += root.list("data").filterIsInstance<JsonObject>().filter { raw -> catalogSearch || filter.sort != "year" || filter.extras.isNotEmpty() ||
                     (raw.text("status") != "NOT_YET_RELEASED" && (raw.number("season_year") ?: 0) in 1..currentCatalogDate().take(4).toInt()) }
                 val next = root.text("next_cursor").ifBlank { root.obj("pagination").text("next_cursor") }
                 if (root.text("has_more") != "true" || next.isBlank() || next == params["cursor"]) { pages.remove(page + 1); return values.map(DesktopSourceParser::miruroAnime) }
@@ -448,7 +450,11 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
         val route = (if (category.isNotBlank()) "class/" + category.encodeURLPathPart() + "/" else "") + (if (filter.year.isNotBlank()) "year/" + filter.year.encodeURLPathPart() + "/" else "") + (if (filter.format.isNotBlank()) "lang/" + filter.format.encodeURLPathPart() + "/" else "") + suffix
         val path = if (filter.sort == "popular" && route == suffix) "/label/topday/" + suffix else "/list/2/" + route
         val params = if (query.isBlank()) emptyMap() else mapOf("wd" to query)
-        return DesktopSourceParser.koreanList(text(base + if (query.isBlank()) path else "/view/" + suffix, params), source).map { if (query.isBlank() && filter.format.isNotBlank()) it.copy(format = filter.format) else it }
+        val html = text(base + if (query.isBlank()) path else "/view/" + suffix, params)
+        val items = DesktopSourceParser.koreanList(html, source).map { if (query.isBlank() && filter.format.isNotBlank()) it.copy(format = filter.format) else it }
+        val next = Ksoup.parse(html).select("a[href]").firstOrNull { it.text().trim() == "→" }?.attr("href")
+        linkaniNext[query + filter.toString() + ":" + page] = items.isNotEmpty() && (next == null || Regex("^(https?://|/)").containsMatchIn(next))
+        return items
     }
     internal suspend fun ohliPage(params: Map<String, String>) = DesktopSourceParser.ohliProps(text(DesktopSourceParser.OHLI24_WEB + "/", params))
     private val ohliWeekdays = mutableMapOf<String, Pair<Long, Set<String>>>()

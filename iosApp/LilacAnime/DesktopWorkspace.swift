@@ -30,6 +30,7 @@ struct DesktopFullCatalog: View {
     @State private var validationError: String?
     @State private var listCache = CatalogListCache()
     private var sorts: [String] {
+        if library.preferences.source == "reanime" && applied.extras.values.contains(where: { !$0.isEmpty }) { return ["popular", "year", "score"] }
         if applied.active { return remote.filters?.sorts ?? ["default"] }
         switch library.preferences.source { case "linkkf": return ["default", "year"]; case "linkani": return ["default", "updated"]; case "ohli24": return ["default", "updated"]; default: return ["popular", "year", "updated", "score"] }
     }
@@ -89,13 +90,13 @@ struct DesktopFullCatalog: View {
                                 .overlay(RoundedRectangle(cornerRadius: 7).stroke(LilacStyle.line))
                         }.foregroundStyle(LilacStyle.text).accessibilityLabel("한국어 전체 카탈로그 · 인덱스")
                     }
-                    ScrollView(.horizontal, showsIndicators: false) {
+                    if (applied.extras["order"] ?? "").isEmpty { ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 2) {
                             ForEach(sorts, id: \.self) { value in
                                 Button { sort = value } label: { LilacChip(text: value == "popular" ? "인기순" : value == "year" ? "최신순" : value == "score" ? "평점순" : value == "updated" ? (library.preferences.source == "miruro" ? "작품 정보 업데이트순" : "회차 업데이트순") : "기본 순서", selected: sort == value) }.buttonStyle(.plain)
                             }
                         }.padding(3).background(LilacStyle.card2, in: RoundedRectangle(cornerRadius: 8))
-                    }
+                    } }
                     filterPanel
                     Text("\(values.count)개").font(.system(size: 13)).foregroundStyle(LilacStyle.muted)
                     if !remoteSource, let error = catalog.failure(for: library.preferences.source) { Text(error).font(.system(size: 13)).foregroundStyle(.red) }
@@ -182,6 +183,7 @@ struct DesktopFullCatalog: View {
         }
     }
     private func label(_ value: String, field: String) -> String {
+        if field == "연도", value.hasSuffix("s"), Int(value.dropLast()) != nil { return String(value.dropLast()) + "년대" }
         if field == "장르" {
             let key = value.lowercased().replacingOccurrences(of: "-", with: " ")
             return ["action": "액션", "adventure": "모험", "comedy": "코미디", "drama": "드라마", "fantasy": "판타지", "horror": "공포", "mystery": "미스터리", "romance": "로맨스", "sci fi": "SF", "slice of life": "일상", "sports": "스포츠", "supernatural": "초자연", "psychological": "심리", "thriller": "스릴러", "music": "음악", "mecha": "메카", "ecchi": "에치", "mahou shoujo": "마법소녀"][key] ?? value
@@ -192,13 +194,17 @@ struct DesktopFullCatalog: View {
         guard let facets = remote.filters else { remote.loadFilters(); return }
         var next = draft; next.year = next.year.trimmingCharacters(in: .whitespacesAndNewlines)
         next.extras = next.extras.mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.value.isEmpty }
-        if !next.season.isEmpty && next.year.isEmpty { next.year = String(Calendar.current.component(.year, from: Date())) }
+        if !next.season.isEmpty && next.year.isEmpty {
+            let current = String(Calendar.current.component(.year, from: Date()))
+            next.year = facets.years.isEmpty || facets.years.contains(current) ? current : facets.years[0]
+        }
         if !next.year.isEmpty && (facets.years.isEmpty ? (Int(next.year) ?? 0) <= 0 : !facets.years.contains(next.year)) { validationError = "지원하는 연도를 선택하세요."; return }
+        let nextSort = library.preferences.source == "reanime" && !next.extras.isEmpty && sort == "updated" ? "popular" : sort
         do {
             try DesktopCatalogTaxonomy.shared.validate(source: library.preferences.source,
-                filter: AnimeSnapshot.shared.extendedFilter(genre: next.genre, year: next.year, season: next.season, format: next.format, sort: sort, extras: next.extras), facets: facets)
+                filter: AnimeSnapshot.shared.extendedFilter(genre: next.genre, year: next.year, season: next.season, format: next.format, sort: nextSort, extras: next.extras), facets: facets)
         } catch { validationError = error.localizedDescription; return }
-        draft = next; applied = next; validationError = nil
+        draft = next; applied = next; validationError = nil; sort = nextSort
         if !sorts.contains(sort) { sort = sorts[0] }; reloadRemote()
     }
     private func reloadRemote() {

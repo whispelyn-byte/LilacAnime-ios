@@ -60,6 +60,7 @@ class LinkkfRepository(
     private val tags = mutableMapOf<String, Map<String, Int>>()
     suspend fun filterTags(taxonomy: String): Map<String, Int> = tags[taxonomy] ?: run {
         val root = request("$apiBase/link/api.php", mapOf("taxonomy" to taxonomy, "limit" to "200", "orderby" to "name", "order" to "ASC")) as? JsonObject
+        require(root?.get("terms") is JsonArray) { "Linkkf 분류를 불러오지 못했습니다." }
         (root?.get("terms") as? JsonArray).orEmpty().mapNotNull { term ->
             val item = term as? JsonObject ?: return@mapNotNull null
             val id = item.text("tag_ID").toIntOrNull()?.takeIf { it > 0 } ?: return@mapNotNull null
@@ -69,7 +70,7 @@ class LinkkfRepository(
     suspend fun filters(): SourceFilters = SourceFilters(
         genres = filterTags("anigenres").keys.toList(),
         years = filterTags("anime-seasonys").keys.toList().sortedDescending(),
-        formats = filterTags("anime-seasontype").keys.toList())
+        formats = filterTags("anime-seasontype").keys.toList()).also { require(it.genres.isNotEmpty() || it.years.isNotEmpty() || it.formats.isNotEmpty()) { "Linkkf 분류를 불러오지 못했습니다." } }
     suspend fun filtered(page: Int, filter: BrowseFilter): List<Anime> {
         suspend fun ids(values: List<String>, taxonomy: String): String {
             if (values.isEmpty()) return ""

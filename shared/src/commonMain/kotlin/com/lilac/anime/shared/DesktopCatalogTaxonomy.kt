@@ -28,11 +28,11 @@ object DesktopCatalogTaxonomy {
         note = "상세 조건은 소스 검색에 적용됩니다. 업데이트순은 작품 정보 업데이트 기준입니다.")
     fun linkani(html: String): SourceFilters {
         val groups = mutableMapOf<String, MutableList<String>>()
-        Ksoup.parse(html).select("a[href]").forEach { node ->
-            val path = runCatching { Url("https://linkani.tv".let { base -> if (node.attr("href").startsWith("http")) node.attr("href") else base + node.attr("href") }).encodedPath }.getOrNull() ?: return@forEach
+        Ksoup.parse(html, "https://linkani.tv/").select("a[href]").forEach { node ->
+            val path = runCatching { Url(node.absUrl("href")).encodedPath }.getOrNull() ?: return@forEach
             val match = Regex("^/list/2/(class|year|lang)/([^/]+)/?$").matchEntire(path) ?: return@forEach
             val value = match.groupValues[2].replace("+", " ").decodeURLPart()
-            if (match.groupValues[1] == "class" && value in days.map { it.value }) return@forEach
+            if (match.groupValues[1] == "class" && days.any { it.value == value }) return@forEach
             groups.getOrPut(match.groupValues[1]) { mutableListOf() }.add(value)
         }
         require(groups.values.any { it.isNotEmpty() }) { "링크애니 분류를 불러오지 못했습니다." }
@@ -71,13 +71,16 @@ object DesktopCatalogTaxonomy {
     fun animenosub(html: String): SourceFilters {
         val doc = Ksoup.parse(html)
         fun values(name: String) = doc.select("input").filter { it.attr("name") == name }.map { it.attr("value") }.filter(String::isNotBlank).distinct()
+        fun named(name: String) = doc.select("input").filter { it.attr("name") == name && it.attr("value").isNotBlank() }.map {
+            CatalogFilterOption(it.attr("value"), it.parent()?.text()?.trim().orEmpty().ifBlank { it.attr("value").replace('-', ' ') })
+        }.distinctBy { it.value }
         val seasons = values("season[]")
         val genres = values("genre[]")
         require(genres.isNotEmpty() || seasons.isNotEmpty()) { "Animenosub 분류를 불러오지 못했습니다." }
         val years = seasons.mapNotNull { Regex("-(\\d{4})$").find(it)?.groupValues?.get(1) }.distinct().sortedDescending()
         return SourceFilters(genres = genres, years = years, formats = values("type"), seasons = if (seasons.isEmpty()) emptyList() else listOf("WINTER", "SPRING", "SUMMER", "FALL"),
             supportsYear = years.isNotEmpty(), supportsSeason = seasons.isNotEmpty(), sorts = listOf("popular", "year", "updated", "score"), seasonValues = seasons,
-            extraFilters = listOf(CatalogFilterField("studio", "제작사", values("studio[]").map { CatalogFilterOption(it, it) }),
+            extraFilters = listOf(CatalogFilterField("studio", "제작사", named("studio[]")),
                 CatalogFilterField("status", "방영 상태", values("status").map { CatalogFilterOption(it, mapOf("ongoing" to "방영 중", "completed" to "완결", "upcoming" to "방영 예정", "hiatus" to "휴방")[it] ?: it) }),
                 CatalogFilterField("sub", "자막·더빙", values("sub").map { CatalogFilterOption(it, mapOf("sub" to "자막", "dub" to "더빙", "raw" to "RAW")[it] ?: it) }),
                 CatalogFilterField("order", "정렬", values("order").map { CatalogFilterOption(it, mapOf("title" to "제목 A–Z", "titlereverse" to "제목 Z–A", "update" to "업데이트 최신순", "latest" to "최신 등록순", "popular" to "인기순", "rating" to "평점순")[it] ?: it) })).filter { it.options.isNotEmpty() })

@@ -21,4 +21,8 @@
 
 ## 검증 범위
 
-새 테스트와 기존 JVM·Kotlin Native·Swift·iPhone/iPad UI 검사는 GitHub Actions에서 실행합니다. 최종 결과는 완료 후 기록합니다. 실제 제보 기기와 회차가 없는 영상 건너뛰기/무한 로딩은 자동 테스트 통과만으로 해결 확정하지 않습니다.
+[최종 v0.4.17 Actions](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/38921397440)와 [릴리즈](https://github.com/whispelyn-byte/LilacAnime-ios/releases/tag/v0.4.17)가 성공했습니다. JVM 123개, Swift 159개, iPhone UI 6개, iPad UI 4개가 실패 없이 통과했습니다. Kotlin Native 검사와 Release 기기 빌드도 성공했습니다. 추가한 Kotlin 취소 검사 2개 및 Swift 회귀 검사 5개를 포함합니다.
+
+공개 IPA의 0.4.17/빌드 59, 25,967,634바이트, SideStore 메타데이터와 새 Flix 리소스 및 Anime4K 7개 셰이더·MIT 라이선스 해시를 검증했습니다. IPA SHA-256: `c8b25695665e83962e9ed60ba371792ff7ba23da17fdab8084966b86fa8a54ef`.
+
+ 실제 제보 기기와 회차가 없는 영상 건너뛰기/무한 로딩은 자동 테스트 통과만으로 해결 확정하지 않습니다.

@@ -35,7 +35,7 @@
 - Flix discovery: 늦은 키, 별도 영상/음성 주소, 1회 재생 버튼 클릭, HTML 자막, 차단, 탐색 종료, 사전 요청 없음 검사 통과.
 - 기존 애니24 광고/본편 구분 및 캡처 검사 통과.
 - 추가 Swift 검사: 수집 종료 뒤 늦은 키, master 접미사, 영상/음성 선행 순서, 회차 표시 저장/동기화.
-- 전체 JVM·Swift·iPhone/iPad UI·기기 빌드 결과는 최종 Actions 완료 후 기록합니다.
+- [v0.4.16 Actions](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/38919259620) 성공: JVM 121개, Swift 154개, iPhone UI 6개, iPad UI 4개 통과. Kotlin Native 검사 및 Release 기기 빌드 성공. 공개 IPA 25,959,256바이트, 버전 0.4.16/빌드 58, SideStore 크기·Anime4K 해시·Flix 스크립트 포함 확인.
 
 ## 남는 차이와 확인 범위
 

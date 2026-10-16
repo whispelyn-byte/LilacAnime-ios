@@ -17,6 +17,12 @@
 ## 검증과 남은 확인
 
 - XCTest 회귀 검사 추가: 회전·반복 배치·0/1 크기 방어, 정지/버퍼링 후 자동 건너뛰기 대기 시간, 선택 창의 부모 갱신 후 실제 UIScrollView 위치 유지 및 모든 원래 필터 항목 보존.
-- 현재 Windows 작업 환경에는 Swift/Xcode/iOS 시뮬레이터가 없다. 위 XCTest와 iOS 빌드 및 실기기 검증은 실행하지 못했다. IPA를 생성하거나 배포하지 않았다.
+- 로컬 Windows 환경에는 Swift/Xcode/iOS 시뮬레이터가 없어 직접 실행하지 못했다. 이후 [0.4.13 첫 Actions 검사](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/38876199890)에서 iOS 앱 컴파일, 추가한 스크롤·출력 크기·자동 스킵 검사와 iPhone UI 검사 6개가 통과했다. Swift 검사 전체 137개 중 기존 WinPNG 변환 검사 1개가 시간 초과로 실패했다. 스크롤 검사의 임시 창 종료 후 원래 앱 key window를 복원하도록 보완해 [전체 검사를 재실행](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/38879400352)했다. 실기기에서 제보 현상이 해결됐는지는 별도 확인이 필요하다.
 - 실기기에서 다운로드 영상을 열고 회전·설정 패널 표시를 반복해 전체 화면 출력 크기를 확인해야 한다. 자막을 정지 상태로 두고 패널 표시/숨김과 번역 업데이트를 각각 확인해야 한다.
 - 소리만 건너뛰는 현상은 발생 작품·회차·재생 시각, 스트리밍/다운로드 여부 및 재생 로그가 필요하다. 오디오 버퍼/동기화 설정은 추정으로 변경하지 않았다.
+
+## 최종 배포 확인
+
+- [Actions 38879400352](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/38879400352) 전체 성공: Swift 137개, iPhone UI 6개, iPad UI 4개가 실패 없이 통과했다. 첫 실행에서 시간 초과였던 WinPNG 검사도 통과했다. 공통 검사 및 iOS 설치 파일 빌드와 릴리즈 작업도 성공했다.
+- [v0.4.13 정식 릴리즈](https://github.com/whispelyn-byte/LilacAnime-ios/releases/tag/v0.4.13)를 최신 릴리즈로 확인했다. IPA 25,795,473바이트와 source.json이 등록되었고, SideStore 메타데이터의 버전 0.4.13·빌드 55·파일 크기·다운로드 주소가 릴리즈 자산과 일치한다.
+- 위 검증은 실기기에서 제보한 영상 크기·자막 깜박임·오디오 현상을 재현해 해결을 확인했다는 뜻은 아니다.

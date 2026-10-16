@@ -29,8 +29,8 @@ enum HLSData {
         if url == stream.url, let manifest = stream.hlsManifest {
             return (Data(manifest.utf8), HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/vnd.apple.mpegurl"])!)
         }
-        var request = request(url, stream: stream, range: range); request.timeoutInterval = timeout
-        let (data, response) = try await URLSession.shared.data(for: request)
+        var fetchRequest = request(url, stream: stream, range: range); fetchRequest.timeoutInterval = timeout
+        let (data, response) = try await URLSession.shared.data(for: fetchRequest)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw SubtitleFiles.failure("영상 요청 실패") }
         return (data, http)
     }

@@ -46,6 +46,7 @@ jobs:
       - run: python3 iosApp/scripts/android-version.py --check
       - run: python3 iosApp/scripts/android-version.test.py
       - run: python3 iosApp/scripts/generate-source.test.py
+      - run: python3 iosApp/scripts/verify-anime4k.py
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

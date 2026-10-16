@@ -952,6 +952,13 @@ struct EpisodePlayerView: View {
             PSNote("맞춤은 원본 비율을 지키고, 채움은 가장자리를 잘라 화면을 채우고, 늘림은 화면 전체로 늘립니다.")
         }
         Group {
+            PSGroup("Anime4K 영상 보정")
+            PlayerChoiceGrid(options: Anime4KMode.allCases.map { ($0.rawValue, $0.title) }, selection: Binding(get: {
+                Anime4KMode(saved: library.preferences.anime4k).rawValue
+            }, set: { library.preferences.anime4k = $0 }), identifier: "player-anime4k")
+            PSNote("기본은 끄기입니다. 가볍게부터 사용해 보세요. 화면 확대 시 2배 업스케일을 사용하며, 기기에 따라 발열·배터리 사용량이 늘 수 있습니다.")
+            PSNote("앱 기본 플레이어에서 적용됩니다. PiP·웹/외부 플레이어와 원본 스크린샷에는 적용되지 않습니다.")
+            if let error = model.engine.anime4kError { PSNote(error, color: .orange) }
             PSGroup("자동 재생 · 건너뛰기")
             PSSwitch(title: "다음 화 자동재생", detail: "영상이 끝나면 다음 화를 재생합니다", isOn: $library.preferences.autoPlay)
             PSSwitch(title: "오프닝·엔딩 건너뛰기 버튼", detail: "오프닝(OP)·엔딩(ED) 노래가 나오면 건너뛰기 버튼을 띄웁니다",

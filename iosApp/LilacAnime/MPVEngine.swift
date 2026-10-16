@@ -28,6 +28,9 @@ final class MPVEngine: ObservableObject {
     @Published var buffering = false
     @Published var tracks: [MediaTrack] = []
     @Published var error: String?
+    @Published private(set) var anime4kError: String?
+    private var configuredAnime4K: Anime4KMode?
+    private var anime4kReply: UInt64 = 1000
     var onEnd: (() -> Void)?
     var onProgress: ((Double, Double) -> Void)?
     private var handle: OpaquePointer?
@@ -78,6 +81,8 @@ final class MPVEngine: ObservableObject {
         let result = mpv_initialize(context)
         guard result >= 0 else { error = String(cString: mpv_error_string(result)); mpv_terminate_destroy(context); handle = nil; return }
         configured = [:]; configuredSpeed = nil; observed = [:]
+        configuredAnime4K = nil
+        mpv_request_log_messages(context, "error")
         for property in ObservedProperty.allCases { mpv_observe_property(context, property.rawValue, property.name, property.format) }
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in self?.poll() }
         // The player's volume and mute stay as they were left (app.js playerVolume / playerMuted).
@@ -96,6 +101,7 @@ final class MPVEngine: ObservableObject {
         let presentation = PlayerPresentation(settings)
         aspect = presentation.aspect; fit = presentation.fit.rawValue
         applyPresentation()
+        configureAnime4K()
         if configuredSpeed != settings.speed { configuredSpeed = settings.speed; setSpeed(settings.speed) }
         configure("sub-scale", (settings.subtitleSize / 100).description)
         configure("sub-delay", settings.subtitleOffset.description)
@@ -114,6 +120,24 @@ final class MPVEngine: ObservableObject {
         configure("sub-fonts-dir", SubtitleFiles.fontDirectory.path)
     }
     private var assOverride: String { SubtitleAppearance.assOverride(extension: pendingSubtitle?.pathExtension, translated: translatedSubtitle, effects: preferences.assEffects, keepStyle: preferences.vttStyle != false) }
+    private func configureAnime4K() {
+        guard handle != nil else { return }
+        let mode = Anime4KMode(saved: preferences.anime4k)
+        guard configuredAnime4K != mode else { return }
+        configuredAnime4K = mode; anime4kError = nil
+        anime4kReply &+= 1
+        do {
+            let paths = try mode.paths()
+            let result = set("glsl-shaders", paths.joined(separator: ":"), replyID: anime4kReply)
+            if result < 0 { failAnime4K() }
+        } catch { failAnime4K() }
+    }
+    private func failAnime4K() {
+        guard let mode = configuredAnime4K, mode != .off, anime4kError == nil else { return }
+        anime4kError = "Anime4K를 적용하지 못해 원본 영상으로 돌아왔습니다. 다른 모드를 선택해 다시 시도할 수 있어요."
+        // Leave the saved choice intact, but do not retry on every subtitle/settings update.
+        set("glsl-shaders", "")
+    }
     private func configure(_ name: String, _ value: String) {
         guard configured[name] != value else { return }
         configured[name] = value; set(name, value)
@@ -189,11 +213,11 @@ final class MPVEngine: ObservableObject {
     func disableSubtitles() { set("sid", "no") }
     /// Asynchronous: mpv copies the value, and the main thread does not wait for the core (which may itself be waiting on
     /// the main thread while the video output starts).
-    func set(_ name: String, _ value: String) {
-        guard let handle, let copy = strdup(value) else { return }
+    @discardableResult func set(_ name: String, _ value: String, replyID: UInt64 = 0) -> Int32 {
+        guard let handle, let copy = strdup(value) else { return -1 }
         defer { free(copy) }
         var pointer: UnsafeMutablePointer<CChar>? = copy
-        _ = withUnsafeMutablePointer(to: &pointer) { mpv_set_property_async(handle, 0, name, MPV_FORMAT_STRING, $0) }
+        return withUnsafeMutablePointer(to: &pointer) { mpv_set_property_async(handle, replyID, name, MPV_FORMAT_STRING, $0) }
     }
     /// mpv calls that wait for the core: off the main thread, one at a time, so a screenshot never overlaps the player
     /// being stopped.
@@ -269,6 +293,14 @@ final class MPVEngine: ObservableObject {
         var ended = false
         while let event = mpv_wait_event(handle, 0), event.pointee.event_id != MPV_EVENT_NONE {
             switch event.pointee.event_id {
+            case MPV_EVENT_SET_PROPERTY_REPLY:
+                if event.pointee.reply_userdata == anime4kReply, event.pointee.error < 0 { failAnime4K() }
+            case MPV_EVENT_LOG_MESSAGE:
+                if let data = event.pointee.data {
+                    let message = data.assumingMemoryBound(to: mpv_event_log_message.self).pointee
+                    if let prefix = message.prefix, let text = message.text,
+                       Anime4KMode.shaderFailed(prefix: String(cString: prefix), text: String(cString: text)) { failAnime4K() }
+                }
             case MPV_EVENT_PROPERTY_CHANGE:
                 guard let property = ObservedProperty(rawValue: event.pointee.reply_userdata), let data = event.pointee.data else { break }
                 let change = data.assumingMemoryBound(to: mpv_event_property.self).pointee
@@ -393,6 +425,7 @@ final class MPVEngine: ObservableObject {
         }
         mediaLayer = nil; pendingStream = nil; pendingSubtitle = nil; fileLoaded = false; position = 0; duration = 0
         observed = [:]; configured = [:]; configuredSpeed = nil; lastNowPlaying = nil
+        configuredAnime4K = nil; anime4kError = nil
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
 }

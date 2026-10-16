@@ -30,7 +30,10 @@ targets:
     platform: iOS
     sources:
       - path: LilacAnime
-        excludes: [Info.plist]
+        excludes: [Info.plist, Resources/Anime4K]
+      - path: LilacAnime/Resources/Anime4K
+        type: folder
+        buildPhase: resources
     info:
       path: LilacAnime/Info.plist
       properties:

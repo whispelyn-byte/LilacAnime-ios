@@ -53,6 +53,7 @@ struct SubtitleChoice: Codable { var relativeFile: String?; var offset: Double }
 struct AppPreferences: Codable, Equatable {
     var playerFit: String? = "contain"
     var playerAspect: String? = nil
+    var anime4k: String? = "off"
     var theme = "dark"
     var titleLanguage: String? = "ko"
     var desktopWorkspace: Bool? = false

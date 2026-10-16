@@ -3,6 +3,54 @@ import LilacShared
 @testable import LilacAnime
 
 final class PlaybackAutomationTests: XCTestCase {
+    @MainActor func testPausedAndBufferingTimeCannotTriggerAutomaticSeek() {
+        let anime = SavedAnime(AnimeSnapshot.shared.decode(content: """
+        {"id":"paused-skip-fixture","title":"Fixture","episodes":[{"id":"1","number":1,"title":"1"}]}
+        """), source: "local")
+        let model = EpisodePlayerModel(item: PlaybackItem(anime: anime, episode: anime.anime.episodes[0]))
+        defer { model.shutdown(library: LibraryStore(file: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))) }
+        model.chapters = [OfflineChapter(type: "op", start: 10, end: 90, score: 1)]
+        let start = Date(timeIntervalSince1970: 1000)
+        model.engine.play()
+        model.updateAutoSkip(position: 20, enabled: true, now: start)
+        model.engine.pause()
+        // The final one-second playback sample can arrive after the pause flag.
+        model.updateAutoSkip(position: 21, enabled: true, now: start.addingTimeInterval(1))
+        model.updateAutoSkip(position: 21, enabled: true, now: start.addingTimeInterval(10))
+        XCTAssertEqual(model.engine.seekRevision, 0)
+        model.engine.play()
+        model.updateAutoSkip(position: 21, enabled: true, now: start.addingTimeInterval(11))
+        XCTAssertEqual(model.engine.seekRevision, 0, "Resume retains one elapsed second")
+        model.updateAutoSkip(position: 21.5, enabled: true, now: start.addingTimeInterval(11.5))
+        model.engine.buffering = true
+        model.updateAutoSkip(position: 21.5, enabled: true, now: start.addingTimeInterval(20))
+        XCTAssertEqual(model.engine.seekRevision, 0)
+        model.engine.buffering = false
+        model.updateAutoSkip(position: 21.5, enabled: true, now: start.addingTimeInterval(21))
+        model.updateAutoSkip(position: 22.25, enabled: true, now: start.addingTimeInterval(21.75))
+        XCTAssertEqual(model.engine.seekRevision, 0)
+        model.updateAutoSkip(position: 22.5, enabled: true, now: start.addingTimeInterval(22))
+        XCTAssertEqual(model.engine.seekRevision, 1)
+        model.updateAutoSkip(position: 22.5, enabled: true, now: start.addingTimeInterval(25))
+        XCTAssertEqual(model.engine.seekRevision, 1, "An asynchronous seek is not sent twice")
+    }
+
+    func testSkipCountdownUsesPlaybackSpeedAndDiscardsSeekJumps() {
+        var countdown = PlaybackSkipCountdown(position: 20, speed: 2, revision: 0)
+        countdown.update(position: 22, speed: 2, revision: 0)
+        XCTAssertEqual(countdown.elapsed, 1)
+        countdown.update(position: 22, speed: 2, revision: 0)
+        XCTAssertEqual(countdown.elapsed, 1, "Paused/buffering samples preserve elapsed time")
+        countdown.update(position: 25, speed: 1, revision: 0)
+        XCTAssertEqual(countdown.elapsed, 2.5)
+        countdown.update(position: 40, speed: 1, revision: 1)
+        XCTAssertEqual(countdown.elapsed, 0, "Seeking is not time spent watching")
+        countdown.update(position: 41, speed: 1, revision: 1)
+        XCTAssertEqual(countdown.elapsed, 1)
+        countdown.update(position: 30, speed: 1, revision: 1)
+        XCTAssertEqual(countdown.elapsed, 0, "A backwards timestamp starts a fresh sample")
+    }
+
     func testCompletionSignalsAdvanceOnlyOnceAndAllowReplay() {
         var completion = PlaybackCompletion()
         XCTAssertTrue(completion.reachedEnd()) // eof-reached with keep-open

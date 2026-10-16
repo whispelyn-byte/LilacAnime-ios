@@ -399,25 +399,47 @@ final class MPVEngine: ObservableObject {
 final class LilacMetalLayer: CAMetalLayer {
     override var drawableSize: CGSize {
         get { super.drawableSize }
-        set { if newValue.width > 1 && newValue.height > 1 { super.drawableSize = newValue } }
+        set {
+            guard newValue.width.isFinite, newValue.height.isFinite,
+                  newValue.width >= 2, newValue.height >= 2, newValue != super.drawableSize else { return }
+            super.drawableSize = newValue
+        }
     }
 }
 final class MPVSurface: UIView {
-    override class var layerClass: AnyClass { LilacMetalLayer.self }
+    // UIKit owns the backing layer; mpv owns the drawable of this separate child layer.
+    // Do not start mpv with the zero-sized frame UIViewRepresentable initially supplies.
+    let metal = LilacMetalLayer()
     weak var engine: MPVEngine?
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        metal.backgroundColor = UIColor.black.cgColor
+        metal.framebufferOnly = true
+        layer.addSublayer(metal)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override func didMoveToWindow() { super.didMoveToWindow(); setNeedsLayout() }
     override func layoutSubviews() {
         super.layoutSubviews()
-        guard let metal = layer as? CAMetalLayer else { return }
-        metal.contentsScale = window?.screen.scale ?? UIScreen.main.scale
-        metal.drawableSize = CGSize(width: bounds.width * metal.contentsScale, height: bounds.height * metal.contentsScale)
+        guard let window, bounds.width > 1, bounds.height > 1 else { return }
+        let scale = window.screen.scale
+        let pixels = CGSize(width: (bounds.width * scale).rounded(), height: (bounds.height * scale).rounded())
+        // Controls/progress can cause layout even while paused. An implicit layer resize
+        // would animate the last frame separately from mpv's video/subtitle viewport.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if metal.frame != bounds { metal.frame = bounds }
+        if metal.contentsScale != scale { metal.contentsScale = scale }
+        if metal.drawableSize != pixels { metal.drawableSize = pixels }
+        CATransaction.commit()
+        engine?.attach(metal)
     }
 }
 struct MPVPlayerView: UIViewRepresentable {
     let engine: MPVEngine
     func makeUIView(context: Context) -> MPVSurface {
-        let view = MPVSurface(); view.backgroundColor = .black; view.engine = engine
-        engine.attach(view.layer as! CAMetalLayer)
+        let view = MPVSurface(frame: .zero); view.backgroundColor = .black; view.engine = engine
         return view
     }
-    func updateUIView(_ view: MPVSurface, context: Context) { engine.attach(view.layer as! CAMetalLayer) }
+    func updateUIView(_ view: MPVSurface, context: Context) { view.setNeedsLayout() }
 }

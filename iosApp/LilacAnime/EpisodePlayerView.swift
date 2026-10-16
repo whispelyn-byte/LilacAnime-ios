@@ -29,10 +29,11 @@ final class EpisodePlayerModel: ObservableObject {
     func notify(_ text: String) { toast = Toast(text: text) }
     /// desktop alongsideNoted: the note about a translation made beside a Korean subtitle is said once a series per launch.
     private static var alongsideNoted: Set<String> = []
-    /// desktop koreanFound: a Korean subtitle (a fansub, Linkkf's) was put on for this episode.
+    /// desktop koreanFound: a Korean subtitle (a fansub, Linkkf's) was put on for this episode.
+
     private var koreanFound = false
     private var searchProvider = "kairan"
-    private var skipEntered: (String, Date)?
+    private var skipEntered: (id: String, countdown: PlaybackSkipCountdown)?
     private var playRequest = UUID()
     private var sourceSubtitle: URL?
     @Published var makers: [SubtitleMaker] = []
@@ -193,17 +194,7 @@ final class EpisodePlayerModel: ObservableObject {
                         }
                     }
             }
-            let chapter = self.chapters.first(where: { position >= $0.start && position < $0.end })
-            let watched = self.watchedByChoice(chapter)
-            if let chapter {
-                if self.skipEntered?.0 != chapter.id { self.skipEntered = (chapter.id, Date()) }
-                if !watched, library.preferences.autoSkip, !self.systemPlayback, chapter.id != self.lastSkipped,
-                   Date().timeIntervalSince(self.skipEntered?.1 ?? Date()) >= 2.5 {
-                    self.lastSkipped = chapter.id; self.engine.seek(chapter.end)
-                }
-            } else {
-                self.skipEntered = nil; self.lastSkipped = ""
-            }
+            self.updateAutoSkip(position: position, enabled: library.preferences.autoSkip)
         }
         chapters = OfflineAnalyzer.chapters(animeID: item.anime.id, episodeID: item.episodeID)
         refreshSeries(token: token)
@@ -290,6 +281,23 @@ final class EpisodePlayerModel: ObservableObject {
         }
     }
     func applyPreferences(_ library: LibraryStore) { configure(library) }
+    func updateAutoSkip(position: Double, enabled: Bool, now: Date = Date()) {
+        guard enabled, !systemPlayback else { skipEntered = nil; return }
+        let chapter = chapters.first(where: { position >= $0.start && position < $0.end })
+        let watched = watchedByChoice(chapter, now: now)
+        guard let chapter else { skipEntered = nil; lastSkipped = ""; return }
+        if skipEntered?.id != chapter.id {
+            skipEntered = (chapter.id, PlaybackSkipCountdown(position: position, speed: engine.speed, revision: engine.seekRevision))
+        } else {
+            skipEntered?.countdown.update(position: position, speed: engine.speed, revision: engine.seekRevision)
+        }
+        // Remember the last played sample even when it arrives after pause. An
+        // unchanged position adds no time, and a seek is allowed only while playing.
+        if !engine.paused, !engine.buffering, !watched, chapter.id != lastSkipped,
+           (skipEntered?.countdown.elapsed ?? 0) >= 2.5 {
+            lastSkipped = chapter.id; engine.seek(chapter.end)
+        }
+    }
     /// A quality/server change reloads the video, but keeps the selected subtitle's styling policy,
     /// including a working translation that has not yet been added to the saved subtitle list.
     func reloadVideo(_ stream: ResolvedStream, resume: Double, paused: Bool = false) {

@@ -278,15 +278,16 @@ struct CatalogSelect: View {
     let title: String
     @Binding var value: String
     let options: [(String, String)]
+    @State private var selecting = false
+    @State private var presentedOptions: [(String, String)] = []
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(title).font(.system(size: 12)).foregroundStyle(LilacStyle.muted)
-            Menu {
-                ForEach(options.indices, id: \.self) { index in
-                    Button { value = options[index].0 } label: {
-                        if value == options[index].0 { Label(options[index].1, systemImage: "checkmark") } else { Text(options[index].1) }
-                    }
-                }
+            Button {
+                // Freeze the choices for this presentation. Catalog progress/title updates
+                // must not rebuild a native menu and reset its internal scroll position.
+                presentedOptions = options
+                selecting = true
             } label: {
                 HStack {
                     Text(options.first { $0.0 == value }?.1 ?? value).font(.system(size: 13)).lineLimit(1)
@@ -294,7 +295,49 @@ struct CatalogSelect: View {
                     Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(LilacStyle.muted)
                 }.foregroundStyle(LilacStyle.text).padding(.horizontal, 10).frame(maxWidth: .infinity, minHeight: 38)
                     .background(LilacStyle.card2, in: RoundedRectangle(cornerRadius: 7)).overlay(RoundedRectangle(cornerRadius: 7).stroke(LilacStyle.line))
-            }.accessibilityLabel(title)
+            }.buttonStyle(.plain).accessibilityLabel(title)
+                .accessibilityIdentifier("catalog-select-" + title)
+                .sheet(isPresented: $selecting) {
+                    CatalogOptionSheet(title: title, value: $value, options: presentedOptions)
+                        .presentationDetents([.large]).presentationDragIndicator(.visible)
+                }
         }
+    }
+}
+
+struct CatalogOptionSheet: View {
+    let title: String
+    @Binding var value: String
+    let options: [(String, String)]
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(title).font(.headline)
+                Spacer()
+                Button("닫기") { dismiss() }.accessibilityIdentifier("catalog-options-close")
+            }.padding(20)
+            Divider()
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(options.indices, id: \.self) { index in
+                        let option = options[index]
+                        Button {
+                            value = option.0
+                            dismiss()
+                        } label: {
+                            HStack {
+                                Text(option.1).multilineTextAlignment(.leading)
+                                Spacer()
+                                if value == option.0 { Image(systemName: "checkmark").foregroundStyle(LilacStyle.accent) }
+                            }.foregroundStyle(LilacStyle.text).padding(.horizontal, 20).padding(.vertical, 16)
+                                .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading).contentShape(Rectangle())
+                        }.buttonStyle(.plain).accessibilityIdentifier("catalog-option-" + title + "-" + String(index))
+                            .accessibilityAddTraits(value == option.0 ? .isSelected : [])
+                    }
+                }
+            }.accessibilityIdentifier("catalog-options-scroll")
+        }
+        .background(LilacStyle.background)
     }
 }

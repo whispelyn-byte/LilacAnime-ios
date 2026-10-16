@@ -21,8 +21,8 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.4.12"
-    CURRENT_PROJECT_VERSION: "54"
+    MARKETING_VERSION: "0.4.13"
+    CURRENT_PROJECT_VERSION: "55"
     ENABLE_USER_SCRIPT_SANDBOXING: NO
 targets:
   LilacAnime:

@@ -1,7 +1,29 @@
 import XCTest
+import UIKit
 @testable import LilacAnime
 
 final class PlayerInteractionTests: XCTestCase {
+    @MainActor func testMetalSurfaceKeepsViewportPixelsAcrossRotationAndRepeatedLayout() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 844, height: 390))
+        let view = MPVSurface(frame: window.bounds)
+        window.addSubview(view)
+        view.layoutSubviews()
+        let scale = window.screen.scale
+        XCTAssertEqual(view.metal.frame, view.bounds)
+        XCTAssertEqual(view.metal.drawableSize, CGSize(width: 844 * scale, height: 390 * scale))
+        for _ in 0..<20 { view.layoutSubviews() }
+        XCTAssertEqual(view.metal.drawableSize, CGSize(width: 844 * scale, height: 390 * scale))
+        XCTAssertTrue(view.metal.animationKeys()?.isEmpty ?? true)
+        view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        view.layoutSubviews()
+        XCTAssertEqual(view.metal.frame, view.bounds)
+        XCTAssertEqual(view.metal.drawableSize, CGSize(width: 390 * scale, height: 844 * scale))
+        view.metal.drawableSize = CGSize(width: 1, height: 1)
+        XCTAssertEqual(view.metal.drawableSize, CGSize(width: 390 * scale, height: 844 * scale))
+        view.frame = .zero; view.layoutSubviews()
+        XCTAssertEqual(view.metal.drawableSize, CGSize(width: 390 * scale, height: 844 * scale))
+    }
+
     func testIPadFitModesPreserveCropOrStretchAcrossRotation() {
         for viewport in [CGSize(width: 1024, height: 768), CGSize(width: 768, height: 1024)] {
             let contain = PlayerPresentation(aspect: .original, fit: .contain).stageSize(in: viewport)

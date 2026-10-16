@@ -153,7 +153,10 @@ class SourceRepository(private val client: HttpClient, private val details: Deta
             val items = all.drop((page - 1) * 36).take(36)
             return SourceCatalogPage(items, page * 36 < all.size, items.joinToString("|") { it.id })
         }
-        if (source == "ohli24" && query.isBlank()) return desktop.ohliCatalog(page, filter)
+        if (source == "ohli24") {
+            val result = desktop.ohliCatalog(page, filter)
+            return if (query.isBlank()) result else result.copy(items = result.items.filter { anime -> listOf(anime.title, anime.native, anime.english, anime.romaji).any { it.contains(query.trim(), true) } })
+        }
         val raw = if (source == "miruro") desktop.browse(source, query, page, filter, catalogSearch = true) else browse(source, query = query, page = page, filter = filter)
         val items = if (source == "ohli24" && filter.format.isNotBlank()) raw.filter { it.format.equals(filter.format, true) } else raw
         return SourceCatalogPage(items, if (source == "linkani") desktop.hasNextLinkaniPage(page, filter, query) else if (filter.sort == "updated" && source == "ohli24") false else if (source == "miruro") desktop.hasNextCatalogPage(page, filter, query) else raw.isNotEmpty(), raw.joinToString("|") { it.id })

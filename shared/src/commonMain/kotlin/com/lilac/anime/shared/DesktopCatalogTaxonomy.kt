@@ -56,7 +56,7 @@ object DesktopCatalogTaxonomy {
         filter.extras.filterValues { it.isNotBlank() }.forEach { (key, raw) ->
             val field = facets.extraFilters.firstOrNull { it.key == key } ?: error("이 소스에서 지원하지 않는 필터입니다.")
             val value = raw.trim()
-            require(value.length <= field.maxLength) { "${field.label} 입력이 너무 깁니다." }
+            if (field.type != "select") require(value.length <= field.maxLength) { "${field.label} 입력이 너무 깁니다." }
             if (field.type == "select") require(field.options.any { it.value == value }) { "${field.label}를 다시 선택해 주세요." }
             if (field.type == "number") require(value.toDoubleOrNull()?.let { it.isFinite() && it in 0.0..100.0 } == true) { "${field.label} 범위를 확인해 주세요." }
         }

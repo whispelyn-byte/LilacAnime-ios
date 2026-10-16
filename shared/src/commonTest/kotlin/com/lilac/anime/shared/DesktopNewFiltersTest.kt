@@ -93,6 +93,8 @@ class DesktopNewFiltersTest {
         try {
             val page = repository.catalog("ohli24", 2, BrowseFilter(genres = listOf("액션"), year = "1990s", format = "Movie"))
             assertEquals("1995", page.items.single().year); assertTrue(page.hasMore)
+            val searched = repository.catalog("ohli24", 2, BrowseFilter(genres = listOf("액션"), year = "1990s", format = "Movie"), query = "absent")
+            assertTrue(searched.items.isEmpty()); assertTrue(searched.hasMore)
         } finally { repository.close() }
     }
 }

@@ -60,7 +60,7 @@ class DesktopNewFiltersTest {
     }
     @Test fun reanimeSendsExtraFiltersWithYearSort() = runTest {
         val client = HttpClient(MockEngine { request ->
-            if (request.url.parameters["facets"] != null) respond("""{"facets":{"genres":{"Action":2},"format":{"TV":2},"tags":{"Magic":1}}}""", headers = headersOf(HttpHeaders.ContentType, "application/json"))
+            if (request.url.parameters["facets"] != null) respond("""{"facets":{"genres":{"Action":2},"format":{"TV":2,"Movie":1,"MOVIE":1,"PV":1},"tags":{"Magic":1}}}""", headers = headersOf(HttpHeaders.ContentType, "application/json"))
             else {
                 assertEquals("year_desc", request.url.parameters["sort"])
                 assertEquals("Magic", request.url.parameters["tag"]); assertEquals("JP", request.url.parameters["country"])
@@ -69,7 +69,10 @@ class DesktopNewFiltersTest {
             }
         })
         val repository = SourceRepository(client)
-        try { repository.catalog("reanime", 1, BrowseFilter(sort = "year", extras = mapOf("tag" to "Magic", "country" to "JP", "studio" to "Kyoto Animation"))) } finally { repository.close() }
+        try {
+            assertEquals(listOf("TV", "Movie", "MOVIE", "PV"), repository.filters("reanime").formats, "Keep the original source choices and values")
+            repository.catalog("reanime", 1, BrowseFilter(sort = "year", extras = mapOf("tag" to "Magic", "country" to "JP", "studio" to "Kyoto Animation")))
+        } finally { repository.close() }
     }
     @Test fun animenosubSendsStudioStatusSubAndExplicitOrder() = runTest {
         val client = HttpClient(MockEngine { request ->

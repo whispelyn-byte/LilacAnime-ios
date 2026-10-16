@@ -19,7 +19,7 @@ Extra-only selections use the remote catalog. Miruro detailed catalog updates so
 
 Source-specific validation rejects incompatible conditions: RE:Anime extras with episode-update sorting, Miruro upcoming titles with score bounds, Linkani genre plus weekday, and Ohli24 movies plus airing conditions or finished shows plus weekday. RE:Anime switches to popularity order when adding extra conditions from episode-update order. Explicit source ordering hides the general sort chips.
 
-All selects reuse the existing scrollable options sheet; parent catalog refreshes do not replace its presented choices. Conditions remain draft values until Apply is pressed. Reset clears extra conditions too.
+All selects reuse the existing scrollable options sheet; parent catalog refreshes do not replace its presented choices. RE:Anime preserves the original server format values, including case variants, as requested, rather than folding or removing choices. Conditions remain draft values until Apply is pressed. Reset clears extra conditions too.
 
 ## Translation
 
@@ -33,4 +33,4 @@ Desktop Electron CORS/WebGL integration is not copied into native iOS. Anime4K u
 
 Validation run: [GitHub Actions 38894090599](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/38894090599). Results will be recorded after completion. Added regression tests cover taxonomy, API request parameters, pagination, rejected combinations, translation cancellation and Swift/Kotlin validation error bridging.
 
-Live source responses and physical-device rendering/performance are not covered by the fixtures. These commits do not create a new public release.
+Read-only live taxonomy checks on 2026-10-16 confirmed RE:Anime's formats/tags (421 tags, including case variants in formats) and Animenosub's studio/status/sub/order/season input groups. Linkani and Ohli24 connections were reset by the remote host during this check; their request behavior is covered by fixtures. Physical-device rendering/performance is not covered. These commits do not create a new public release.

@@ -137,7 +137,7 @@ class SourceRepository(private val client: HttpClient, private val details: Deta
             val raw = getText("https://reanime.to/api/v1/search", mapOf("facets" to "true", "limit" to "0"))
             val it = ReAnimeHarParser.parseFacets(raw)
             val root = Json.parseToJsonElement(raw).jsonObject
-            SourceFilters(it.genres, it.years, root.obj("facets").obj("format").keys.map { value -> value.uppercase() }.ifEmpty { it.formats }, it.statuses, listOf("WINTER", "SPRING", "SUMMER", "FALL"), it.studios, supportsYear = true, supportsSeason = true, sorts = listOf("popular", "year", "updated", "score"), extraFilters = DesktopCatalogTaxonomy.reanime(root), note = "태그·상태·국가·더빙·등급 등을 선택하세요. 제작사·등장인물·제작진은 사이트의 영문 분류명을 입력하세요.")
+            SourceFilters(it.genres, it.years, root.obj("facets").obj("format").keys.toList().ifEmpty { it.formats }, it.statuses, listOf("WINTER", "SPRING", "SUMMER", "FALL"), it.studios, supportsYear = true, supportsSeason = true, sorts = listOf("popular", "year", "updated", "score"), extraFilters = DesktopCatalogTaxonomy.reanime(root), note = "태그·상태·국가·더빙·등급 등을 선택하세요. 제작사·등장인물·제작진은 사이트의 영문 분류명을 입력하세요.")
         }
         "linkkf" -> linkkf.filters().let { it.copy(supportsYear = it.years.isNotEmpty(), note = "연도는 Linkkf 분류를 따릅니다. 별도의 분기 정보는 제공하지 않습니다.") }
         "animenosub" -> DesktopCatalogTaxonomy.animenosub(getText("https://animenosub.to/anime/"))

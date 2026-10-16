@@ -7,9 +7,16 @@ final class CatalogFilterScrollTests: XCTestCase {
     @MainActor func testSelectionListKeepsScrollOffsetWhenItsParentRefreshes() async throws {
         let options = (0..<80).map { ("server-\($0)", "장르 \($0)") }
         let host = UIHostingController(rootView: CatalogOptionSheet(title: "장르", value: .constant(""), options: options))
+        let previousWindow = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows).first(where: \.isKeyWindow)
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
         window.rootViewController = host; window.makeKeyAndVisible()
-        defer { window.isHidden = true; window.rootViewController = nil }
+        defer {
+            window.isHidden = true; window.rootViewController = nil
+            // Other hosted tests (including WebKit converters) need the app's
+            // original key window after this temporary UI fixture is removed.
+            previousWindow?.makeKeyAndVisible()
+        }
         try await Task.sleep(nanoseconds: 100_000_000)
         host.view.layoutIfNeeded()
         func findScroll(_ view: UIView) -> UIScrollView? {

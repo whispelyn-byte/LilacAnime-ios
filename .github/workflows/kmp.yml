@@ -55,6 +55,7 @@ jobs:
         with:
           node-version: '22'
       - run: node iosApp/scripts/ohli-capture.test.cjs
+      - run: node iosApp/scripts/flix-capture.test.cjs
       - uses: gradle/actions/setup-gradle@v4
       - run: sh ./gradlew :shared:jvmTest
       - uses: actions/upload-artifact@v4

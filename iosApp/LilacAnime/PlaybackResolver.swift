@@ -77,6 +77,7 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
     private var candidateTasks: [URL: Task<Void, Never>] = [:]
     private var pendingOhli: [(url: URL, frame: URL?, kind: String, manifest: String?)] = []
     private var lastOhliCandidate: Task<Void, Never>?
+    private var flixKey: String?
     private let desktop = IosServices()
     private let agent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1"
 
@@ -164,14 +165,20 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
             return
         }
         if ["reanime", "animenosub"].contains(item.anime.source) {
-            desktop.desktopServers(sourceKey: item.anime.source, url: item.watchURL.absoluteString, number: Int32(item.number), anilist: item.anime.anime.anilistId?.int32Value ?? 0) { [weak self] servers, _ in
+            desktop.desktopServers(sourceKey: item.anime.source, url: item.watchURL.absoluteString, number: Int32(item.number), anilist: item.anime.anime.anilistId?.int32Value ?? 0) { [weak self] servers, failure in
                 Task { @MainActor in
                     guard let self, token == self.generation else { return }
                     self.servers = servers ?? []
                     func rank(_ server: DesktopPlaybackServer) -> Int { server.label == preferred ? 0 : server.kind == (preferRaw ? "raw" : "sub") ? 1 : server.kind == "sub" ? 2 : server.kind == "raw" ? 3 : 4 }
                     self.serverCandidates = item.anime.source == "animenosub" ? self.servers.sorted { rank($0) < rank($1) } : self.servers
-                    if item.anime.source == "reanime", !self.serverCandidates.isEmpty { self.raceServers(self.serverCandidates, item: item) }
-                    else { self.loadNextServer(fallback: item.watchURL) }
+                    if item.anime.source == "reanime" {
+                        guard !self.serverCandidates.isEmpty else {
+                            self.loading = false
+                            self.error = failure ?? "이 작품은 현재 RE:Anime에서 재생할 수 없습니다. 다른 콘텐츠 소스를 선택해주세요."
+                            return
+                        }
+                        self.raceServers(self.serverCandidates, item: item)
+                    } else { self.loadNextServer(fallback: item.watchURL) }
                 }
             }
             return
@@ -195,7 +202,9 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
         clearSelectedResolver()
         generation = UUID(); webView.stopLoading(); timeout?.cancel(); streams = []; subtitles = []; error = nil; loading = true
         serverCandidates = servers.filter { $0.url != server.url }; serverLabel = server.label
-        if let url = URL(string: server.url) { loadPage(url, seconds: 15) }
+        if let item = currentItem, item.anime.source == "reanime" {
+            raceServers([server], item: item)
+        } else if let url = URL(string: server.url) { loadPage(url, seconds: 15) }
     }
     private func loadNextServer(fallback: URL? = nil) {
         timeout?.cancel()
@@ -220,14 +229,18 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
                 guard let self, token == self.generation, !Task.isCancelled else { winner.shutdown(); return }
                 self.selectedResolver = winner
                 // Keep the winner alive: captions can arrive after the first video URL.
-                winner.$streams.sink { [weak self] in self?.streams = $0 }.store(in: &self.selectedSubscriptions)
+                winner.$streams.sink { [weak self] in self?.streams = Array($0.prefix(1)) }.store(in: &self.selectedSubscriptions)
                 winner.$subtitles.sink { [weak self] in self?.subtitles = $0 }.store(in: &self.selectedSubscriptions)
                 self.serverLabel = winner.serverLabel
                 self.loading = false; self.error = nil
             } catch {
                 guard let self, token == self.generation, !Task.isCancelled else { return }
-                self.error = nil; self.serverLabel = ""
-                self.loadPage(item.watchURL, seconds: 45)
+                self.serverLabel = ""
+                if item.anime.source == "reanime" {
+                    self.loading = false; self.error = error.localizedDescription
+                } else {
+                    self.error = nil; self.loadPage(item.watchURL, seconds: 45)
+                }
             }
         }
     }
@@ -240,29 +253,36 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
         resolver.currentItem = item; resolver.silent = true; resolver.serverLabel = server.label; resolver.loading = true
         resolver.loadPage(url, seconds: 30)
         let deadline = Date().addingTimeInterval(30)
-        var checked = Set<ResolvedStream>()
-        var failure: Error?
-        while Date() < deadline {
+        let flix = url.host?.lowercased().contains("flixcloud.cc") == true
+        var readiness = DesktopFlixReadiness()
+        while resolver.streams.isEmpty && Date() < deadline {
             try Task.checkCancellation()
-            for stream in resolver.streams where checked.insert(stream).inserted {
-                do {
-                    try await PlaybackStreamProbe.validate(stream)
-                    try Task.checkCancellation()
-                    // Publish the verified candidate first, not an earlier URL
-                    // captured without its playlist key.
-                    let latest = resolver.streams.first { $0.url == stream.url } ?? stream
-                    resolver.streams = [latest]
-                    return resolver
-                } catch is CancellationError { throw CancellationError() }
-                catch { failure = error }
-            }
-            if !resolver.loading && resolver.streams.isEmpty { break }
+            if !resolver.loading { break }
             try await Task.sleep(nanoseconds: 100_000_000)
         }
-        try Task.checkCancellation()
-        throw failure ?? SubtitleFiles.failure(resolver.error ?? "영상 서버 연결에 실패했습니다.")
+        guard !resolver.streams.isEmpty else {
+            throw SubtitleFiles.failure(resolver.error ?? "영상 주소를 찾지 못했습니다 (응답 시간 초과).")
+        }
+        if !flix { try Task.checkCancellation(); return resolver }
+        // Like desktop, collect master or separate video/audio URLs, then wait for
+        // the player key. Playlist and media loading belongs to the playback proxy.
+        while true {
+            try Task.checkCancellation()
+            let value = try? await resolver.webView.evaluateJavaScript("window.__pk || (()=>{try{return JSON.parse(window.__lilacReAnimeFlixResult||'{}').pk||''}catch(_){return ''}})()")
+            if let key = value as? String, !key.isEmpty {
+                for index in resolver.streams.indices { resolver.streams[index].manifestKey = key }
+            }
+            try Task.checkCancellation()
+            if let selected = try readiness.select(resolver.streams, now: Date().timeIntervalSinceReferenceDate) {
+                resolver.streams = [selected]
+                return resolver
+            }
+            try await Task.sleep(nanoseconds: 150_000_000)
+        }
     }
+
     private func loadPage(_ url: URL, seconds: Double) {
+        flixKey = nil
         let token = generation
         var request = URLRequest(url: url)
         request.setValue(currentItem?.watchURL.absoluteString ?? "", forHTTPHeaderField: "Referer")
@@ -324,6 +344,13 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
             guard OhliPlayback.accepts(kind: kind, frame: message.frameInfo.request.url, selected: ohliPlayer) else { return }
             if kind == "ohliCaption" { addOhliCaption(url, referer: message.frameInfo.request.url?.absoluteString ?? ""); return }
             verifyOhli(url, hls: body["kind"] == "ohliVariant", manifest: body["manifest"])
+            return
+        }
+        if body["kind"] == "flixKey" {
+            if let key = body["pk"], !key.isEmpty {
+                flixKey = key
+                for index in streams.indices { streams[index].manifestKey = key }
+            }
             return
         }
         if body["kind"] == "subtitle" {
@@ -389,7 +416,7 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
     }
     private func capture(_ value: String, referer: String, key: String?) {
         guard let url = URL(string: value) else { return }
-        let manifestKey = key?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        let manifestKey = key?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? flixKey
         if let index = streams.firstIndex(where: { $0.url == url }) {
             if let key = manifestKey { streams[index].manifestKey = key }
             return
@@ -410,7 +437,7 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
                 return
             }
             self.streams.append(ResolvedStream(label: self.serverLabel.isEmpty ? (url.pathExtension.uppercased().isEmpty ? "영상" : url.pathExtension.uppercased()) : self.serverLabel,
-                url: url, referer: referer, headers: headers, manifestKey: manifestKey, subtitles: self.subtitles))
+                url: url, referer: referer, headers: headers, manifestKey: manifestKey ?? self.flixKey, subtitles: self.subtitles))
             self.loading = false; self.error = nil; self.timeout?.cancel()
         }
     }
@@ -420,13 +447,30 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
       const emit = (u, kind='video', label='', language='', referer=location.href) => {
         try {
           const url = new URL(u, location.href).href;
+          if (/runative|magsrv|juneworewyjyna|pxltag/i.test(url)) return;
           if (seen.has(url)) return;
           if (kind === 'video' && !/\\.(m3u8|mp4|mkv|webm)(?:[?#]|$)/i.test(url)) return;
           seen.add(url);
           window.webkit.messageHandlers.lilacMedia.postMessage({url,kind,label,language,referer,pk:typeof window.__pk==='string'?window.__pk:''});
         } catch (_) {}
       };
+      let reportedKey = '';
       const scan = () => {
+        if (location.hostname.includes('flixcloud')) {
+          let key = typeof window.__pk === 'string' ? window.__pk : '';
+          try { key = key || JSON.parse(window.__lilacReAnimeFlixResult || '{}').pk || ''; } catch (_) {}
+          if (key && key !== reportedKey) {
+            reportedKey = key;
+            window.webkit.messageHandlers.lilacMedia.postMessage({url:location.href,kind:'flixKey',pk:key});
+          }
+          document.querySelectorAll('video').forEach(v=>{v.muted=true;v.play().catch(()=>{})});
+          try {
+            const api=window.jwplayer?.(), item=api?.getPlaylistItem?.();
+            [item?.file,...(item?.sources||[]).map(s=>s.file)].filter(Boolean).forEach(u=>emit(u));
+            api?.play?.();
+          } catch (_) {}
+          performance.getEntriesByType('resource').forEach(e=>emit(e.name));
+        }
         document.querySelectorAll('video,source').forEach(v=>emit(v.currentSrc||v.src));
         document.querySelectorAll('track[src]').forEach(t=>emit(t.src,'subtitle',t.label,t.srclang));
       };

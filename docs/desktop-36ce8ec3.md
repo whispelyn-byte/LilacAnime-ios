@@ -2,6 +2,8 @@
 
 Source: [36ce8ec3](https://github.com/whispelyn-byte/LilacAnime-desktop/commit/36ce8ec3bfb32de17ca621bfac4698cf0b5854dc), 2026-10-16.
 
+Final remote check also covered [6664dd8 / v0.5.24](https://github.com/whispelyn-byte/LilacAnime-desktop/commit/6664dd868bd5d5852b5a384b364e76c4985590fc). That subsequent commit only changes desktop package version numbers from 0.5.23 to 0.5.24; no additional feature code needs porting.
+
 The iOS `codex/ios-anime4k` branch includes the existing native Anime4K profiles and playback-time auto-skip countdown, plus the source-specific catalog filters from this desktop commit.
 
 ## Catalog
@@ -31,6 +33,8 @@ Kotlin coroutine retry delays were already cancellable. Explicit cancellation ch
 
 Desktop Electron CORS/WebGL integration is not copied into native iOS. Anime4K uses the previously verified mpv GLSL implementation; see [anime4k-ios.md](anime4k-ios.md) for profile parity, PiP and screenshot limitations.
 
-Validation run: [GitHub Actions 38894090599](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/38894090599). Results will be recorded after completion. Added regression tests cover taxonomy, API request parameters, pagination, rejected combinations, translation cancellation and Swift/Kotlin validation error bridging.
+Validation run: [GitHub Actions 38895790116](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/38895790116), code commit `036c9a3ff486a6359625d3e45d1fce481734d67d`: **passed**. Shared JVM tests: 121, zero failures; Kotlin/Native simulator tests passed; Swift unit tests: 142, zero failures; iPhone UI tests: 6, zero failures; iPad UI tests: 4, zero failures. The universal device Release build and IPA packaging passed. Added regression tests cover taxonomy, API request parameters, pagination, rejected combinations, translation cancellation and Swift/Kotlin validation error bridging.
+
+Downloaded development IPA: 25,933,944 bytes, version 0.4.13/build 55 (development artifact, not a new public release). SHA-256: `1513abeceeb6962430a9de7cb1c4980e6cc8dcb973f1d1159046a428b884af8c`. Verified exactly seven GLSL files and one Anime4K MIT license in the IPA against all eight pinned upstream hashes.
 
 Read-only live taxonomy checks on 2026-10-16 confirmed RE:Anime's formats/tags (421 tags, including case variants in formats) and Animenosub's studio/status/sub/order/season input groups. Linkani and Ohli24 connections were reset by the remote host during this check; their request behavior is covered by fixtures. Physical-device rendering/performance is not covered. These commits do not create a new public release.

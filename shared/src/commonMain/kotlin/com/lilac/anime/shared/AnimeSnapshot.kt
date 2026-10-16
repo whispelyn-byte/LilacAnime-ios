@@ -11,6 +11,7 @@ object AnimeSnapshot {
         detailUrl = "https://reanime.to/anime/" + relation.id.removePrefix("reanime:"))
     fun fullFilter(genre: String, year: String, season: String, format: String, status: String, studio: String): BrowseFilter = BrowseFilter(genre.split(',').map(String::trim).filter(String::isNotBlank), year, season, format, status, studio)
     fun sortedFilter(genre: String, year: String, season: String, format: String, status: String, studio: String, sort: String): BrowseFilter = fullFilter(genre, year, season, format, status, studio).copy(sort = sort)
+    fun extendedFilter(genre: String, year: String, season: String, format: String, sort: String, extras: Map<String, String>): BrowseFilter = sortedFilter(genre, year, season, format, "", "", sort).copy(extras = extras.filterValues { it.isNotBlank() }.mapValues { it.value.trim() })
     fun filter(genre: String, year: String, format: String, status: String): BrowseFilter = BrowseFilter(
         genres = genre.split(',').map(String::trim).filter(String::isNotBlank), year = year, format = format, status = status)
 }

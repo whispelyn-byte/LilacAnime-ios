@@ -13,6 +13,8 @@ struct SettingsView: View {
     @State private var apiModels: [String] = []
     @State private var apiStatus: String?
     @State private var testingAPI = false
+    @State private var draftQwenRegion = "international"
+    @State private var apiRequest = UUID()
     @State private var previousProvider = ""
     @State private var error: String?
     @State private var importFont = false
@@ -51,12 +53,12 @@ struct SettingsView: View {
             }.background(LilacStyle.background)
             .navigationTitle("설정").toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: Destination.self) { _ in LocalModelsView() }
-            .onAppear { previousProvider = store.preferences.translationProvider; apiKey = SecureKeys.load(store.preferences.translationProvider); tmdbKey = SecureKeys.load("tmdb") }
+            .onAppear { previousProvider = store.preferences.translationProvider; apiKey = SecureKeys.load(store.preferences.translationProvider); draftQwenRegion = store.preferences.qwenRegion; tmdbKey = SecureKeys.load("tmdb") }
             .onChange(of: store.preferences.translationProvider) { provider in
                 var models = store.preferences.translationModels ?? [:]
                 if !previousProvider.isEmpty { models[previousProvider] = store.preferences.translationModel }
                 store.preferences.translationModels = models; store.preferences.translationModel = models[provider] ?? ""
-                previousProvider = provider; apiKey = SecureKeys.load(provider); apiModels = []; apiStatus = nil
+                previousProvider = provider; apiKey = SecureKeys.load(provider); draftQwenRegion = store.preferences.qwenRegion; apiModels = []; apiStatus = nil; apiRequest = UUID(); testingAPI = false
             }
             .onChange(of: store.preferences.translationModel) { model in
                 var models = store.preferences.translationModels ?? [:]; models[store.preferences.translationProvider] = model; store.preferences.translationModels = models
@@ -243,16 +245,15 @@ struct SettingsView: View {
         let provider = store.preferences.translationProvider
         if provider == "qwen" {
             SettingBlock(title: "Qwen 지역", note: "API 키를 만든 지역을 고르세요. 키는 그 지역에서만 쓸 수 있습니다.") {
-                SettingChoices(options: [("international", "국제 (싱가포르)"), ("china", "중국 (베이징)")], selection: $store.preferences.qwenRegion)
+                SettingChoices(options: [("international", "국제 (싱가포르)"), ("china", "중국 (베이징)")], selection: $draftQwenRegion)
             }
         }
         SettingBlock(title: SubtitleLabels.engine(provider) + " API 키", note: apiStatus) {
             HStack(spacing: 6) {
                 SecureField(SubtitleLabels.engine(provider) + " API 키", text: $apiKey).textInputAutocapitalization(.never).autocorrectionDisabled().settingField()
                 Button("저장") {
-                    do { try SecureKeys.save(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), name: provider); error = nil; fetchCloudModels() }
-                    catch { self.error = error.localizedDescription }
-                }.buttonStyle(SettingButtonStyle())
+                    fetchCloudModels(save: true)
+                }.buttonStyle(SettingButtonStyle()).disabled(testingAPI || apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         if provider != "deepl" {
@@ -316,14 +317,25 @@ struct SettingsView: View {
             }
         }
     }
-    private func fetchCloudModels() {
+    private func fetchCloudModels(save: Bool = false) {
         testingAPI = true
         let provider = store.preferences.translationProvider
-        let config = TranslationConfig(provider: provider, key: apiKey.trimmingCharacters(in: .whitespacesAndNewlines), model: "", region: store.preferences.qwenRegion, terminology: "")
+        let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines), region = draftQwenRegion
+        let request = UUID(); apiRequest = request
+        let config = TranslationConfig(provider: provider, key: key, model: "", region: region, terminology: "")
         tmdbService.cloudModels(config: config) { values, failure in
-            guard provider == store.preferences.translationProvider else { testingAPI = false; return }
-            apiModels = values ?? []; apiStatus = failure ?? "연결했어요 · 모델 \(apiModels.count)개"; testingAPI = false
-            if failure == nil && store.preferences.translationModel.isEmpty { store.preferences.translationModel = CloudModelRules.shared.default(provider: provider, names: apiModels) }
+            guard request == apiRequest, provider == store.preferences.translationProvider else { return }
+            testingAPI = false
+            guard key == apiKey.trimmingCharacters(in: .whitespacesAndNewlines), region == draftQwenRegion else { apiStatus = "입력이 바뀌었습니다. 다시 확인하세요."; return }
+            guard failure == nil, let values, !values.isEmpty else { apiStatus = failure ?? "사용 가능한 모델이 없습니다."; return }
+            do {
+                if save {
+                    try SecureKeys.save(key, name: provider)
+                    if provider == "qwen" { store.preferences.qwenRegion = region }
+                    if !values.contains(store.preferences.translationModel) { store.preferences.translationModel = CloudModelRules.shared.default(provider: provider, names: values) }
+                }
+                apiModels = values; apiStatus = "연결했어요 · 모델 \(values.count)개"; error = nil
+            } catch { apiStatus = error.localizedDescription }
         }
     }
 }

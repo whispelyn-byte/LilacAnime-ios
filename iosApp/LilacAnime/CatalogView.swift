@@ -16,6 +16,7 @@ final class CatalogModel: ObservableObject {
     @Published var season = ""
     @Published var studio = ""
     @Published var sort = ""
+    @Published var extras: [String: String] = [:]
     @Published var filters: SourceFilters?
     @Published var filterError: String?
     @Published var filtersLoading = false
@@ -24,7 +25,7 @@ final class CatalogModel: ObservableObject {
     func loadFilters() {
         filters = nil; filterError = nil; filtersLoading = true; let requestedSource = source
         if UIShowcase.enabled {
-            filters = SourceFilters(genres: ["판타지", "모험"], years: ["2026"], formats: ["TV", "MOVIE"], statuses: [], seasons: ["WINTER", "SPRING", "SUMMER", "FALL"], studios: [], supportsYear: true, supportsSeason: true, sorts: ["popular", "year", "score"], note: "", seasonValues: [])
+            filters = SourceFilters(genres: ["판타지", "모험"], years: ["2026"], formats: ["TV", "MOVIE"], statuses: [], seasons: ["WINTER", "SPRING", "SUMMER", "FALL"], studios: [], supportsYear: true, supportsSeason: true, sorts: ["popular", "year", "score"], note: "", seasonValues: [], extraFilters: [])
             filtersLoading = false; return
         }
         filterService.cancel()
@@ -46,7 +47,7 @@ final class CatalogModel: ObservableObject {
         let token = generation
         if mode == "catalog" {
             service.catalog(sourceKey: source, query: query, page: page,
-                filter: AnimeSnapshot.shared.sortedFilter(genre: genre, year: year, season: season, format: format, status: status, studio: studio, sort: sort)) { [weak self] result, failure in
+                filter: AnimeSnapshot.shared.extendedFilter(genre: genre, year: year, season: season, format: format, sort: sort, extras: extras)) { [weak self] result, failure in
                 guard let self, token == self.generation else { return }
                 self.loading = false; self.error = failure
                 guard let result else { return }

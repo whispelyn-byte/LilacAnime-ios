@@ -189,7 +189,7 @@ object DesktopSourceParser {
             native = item.text("original_title").ifBlank { info["원제"].orEmpty() },
             poster = if (thumbnail.isBlank()) "" else "$OHLI24_WEB/storage/$thumbnail",
             score = item.text("rating").toDoubleOrNull() ?: 0.0,
-            year = Regex("\\d{4}").find(info["방영일"].orEmpty().ifBlank { item.text("published_at") })?.value.orEmpty(),
+            year = Regex("\\d{4}").find(info["방영일"].orEmpty().ifBlank { info["상영일"].orEmpty() }.ifBlank { item.text("published_at") })?.value.orEmpty(),
             format = if (item.text("category") == "극장판") "MOVIE" else "TV",
             totalEpisodes = item.number("episode_total")?.takeIf { it > 0 }, availableEpisodes = count,
             status = item.text("category").ifBlank { if (item.text("eps").isNotBlank()) "방영중" else "" },
@@ -414,17 +414,20 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
             val pages = cursors.getOrPut(key) { mutableMapOf() }
             if (page > 1 && pages[page] == null) return emptyList()
             val params = mutableMapOf("limit" to "15", "sort" to "-popularity")
-            params["sort"] = when(filter.sort) { "score" -> "-score"; "year" -> "-started_on"; else -> "-popularity" }
+            params["sort"] = when(filter.sort) { "score" -> "-score"; "year" -> "-started_on"; "updated" -> "-updated_at"; else -> "-popularity" }
             if (query.isNotBlank()) params["q"] = query
             pages[page]?.let { params["cursor"] = it }
             if (filter.year.isNotBlank()) params["season_year"] = filter.year
             if (filter.format.isNotBlank()) params["format"] = filter.format
             if (filter.season.isNotBlank()) params["season"] = filter.season
             if (filter.status.isNotBlank()) params["status"] = filter.status
+            if (filter.genres.isNotEmpty()) params["genre_all"] = filter.genres.joinToString(",")
+            mapOf("status" to "status", "country" to "country_of_origin", "source" to "source", "adult" to "is_adult", "scoreMin" to "score_gte", "scoreMax" to "score_lte").forEach { (key, api) -> filter.extras[key]?.takeIf(String::isNotBlank)?.let { params[api] = it } }
+            filter.extras["tag"]?.takeIf(String::isNotBlank)?.let { params["tag_all"] = it.split(',').map(String::trim).filter(String::isNotBlank).distinct().joinToString(",") }
             val values = mutableListOf<JsonObject>()
             repeat(if(filter.sort == "year") 20 else 1) {
                 val root = miruro("anime", params)
-                values += root.list("data").filterIsInstance<JsonObject>().filter { raw -> filter.sort != "year" ||
+                values += root.list("data").filterIsInstance<JsonObject>().filter { raw -> filter.sort != "year" || filter.extras.isNotEmpty() ||
                     (raw.text("status") != "NOT_YET_RELEASED" && (raw.number("season_year") ?: 0) in 1..currentCatalogDate().take(4).toInt()) }
                 val next = root.text("next_cursor").ifBlank { root.obj("pagination").text("next_cursor") }
                 if (root.text("has_more") != "true" || next.isBlank() || next == params["cursor"]) { pages.remove(page + 1); return values.map(DesktopSourceParser::miruroAnime) }
@@ -441,9 +444,44 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
         }
         val base = "https://linkani.tv"
         val suffix = if (page > 1) "page/" + page + "/" else ""
-        val path = if (filter.sort == "popular") "/label/topday/" + suffix else if (filter.status == "RELEASING") "/list/2/class/" + "월화수목금토일"[((catalogWeekday() + 6) % 7)].toString().encodeURLPathPart() + "/" + suffix else if (filter.year.isNotBlank()) "/list/2/year/" + filter.year.encodeURLPathPart() + "/" + suffix else "/list/2/" + suffix
+        val category = filter.genres.firstOrNull().orEmpty().ifBlank { filter.extras["weekday"].orEmpty() }.ifBlank { if (filter.status == "RELEASING") "월화수목금토일"[((catalogWeekday() + 6) % 7)].toString() else "" }
+        val route = (if (category.isNotBlank()) "class/" + category.encodeURLPathPart() + "/" else "") + (if (filter.year.isNotBlank()) "year/" + filter.year.encodeURLPathPart() + "/" else "") + (if (filter.format.isNotBlank()) "lang/" + filter.format.encodeURLPathPart() + "/" else "") + suffix
+        val path = if (filter.sort == "popular" && route == suffix) "/label/topday/" + suffix else "/list/2/" + route
         val params = if (query.isBlank()) emptyMap() else mapOf("wd" to query)
-        return DesktopSourceParser.koreanList(text(base + if (query.isBlank()) path else "/view/" + suffix, params), source)
+        return DesktopSourceParser.koreanList(text(base + if (query.isBlank()) path else "/view/" + suffix, params), source).map { if (query.isBlank() && filter.format.isNotBlank()) it.copy(format = filter.format) else it }
+    }
+    internal suspend fun ohliPage(params: Map<String, String>) = DesktopSourceParser.ohliProps(text(DesktopSourceParser.OHLI24_WEB + "/", params))
+    private val ohliWeekdays = mutableMapOf<String, Pair<Long, Set<String>>>()
+    internal suspend fun ohliCatalog(page: Int, filter: BrowseFilter): SourceCatalogPage = coroutineScope {
+        val e = filter.extras
+        val weekday = e["weekday"].orEmpty()
+        val types = when {
+            filter.format.equals("Movie", true) -> listOf("극장판")
+            weekday.isNotBlank() -> listOf("방영중")
+            !e["status"].isNullOrBlank() -> listOf(e.getValue("status"))
+            filter.format == "TV" -> listOf("방영중", "종영")
+            else -> emptyList()
+        }
+        val result = async { ohliPage(buildMap {
+            types.forEachIndexed { index, value -> put("types[$index]", value) }
+            filter.genres.forEachIndexed { index, value -> put("genres[$index]", value) }
+            if (filter.year.isNotBlank()) put("years[0]", filter.year)
+            if (weekday.isNotBlank()) put("weekday", weekday)
+            put("sort", e["order"].orEmpty().ifBlank { "update-desc" }); put("page", page.toString())
+        }) }
+        val dayIds = if (weekday.isBlank()) null else async {
+            val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
+            ohliWeekdays[weekday]?.takeIf { now - it.first < 300000 }?.second ?: run {
+                val day = DesktopSourceParser.ohliProps(text(DesktopSourceParser.ohliPath("방영중"), mapOf("weekday" to weekday)))
+                require(day["items"] is JsonArray && day.text("sca") == weekday) { "애니24 요일 분류를 읽지 못했습니다." }
+                day.list("items").filterIsInstance<JsonObject>().map { DesktopSourceParser.ohliAnime(it).id }.toSet().also { ohliWeekdays[weekday] = now to it }
+            }
+        }
+        val comics = result.await().obj("comics")
+        require(comics["data"] is JsonArray) { "애니24 필터 결과를 읽지 못했습니다." }
+        val raw = comics.list("data").filterIsInstance<JsonObject>().map(DesktopSourceParser::ohliAnime)
+        val ids = dayIds?.await()
+        SourceCatalogPage(raw.filter { ids == null || it.id in ids }, comics.text("next_page_url").isNotBlank(), raw.joinToString("|") { it.id })
     }
     suspend fun ohliAiring(): List<Anime> =
         DesktopSourceParser.ohliProps(text(DesktopSourceParser.ohliPath("방영중"))).list("items").filterIsInstance<JsonObject>().map(DesktopSourceParser::ohliAnime)

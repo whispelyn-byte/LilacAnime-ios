@@ -9,6 +9,8 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlin.time.TimeSource
 import kotlin.time.Duration.Companion.seconds
 
@@ -49,7 +51,9 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
             }
             token = if (config.provider == "gemini") root.optString("nextPageToken") else ""
         } while (token.isNotEmpty() && tokens.add(token))
-        return CloudModelRules.sorted(config.provider, names)
+        return CloudModelRules.sorted(config.provider, names).also {
+            require(it.isNotEmpty()) { "이 키로 쓸 수 있는 번역 모델이 없습니다. API 키와 지역을 확인하세요." }
+        }
     }
     private suspend fun chain(config: TranslationConfig): List<String> {
         val key = config.provider + "|" + config.region + "|" + config.key.hashCode()
@@ -109,6 +113,7 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
     }
     private suspend fun post(url: String, body: JSONObject, authorization: String? = null, apiKey: String? = null): JSONObject {
         for (attempt in 0..3) {
+            currentCoroutineContext().ensureActive()
             try {
                 return JSONObject(client.post(url) {
                     contentType(ContentType.Application.Json)
@@ -182,6 +187,7 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
             if (shape < 2) generation.put("responseSchema", schema).put("temperature", 0.3)
             if (shape == 0) generation.put("thinkingConfig", thinking)
             for (attempt in 0..3) {
+                currentCoroutineContext().ensureActive()
                 try {
                     val body = JSONObject().put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", instruction(config)))))
                         .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", CloudTranslationText.jsonInput(lines, false))))))

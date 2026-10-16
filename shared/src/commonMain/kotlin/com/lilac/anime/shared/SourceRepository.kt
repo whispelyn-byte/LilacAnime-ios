@@ -13,12 +13,15 @@ import kotlinx.serialization.json.*
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.days
 enum class AnimeSource(val key: String) { LINKKF("linkkf"), REANIME("reanime"), ANIMENOSUB("animenosub"), MIRURO("miruro"), OHLI24("ohli24"), LINKANI("linkani") }
-data class BrowseFilter(val genres: List<String> = emptyList(), val year: String = "", val season: String = "", val format: String = "", val status: String = "", val studio: String = "", val sort: String = "")
+data class BrowseFilter(val genres: List<String> = emptyList(), val year: String = "", val season: String = "", val format: String = "", val status: String = "", val studio: String = "", val sort: String = "", val extras: Map<String, String> = emptyMap())
+
+data class CatalogFilterOption(val value: String, val label: String)
+data class CatalogFilterField(val key: String, val label: String, val options: List<CatalogFilterOption> = emptyList(), val type: String = "select", val maxLength: Int = 150)
 data class SourceFilters(val genres: List<String> = emptyList(), val years: List<String> = emptyList(),
     val formats: List<String> = emptyList(), val statuses: List<String> = emptyList(),
     val seasons: List<String> = emptyList(), val studios: List<String> = emptyList(),
     val supportsYear: Boolean = false, val supportsSeason: Boolean = false,
-    val sorts: List<String> = listOf("default"), val note: String = "", val seasonValues: List<String> = emptyList())
+    val sorts: List<String> = listOf("default"), val note: String = "", val seasonValues: List<String> = emptyList(), val extraFilters: List<CatalogFilterField> = emptyList())
 data class SourceCatalogPage(val items: List<Anime>, val hasMore: Boolean, val signature: String)
 
 data class SourceDetail(val anime: Anime, val servers: List<EpisodeServer>)
@@ -65,10 +68,11 @@ class SourceRepository(private val client: HttpClient, private val details: Deta
                 if (filter.sort.isNotBlank()) put("sort", when (filter.sort) { "popular" -> "popularity_desc"; "year" -> "year_desc"; else -> "score_desc" })
                 if (filter.genres.isNotEmpty()) put("genre", filter.genres.joinToString(","))
                 listOf("year" to filter.year, "season" to filter.season, "format" to filter.format, "status" to filter.status, "studio" to filter.studio).forEach { (key, value) -> if (value.isNotBlank()) put(key, value) }
+                putAll(filter.extras.filterValues(String::isNotBlank))
             }))
             "animenosub" -> {
                 val base = "https://animenosub.to"
-                val filtered = query.isBlank() && (filter.sort.isNotBlank() || filter.status.isNotBlank() || filter.season.isNotBlank() || filter.year.isNotBlank() || filter.genres.isNotEmpty() || filter.format.isNotBlank())
+                val filtered = query.isBlank() && (filter.extras.isNotEmpty() || filter.sort.isNotBlank() || filter.status.isNotBlank() || filter.season.isNotBlank() || filter.year.isNotBlank() || filter.genres.isNotEmpty() || filter.format.isNotBlank())
                 val path = if (filtered) "$base/anime/" else if (page == 1) "$base/" else "$base/page/$page/"
                 val seasonValues = if (filter.year.isNotBlank()) filters("animenosub").seasonValues.filter { it.endsWith("-" + filter.year) && (filter.season.isBlank() || it == filter.season.lowercase() + "-" + filter.year) } else emptyList()
                 if (filter.year.isNotBlank() && seasonValues.isEmpty()) return emptyList()
@@ -77,11 +81,12 @@ class SourceRepository(private val client: HttpClient, private val details: Deta
                     if (filter.sort.isNotBlank()) put("order", when(filter.sort) { "year" -> "latest"; "updated" -> "update"; "score" -> "rating"; else -> "popular" })
                     if (query.isNotBlank()) put("s", query)
                     if (filter.status == "RELEASING") put("status", "ongoing")
+                    filter.extras.forEach { (key, value) -> if (value.isNotBlank()) put(if (key == "studio") "studio[0]" else key, value) }
                     filter.genres.forEachIndexed { index, genre -> put("genre[$index]", genre) }
                     if (filter.format.isNotBlank()) put("type", filter.format)
                     seasonValues.forEachIndexed { index, season -> put("season[$index]", season) }
                 }), path)
-                if (filter.status.isNotBlank() || filter.season.isNotBlank()) document.select("article.bs").filter { it.select(".ans-status-ribbon").text().contains("upcoming", true) }.forEach { it.remove() }
+                if ((filter.status.isNotBlank() || filter.season.isNotBlank()) && filter.extras["status"] != "upcoming") document.select("article.bs").filter { it.select(".ans-status-ribbon").text().contains("upcoming", true) }.forEach { it.remove() }
                 AnimenosubParser.parseAnimeList(if(filtered) Ksoup.parse(document.select("article.bs").joinToString("\n") { it.outerHtml() }, path) else document)
             }
             else -> if (query.isNotBlank()) linkkf.search(query, page, filter)
@@ -128,22 +133,29 @@ class SourceRepository(private val client: HttpClient, private val details: Deta
         }
     }
     suspend fun filters(source: String): SourceFilters = filterCache[source]?.takeIf { Clock.System.now().toEpochMilliseconds() - it.first < 600000 }?.second ?: when (source) {
-        "reanime" -> facets().let { SourceFilters(it.genres, it.years, it.formats, it.statuses, listOf("WINTER", "SPRING", "SUMMER", "FALL"), it.studios, supportsYear = true, supportsSeason = true, sorts = listOf("popular", "year", "updated", "score")) }
+        "reanime" -> {
+            val raw = getText("https://reanime.to/api/v1/search", mapOf("facets" to "true", "limit" to "0"))
+            val it = ReAnimeHarParser.parseFacets(raw)
+            val root = Json.parseToJsonElement(raw).jsonObject
+            SourceFilters(it.genres, it.years, root.obj("facets").obj("format").keys.map { value -> value.uppercase() }.ifEmpty { it.formats }, it.statuses, listOf("WINTER", "SPRING", "SUMMER", "FALL"), it.studios, supportsYear = true, supportsSeason = true, sorts = listOf("popular", "year", "updated", "score"), extraFilters = DesktopCatalogTaxonomy.reanime(root), note = "태그·상태·국가·더빙·등급 등을 선택하세요. 제작사·등장인물·제작진은 사이트의 영문 분류명을 입력하세요.")
+        }
         "linkkf" -> linkkf.filters().let { it.copy(supportsYear = it.years.isNotEmpty(), note = "연도는 Linkkf 분류를 따릅니다. 별도의 분기 정보는 제공하지 않습니다.") }
         "animenosub" -> DesktopCatalogTaxonomy.animenosub(getText("https://animenosub.to/anime/"))
-        "miruro" -> SourceFilters(supportsYear = true, supportsSeason = true, seasons = listOf("WINTER", "SPRING", "SUMMER", "FALL"), sorts = listOf("popular", "year", "updated", "score"), note = "Miruro는 연도·분기로 모아 볼 수 있습니다.")
-        "linkani" -> SourceFilters(formats = listOf("TV", "Movie"), supportsYear = true, sorts = listOf("default", "updated"), note = "링크애니는 작품 형태·연도로 모아 볼 수 있습니다. 장르·분기 정보는 제공하지 않습니다.")
-        "ohli24" -> SourceFilters(formats = listOf("TV", "Movie"), sorts = listOf("default", "updated"), note = "애니24는 TV 애니·극장판으로 모아 볼 수 있습니다. 연도·분기 정보는 제공하지 않습니다.")
+        "miruro" -> DesktopCatalogTaxonomy.miruro()
+        "linkani" -> DesktopCatalogTaxonomy.linkani(getText("https://linkani.tv/list/2/"))
+        "ohli24" -> DesktopCatalogTaxonomy.ohli(desktop.ohliPage(mapOf("sort" to "update-desc")))
         else -> SourceFilters()
     }.also { filterCache[source] = Clock.System.now().toEpochMilliseconds() to it }
     suspend fun catalog(source: String, page: Int, filter: BrowseFilter, query: String = ""): SourceCatalogPage {
-        if (filter.sort == "updated" && source in listOf("reanime", "miruro")) {
+        if (filter.extras.isNotEmpty()) DesktopCatalogTaxonomy.validate(source, filter, filters(source))
+        if (filter.sort == "updated" && source == "reanime") {
             val all = DesktopCatalogUpdates.filter(updateSnapshot(source), filter).filter { query.isBlank() || listOf(it.title, it.romaji, it.english, it.native).any { title -> title.contains(query, true) } }
             val items = all.drop((page - 1) * 36).take(36)
             return SourceCatalogPage(items, page * 36 < all.size, items.joinToString("|") { it.id })
         }
-        val raw = browse(source, query = query, page = page, filter = filter)
-        val items = if (source in listOf("ohli24", "linkani") && filter.format.isNotBlank()) raw.filter { it.format.equals(filter.format, true) } else raw
+        if (source == "ohli24" && query.isBlank()) return desktop.ohliCatalog(page, filter)
+        val raw = if (source == "miruro") desktop.browse(source, query, page, filter) else browse(source, query = query, page = page, filter = filter)
+        val items = if (source == "ohli24" && filter.format.isNotBlank()) raw.filter { it.format.equals(filter.format, true) } else raw
         return SourceCatalogPage(items, if (filter.sort == "updated" && source == "ohli24") false else if (source == "miruro") desktop.hasNextCatalogPage(page, filter, query) else raw.isNotEmpty(), raw.joinToString("|") { it.id })
     }
     suspend fun updates(source: String, page: Int = 1): List<Anime> {

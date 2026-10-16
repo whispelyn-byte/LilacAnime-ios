@@ -7,7 +7,8 @@ struct DesktopCatalogSelection {
     var format = ""
     var year = ""
     var season = ""
-    var active: Bool { [genre, format, year, season].contains { !$0.isEmpty } }
+    var extras: [String: String] = [:]
+    var active: Bool { [genre, format, year, season].contains { !$0.isEmpty } || extras.values.contains { !$0.isEmpty } }
 }
 /// The full catalog's last list and what it was made from.
 @MainActor final class CatalogListCache {
@@ -32,7 +33,7 @@ struct DesktopFullCatalog: View {
         if applied.active { return remote.filters?.sorts ?? ["default"] }
         switch library.preferences.source { case "linkkf": return ["default", "year"]; case "linkani": return ["default", "updated"]; case "ohli24": return ["default", "updated"]; default: return ["popular", "year", "updated", "score"] }
     }
-    private var remoteSource: Bool { (applied.active && !(library.preferences.source == "reanime" && sort == "year")) || sort == "updated" || ["miruro", "animenosub", "linkani"].contains(library.preferences.source) }
+    private var remoteSource: Bool { (applied.active && !(library.preferences.source == "reanime" && sort == "year" && applied.extras.values.allSatisfy { $0.isEmpty })) || sort == "updated" || ["miruro", "animenosub", "linkani"].contains(library.preferences.source) }
     /// The list is worked out again only when what it is made from changes: the catalog index publishes its names and
     /// progress as it gathers, and each of those redraws filtered and sorted every series on the main thread.
     private var values: [SavedAnime] {
@@ -41,6 +42,7 @@ struct DesktopFullCatalog: View {
         let today = (date.year ?? 0) * 10000 + (date.month ?? 0) * 100 + (date.day ?? 0)
         var signature: [AnyHashable] = [UIShowcase.enabled, remoteSource, library.preferences.source, wanted, sort]
         signature += [applied.genre, applied.format, applied.year, applied.season, today]
+        signature.append(applied.extras.keys.sorted().map { $0 + "=" + (applied.extras[$0] ?? "") }.joined(separator: "\u{0}"))
         if remoteSource {
             let first: String = remote.items.first?.id ?? "", last: String = remote.items.last?.id ?? ""
             signature += [remote.items.count, first, last]
@@ -90,7 +92,7 @@ struct DesktopFullCatalog: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 2) {
                             ForEach(sorts, id: \.self) { value in
-                                Button { sort = value } label: { LilacChip(text: value == "popular" ? "인기순" : value == "year" ? "최신순" : value == "score" ? "평점순" : value == "updated" ? "회차 업데이트순" : "기본 순서", selected: sort == value) }.buttonStyle(.plain)
+                                Button { sort = value } label: { LilacChip(text: value == "popular" ? "인기순" : value == "year" ? "최신순" : value == "score" ? "평점순" : value == "updated" ? (library.preferences.source == "miruro" ? "작품 정보 업데이트순" : "회차 업데이트순") : "기본 순서", selected: sort == value) }.buttonStyle(.plain)
                             }
                         }.padding(3).background(LilacStyle.card2, in: RoundedRectangle(cornerRadius: 8))
                     }
@@ -142,6 +144,7 @@ struct DesktopFullCatalog: View {
                         } else { picker("연도", value: $draft.year, options: facets.years) }
                     }
                     if facets.supportsSeason { picker("분기", value: $draft.season, options: facets.seasons) }
+                    ForEach(facets.extraFilters, id: \.key) { field in extraField(field) }
                 }
                 Text(facets.note.isEmpty ? "장르·형태·연도·분기를 함께 선택할 수 있습니다." : facets.note).font(.system(size: 12)).foregroundStyle(LilacStyle.muted)
             }
@@ -162,18 +165,39 @@ struct DesktopFullCatalog: View {
     private func picker(_ name: String, value: Binding<String>, options: [String]) -> some View {
         CatalogSelect(title: name, value: value, options: [("", "전체 " + name)] + options.map { ($0, label($0, field: name)) })
     }
+    @ViewBuilder private func extraField(_ field: CatalogFilterField) -> some View {
+        let binding = Binding<String>(get: { draft.extras[field.key] ?? "" }, set: { draft.extras[field.key] = $0 })
+        if field.type == "select" {
+            CatalogSelect(title: field.label, value: binding, options: [("", "전체 " + field.label)] + field.options.map { ($0.value, $0.label) })
+        } else {
+            VStack(alignment: .leading, spacing: 7) {
+                Text(field.label).font(.system(size: 12)).foregroundStyle(LilacStyle.muted)
+                TextField(field.type == "number" ? "0~100" : "영문 분류명 입력", text: binding)
+                    .keyboardType(field.type == "number" ? .decimalPad : .default)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .font(.system(size: 13)).padding(.horizontal, 10).frame(height: 38)
+                    .background(LilacStyle.card2, in: RoundedRectangle(cornerRadius: 7)).overlay(RoundedRectangle(cornerRadius: 7).stroke(LilacStyle.line))
+                    .accessibilityIdentifier("catalog-extra-" + field.key)
+            }
+        }
+    }
     private func label(_ value: String, field: String) -> String {
         if field == "장르" {
             let key = value.lowercased().replacingOccurrences(of: "-", with: " ")
             return ["action": "액션", "adventure": "모험", "comedy": "코미디", "drama": "드라마", "fantasy": "판타지", "horror": "공포", "mystery": "미스터리", "romance": "로맨스", "sci fi": "SF", "slice of life": "일상", "sports": "스포츠", "supernatural": "초자연", "psychological": "심리", "thriller": "스릴러", "music": "음악", "mecha": "메카", "ecchi": "에치", "mahou shoujo": "마법소녀"][key] ?? value
         }
-        return ["TV": "TV 애니", "TV_SHORT": "단편 TV", "MOVIE": "극장판", "ONA": "웹 애니", "SPECIAL": "스페셜", "MUSIC": "뮤직비디오", "LIVE ACTION": "실사", "BD": "BD", "WINTER": "1분기", "SPRING": "2분기", "SUMMER": "3분기", "FALL": "4분기"][value.uppercased()] ?? value
+        return ["TV": "TV 애니", "TV_SHORT": "단편 TV", "MOVIE": "극장판", "ONA": "웹 애니", "SPECIAL": "스페셜", "MUSIC": "뮤직비디오", "LIVE ACTION": "실사", "BD": "BD", "CM": "광고", "PV": "프로모션 영상", "TV SPECIAL": "TV 스페셜", "WINTER": "1분기", "SPRING": "2분기", "SUMMER": "3분기", "FALL": "4분기"][value.uppercased()] ?? value
     }
     private func applyFilters() {
         guard let facets = remote.filters else { remote.loadFilters(); return }
         var next = draft; next.year = next.year.trimmingCharacters(in: .whitespacesAndNewlines)
+        next.extras = next.extras.mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.value.isEmpty }
         if !next.season.isEmpty && next.year.isEmpty { next.year = String(Calendar.current.component(.year, from: Date())) }
         if !next.year.isEmpty && (facets.years.isEmpty ? (Int(next.year) ?? 0) <= 0 : !facets.years.contains(next.year)) { validationError = "지원하는 연도를 선택하세요."; return }
+        do {
+            try DesktopCatalogTaxonomy.shared.validate(source: library.preferences.source,
+                filter: AnimeSnapshot.shared.extendedFilter(genre: next.genre, year: next.year, season: next.season, format: next.format, sort: sort, extras: next.extras), facets: facets)
+        } catch { validationError = error.localizedDescription; return }
         draft = next; applied = next; validationError = nil
         if !sorts.contains(sort) { sort = sorts[0] }; reloadRemote()
     }
@@ -181,6 +205,7 @@ struct DesktopFullCatalog: View {
         guard remoteSource && !UIShowcase.enabled else { return }
         remote.source = library.preferences.source; remote.query = query; remote.mode = "catalog"
         remote.sort = sort == "default" ? "" : sort; remote.genre = applied.genre; remote.format = applied.format; remote.year = applied.year; remote.season = applied.season
+        remote.extras = applied.extras
         remote.load()
     }
 }

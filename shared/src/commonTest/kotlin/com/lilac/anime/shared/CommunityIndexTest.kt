@@ -6,6 +6,8 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.http.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import kotlin.test.*
 
@@ -66,10 +68,20 @@ class CommunityIndexTest {
 
     @Test fun simultaneousLookupsShareCompleteIndexAndThreeAdditionalPageTransfers() = runTest {
         var calls = 0; var active = 0; var peak = 0
+        val counts = Mutex()
+        val firstBatch = CompletableDeferred<Unit>()
         val client = HttpClient(MockEngine { request ->
-            calls++; active++; peak = maxOf(peak, active)
-            delay(10); active--
             val start = request.url.parameters["start-index"]!!.toInt()
+            counts.withLock {
+                calls++; active++; peak = maxOf(peak, active)
+                if (start > 1 && active == 3) firstBatch.complete(Unit)
+            }
+            // MockEngine may run handlers on different workers. Keep all three
+            // initial page transfers in flight before responding, and do not
+            // lose counter increments to a read/modify/write race.
+            if (start > 1) firstBatch.await()
+            delay(10)
+            counts.withLock { active-- }
             respond(feed(start, minOf(150, 786 - start), 785), headers = headersOf(HttpHeaders.ContentType, "application/json"))
         })
         val discovery = SubtitleDiscovery(SourceRepository(client))

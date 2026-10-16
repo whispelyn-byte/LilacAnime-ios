@@ -24,8 +24,9 @@ class DesktopNewFiltersTest {
         val repository = SourceRepository(client)
         val filter = BrowseFilter(genres = listOf("Action"), sort = "year", extras = mapOf("country" to "JP", "source" to "ORIGINAL", "adult" to "false", "tag" to "Magic, Isekai, Magic", "status" to "NOT_YET_RELEASED"))
         try {
-            assertEquals("2027", repository.catalog("miruro", 1, filter).items.single().year)
-            assertTrue(repository.catalog("miruro", 2, filter).hasMore)
+            val first = repository.catalog("miruro", 1, filter)
+            assertEquals("2027", first.items.single().year); assertTrue(first.hasMore)
+            assertFalse(repository.catalog("miruro", 2, filter).hasMore, "A repeated cursor must end pagination")
             assertEquals(2, requests)
         } finally { repository.close() }
     }

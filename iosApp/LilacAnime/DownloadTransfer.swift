@@ -7,7 +7,7 @@ enum DownloadTransfer {
         try await Task.detached(priority: .utility) {
             let access = destination.startAccessingSecurityScopedResource()
             defer { if access { destination.stopAccessingSecurityScopedResource() } }
-            let folder = destination.appendingPathComponent("LilacDownloads-" + String(Int(Date().timeIntervalSince1970)))
+            let folder = destination.appendingPathComponent("LilacDownloads-" + String(Int(Date().timeIntervalSince1970)) + "-" + UUID().uuidString)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             do {
                 for entry in entries {

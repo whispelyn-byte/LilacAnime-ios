@@ -114,6 +114,8 @@ final class DownloadStore: ObservableObject {
     @Published private(set) var resolvingTitle = ""
     private var resolutionTask: Task<Void, Never>?
     private var resolutionQueue: [(PlaybackItem, String)] = []
+    private var resolvingItem: PlaybackItem?
+    private let prepareRaw: ((PlaybackItem) async -> Bool)?
     let resolver: PlaybackResolver = {
         let resolver = PlaybackResolver()
         resolver.webView.frame = CGRect(x: 0, y: 0, width: 960, height: 640)
@@ -139,7 +141,8 @@ final class DownloadStore: ObservableObject {
     private var loaded = false
     private var loading: Task<Void, Never>?
     private let restoreSession: Bool
-    init(index: URL? = nil, restoreSession: Bool = true, deferLoading: Bool = false) {
+    init(index: URL? = nil, restoreSession: Bool = true, deferLoading: Bool = false, prepareRaw: ((PlaybackItem) async -> Bool)? = nil) {
+        self.prepareRaw = prepareRaw
         indexFile = index
         self.restoreSession = restoreSession
         delegate.owner = self
@@ -200,25 +203,28 @@ final class DownloadStore: ObservableObject {
         start(id)
     }
     func enqueue(_ items: [PlaybackItem], quality: String) {
-        for item in items where !resolutionQueue.contains(where: { $0.0.anime.id == item.anime.id && $0.0.episodeID == item.episodeID }) { resolutionQueue.append((item, quality)); pendingResolution += 1 }
+        for item in items where !(resolvingItem?.anime.id == item.anime.id && resolvingItem?.episodeID == item.episodeID) && !resolutionQueue.contains(where: { $0.0.anime.id == item.anime.id && $0.0.episodeID == item.episodeID }) { resolutionQueue.append((item, quality)); pendingResolution += 1 }
         if !items.isEmpty { notice = "\(items.count)개 회차를 다운로드 대기에 추가했습니다. 내 목록 → 다운로드에서 확인하세요." }
         guard resolutionTask == nil else { return }
         error = nil
         resolutionTask = Task {
             defer {
                 resolver.cancel(); resolver.webView.configuration.userContentController.removeAllUserScripts()
-                resolver.webView.loadHTMLString("", baseURL: nil); resolutionTask = nil; pendingResolution = resolutionQueue.count; resolvingTitle = ""
+                resolver.webView.loadHTMLString("", baseURL: nil); resolutionTask = nil; resolvingItem = nil; pendingResolution = resolutionQueue.count; resolvingTitle = ""
                 // An enqueue immediately after pause/cancel must survive the old worker's cleanup.
                 if !resolutionQueue.isEmpty { enqueue([], quality: quality) }
             }
             while !resolutionQueue.isEmpty {
                 while restoring && !Task.isCancelled { do { try await Task.sleep(nanoseconds: 100_000_000) } catch { return } }
-                let (item, quality) = resolutionQueue.removeFirst()
                 if Task.isCancelled { return }
+                let (item, quality) = resolutionQueue.removeFirst()
+                resolvingItem = item
                 resolvingTitle = item.anime.title + " · " + item.title
                 let id = SubtitleFiles.key(item.anime.id + "#" + item.episodeID)
                 if entries.contains(where: { $0.id == id && ($0.localFile != nil || busy(id)) }) { pendingResolution -= 1; continue }
-                let preferRaw = await subtitlePreparer.preferRaw(item, preferences: library?.preferences ?? AppPreferences(), downloading: true)
+                let preferRaw: Bool
+                if let prepareRaw { preferRaw = await prepareRaw(item) }
+                else { preferRaw = await subtitlePreparer.preferRaw(item, preferences: library?.preferences ?? AppPreferences(), downloading: true) }
                 if Task.isCancelled { return }
                 resolver.resolve(item, preferRaw: preferRaw, preferred: library?.preferences.preferredServers?[item.anime.source])
                 while resolver.loading && resolver.streams.isEmpty && !Task.isCancelled {
@@ -234,7 +240,10 @@ final class DownloadStore: ObservableObject {
             }
         }
     }
-    func stopResolving() { resolutionQueue.removeAll(); pendingResolution = 0; resolutionTask?.cancel(); resolver.cancel() }
+    private func cancelResolution() {
+        resolutionTask?.cancel(); resolver.cancel(); resolvingItem = nil; resolvingTitle = ""; pendingResolution = resolutionQueue.count
+    }
+    func stopResolving() { resolutionQueue.removeAll(); cancelResolution() }
     /// An episode's download as the desktop episode button shows it (app.js episodeDownloadMarkup).
     enum EpisodeState { case idle, active, stopped, completed }
     /// desktop linkLegacyDownloads: 애니24 moved from www.ohli24.net to ani.ohli24.com. An episode saved from the old site
@@ -258,7 +267,7 @@ final class DownloadStore: ObservableObject {
     }
     func state(_ item: PlaybackItem) -> EpisodeState {
         let id = entryID(item)
-        if resolutionQueue.contains(where: { $0.0.anime.id == item.anime.id && $0.0.episodeID == item.episodeID }) { return .active }
+        if (resolvingItem?.anime.id == item.anime.id && resolvingItem?.episodeID == item.episodeID) || resolutionQueue.contains(where: { $0.0.anime.id == item.anime.id && $0.0.episodeID == item.episodeID }) { return .active }
         guard let entry = entries.first(where: { $0.id == id }) else { return .idle }
         if entry.localFile != nil { return .completed }
         return ["대기", "준비 중", "다운로드 중"].contains(entry.status) || busy(id) ? .active : .stopped
@@ -269,6 +278,7 @@ final class DownloadStore: ObservableObject {
         let queued = resolutionQueue.count
         resolutionQueue.removeAll { $0.0.anime.id == animeID }
         pendingResolution = max(0, pendingResolution - (queued - resolutionQueue.count))
+        if resolvingItem?.anime.id == animeID { cancelResolution() }
         for entry in entries(group: animeID) where entry.localFile == nil && (["대기", "준비 중", "다운로드 중"].contains(entry.status) || busy(entry.id)) { cancel(entry.id) }
     }
     func resumeGroup(_ animeID: String) {
@@ -301,6 +311,7 @@ final class DownloadStore: ObservableObject {
             let queued = resolutionQueue.count
             resolutionQueue.removeAll { $0.0.anime.id == item.anime.id && $0.0.episodeID == item.episodeID }
             pendingResolution = max(0, pendingResolution - (queued - resolutionQueue.count))
+            if resolvingItem?.anime.id == item.anime.id && resolvingItem?.episodeID == item.episodeID { cancelResolution() }
             if entries.contains(where: { $0.id == id }) { cancel(id) }
             notice = "\(item.title) 다운로드를 중지했습니다."
         case .stopped: if let entry = entries.first(where: { $0.id == id }) { retry(entry); notice = "\(item.title) 다운로드를 다시 시작합니다." }

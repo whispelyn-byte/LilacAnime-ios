@@ -216,7 +216,7 @@ final class DownloadStore: ObservableObject {
             }
             while !resolutionQueue.isEmpty {
                 while restoring && !Task.isCancelled { do { try await Task.sleep(nanoseconds: 100_000_000) } catch { return } }
-                if Task.isCancelled { return }
+                if Task.isCancelled || resolutionQueue.isEmpty { return }
                 let (item, quality) = resolutionQueue.removeFirst()
                 resolvingItem = item
                 resolvingTitle = item.anime.title + " · " + item.title

@@ -88,6 +88,8 @@ final class DeviceSync: ObservableObject {
     private var timer: Task<Void, Never>?
     private var due = Date.distantFuture
     private var lastRun = Date.distantPast
+    private var connectionGeneration = UUID()
+    private let transport: ((String, String, String, Any?, String?) async throws -> [String: Any])?
     private var again = false
     private var applying = false
     private let file = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("device-sync.json")
@@ -97,7 +99,8 @@ final class DeviceSync: ObservableObject {
 
     private var loaded = false
     private var loading: Task<Void, Never>?
-    init(deferLoading: Bool = false) {
+    init(deferLoading: Bool = false, transport: ((String, String, String, Any?, String?) async throws -> [String: Any])? = nil) {
+        self.transport = transport
         if deferLoading { return }
         restore(Self.read(file))
     }
@@ -147,13 +150,16 @@ final class DeviceSync: ObservableObject {
 
     func connect(address: String, password: String) async throws {
         let base = try DeviceSyncAddress.normalize(address)
+        connectionGeneration = UUID(); let generation = connectionGeneration
         let status = try await call(base, "/api/status")
+        guard generation == connectionGeneration else { throw CancellationError() }
         guard status["app"] as? String == "lilacanime-server" else { throw SubtitleFiles.failure("LilacAnime 서버가 아닌 것 같습니다. 주소를 확인하세요.") }
         guard status["ready"] as? Bool == true else {
             throw SubtitleFiles.failure("서버 설정이 끝나지 않았습니다. " + ((status["problems"] as? [String]) ?? []).joined(separator: " "))
         }
         guard !password.isEmpty else { throw SubtitleFiles.failure("비밀번호를 입력하세요.") }
         let login = try await call(base, "/api/login", method: "POST", body: ["password": password])
+        guard generation == connectionGeneration else { throw CancellationError() }
         guard let token = login["token"] as? String, !token.isEmpty else { throw SubtitleFiles.failure("서버가 토큰을 주지 않았습니다.") }
         try SecureKeys.save(token, name: tokenName)
         // What was synced with another server says nothing about this one: a new address starts over.
@@ -162,12 +168,14 @@ final class DeviceSync: ObservableObject {
         await run()
     }
     func disconnect(message: String = "연결을 끊었습니다.") {
+        connectionGeneration = UUID(); again = false
         try? SecureKeys.save("", name: tokenName)
         timer?.cancel(); timer = nil; due = .distantFuture
         connected = false; state = message
     }
 
     private func call(_ base: String, _ path: String, method: String = "GET", body: Any? = nil, token: String? = nil) async throws -> [String: Any] {
+        if let transport { return try await transport(base, path, method, body, token) }
         guard let url = URL(string: base + path) else { throw SubtitleFiles.failure("서버 주소가 올바르지 않습니다.") }
         var request = URLRequest(url: url, timeoutInterval: 20)
         request.httpMethod = method
@@ -190,8 +198,14 @@ final class DeviceSync: ObservableObject {
     private func request(_ method: String, _ path: String, body: Any? = nil) async throws -> [String: Any] {
         let token = SecureKeys.load(tokenName)
         guard connected, !token.isEmpty else { throw SubtitleFiles.failure("기기 동기화가 연결되어 있지 않습니다.") }
-        do { return try await call(server, path, method: method, body: body, token: token) }
+        let generation = connectionGeneration
+        do {
+            let reply = try await call(server, path, method: method, body: body, token: token)
+            guard generation == connectionGeneration, connected else { throw CancellationError() }
+            return reply
+        }
         catch let error as NSError where error.domain == "DeviceSync" && error.code == 401 {
+            guard generation == connectionGeneration else { throw CancellationError() }
             disconnect(message: "서버가 이 기기를 받지 않습니다. 비밀번호가 바뀌었다면 새 비밀번호로 다시 연결하세요.")
             throw error
         }
@@ -202,6 +216,7 @@ final class DeviceSync: ObservableObject {
     func run() async {
         guard connected, let library else { return }
         if running { again = true; return }
+        let generation = connectionGeneration
         running = true; lastRun = Date(); timer = nil; due = .distantFuture; state = "동기화하는 중..."
         defer { running = false; if again { again = false; soon(0) } }
         do {
@@ -229,7 +244,7 @@ final class DeviceSync: ObservableObject {
             saved.rev = since; saved.at = Date(); persist()
             state = server + "에 연결됨 · 마지막 동기화 " + Date().formatted(date: .omitted, time: .shortened)
         } catch {
-            if connected { state = "동기화하지 못했습니다: " + error.localizedDescription }
+            if connected && generation == connectionGeneration { state = "동기화하지 못했습니다: " + error.localizedDescription }
         }
     }
     /// Takes the server's items in (device-sync.js merge). One changed here while the sync ran is kept, unless the

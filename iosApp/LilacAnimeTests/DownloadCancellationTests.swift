@@ -33,6 +33,22 @@ final class DownloadCancellationTests: XCTestCase {
         XCTAssertFalse(store.resolver.loading, "a cancelled preparation must not open the stream resolver")
         store.stopResolving()
     }
+    @MainActor func testRemovingQueueWhileRestoringDoesNotRemoveFromAnEmptyQueue() async throws {
+        let anime = SavedAnime(AnimeSnapshot.shared.decode(content: #"{"id":"restore-test","title":"test","episodes":[{"id":"1","number":1,"title":"1화"}]}"#), source: "reanime")
+        let item = PlaybackItem(anime: anime, episode: anime.anime.episodes[0])
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = DownloadStore(index: folder.appendingPathComponent("index.json"), restoreSession: false, deferLoading: true)
+        store.enqueue([item], quality: "Auto")
+        for _ in 0..<10 { await Task.yield() }
+        store.stopGroup(item.anime.id)
+        await store.load()
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(store.pendingResolution, 0)
+        XCTAssertTrue(store.entries.isEmpty)
+        XCTAssertFalse(store.resolver.loading)
+        store.stopResolving()
+    }
     func testRepeatedExportsKeepEarlierExportIntact() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

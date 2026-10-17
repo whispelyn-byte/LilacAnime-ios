@@ -320,7 +320,7 @@ final class EpisodePlayerModel: ObservableObject {
             proxy?.stop(); proxy = replacement
             active = selected; systemStream = playable; playbackError = nil; error = nil
             reloadVideo(playable, resume: position)
-        } catch { if token == generation, !Task.isCancelled { error = error.localizedDescription } }
+        } catch { if token == generation, !Task.isCancelled { self.error = error.localizedDescription } }
     }
     func applyPreferences(_ library: LibraryStore) { configure(library) }
     func updateAutoSkip(position: Double, enabled: Bool, now: Date = Date()) {

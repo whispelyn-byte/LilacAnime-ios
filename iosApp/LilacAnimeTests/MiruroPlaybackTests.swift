@@ -17,6 +17,12 @@ final class MiruroPlaybackTests: XCTestCase {
         let recovered = try await MiruroPlayback.choose([one,two,raw], preferRaw: true, preferred: one.label, excluded: [one.label]) { _ in MiruroProbeResult(speed: 500000, requiredSpeed: 1) }
         XCTAssertEqual(recovered.label, two.label)
     }
+    func testRecoveryStopsWithoutCompatibleAlternativesOrAfterTwoFailures() {
+        let raw = stream("RAW - current"), next = stream("SOFT - next"), dub = stream("DUB - other")
+        XCTAssertFalse(MiruroPlayback.canRecover([raw,dub], current: raw, failed: []))
+        XCTAssertTrue(MiruroPlayback.canRecover([raw,next,dub], current: raw, failed: []))
+        XCTAssertFalse(MiruroPlayback.canRecover([raw,next,dub], current: raw, failed: ["one","two"]))
+    }
     func testAllBrokenServersFailRatherThanReturningUnvalidatedFirst() async {
         do { _ = try await MiruroPlayback.choose([stream("RAW - broken")], preferRaw: true, preferred: nil) { _ in throw NSError(domain: "offline", code: 1) }; XCTFail("Must reject broken media") } catch { }
     }

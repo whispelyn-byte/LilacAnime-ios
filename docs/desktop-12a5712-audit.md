@@ -10,4 +10,4 @@ Baseline: 0640d05 (desktop 0.5.27). Upstream: 12a5712.
 - The weekly schedule adopts transparent rows, underlined weekday selection and smaller cover art.
 - Windows download-path fallback changes have no direct iOS equivalent: downloads stay in the app sandbox. New downloads now check storage availability; startup and existing offline playback do not depend on creating an alternative download directory.
 
-Validation: desktop media/recovery/subtitle/download suites 31/31 passed with local HTTP and temporary-file access enabled (sandboxed execution blocked fixture networking/file operations). Regenerated 124 desktop oracle cases for the new subtitle policy. Added seven Swift selection/probe/deadline/stall/subtitle tests and two Kotlin mirror tests. Native iOS verification pending.
+Validation: desktop media/recovery/subtitle/download suites 31/31 passed with local HTTP and temporary-file access enabled (sandboxed execution blocked fixture networking/file operations). Regenerated 124 desktop oracle cases for the new subtitle policy. Added eight Swift selection/probe/deadline/stall/subtitle tests and two Kotlin mirror tests. Native iOS verification pending.

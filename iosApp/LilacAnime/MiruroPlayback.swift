@@ -2,6 +2,12 @@ import Foundation
 
 struct MiruroProbeResult { let speed: Double; let requiredSpeed: Double }
 enum MiruroPlayback {
+    static func canRecover(_ streams: [ResolvedStream], current: ResolvedStream, failed: Set<String>) -> Bool {
+        let excluded = failed.union([current.label])
+        guard excluded.count <= 2 else { return false }
+        let dubbed = ServerChoice.kind(current.label) == "dub"
+        return streams.contains { !excluded.contains($0.label) && (ServerChoice.kind($0.label) == "dub") == dubbed }
+    }
     static func choose(_ streams: [ResolvedStream], preferRaw: Bool, preferred: String?, excluded: Set<String> = [],
                        probe: @escaping (ResolvedStream) async throws -> MiruroProbeResult = { try await inspect($0) }) async throws -> ResolvedStream {
         let dubbed = streams.first { $0.label == preferred }.map { ServerChoice.kind($0.label) == "dub" } ?? false

@@ -301,7 +301,8 @@ final class EpisodePlayerModel: ObservableObject {
         guard let current = active else { return }
         let eligible = item.anime.source == "miruro" && !current.url.isFileURL && !engine.paused && !holdProgress && !systemPlayback && UIApplication.shared.applicationState == .active
         guard miruroMonitor.update(context: current.id, position: engine.position, seek: engine.seekRevision, eligible: eligible,
-            buffering: engine.buffering, now: Date().timeIntervalSinceReferenceDate), miruroFailedServers.count < 2 else { return }
+            buffering: engine.buffering, now: Date().timeIntervalSinceReferenceDate),
+            MiruroPlayback.canRecover(resolver.streams, current: current, failed: miruroFailedServers) else { return }
         miruroFailedServers.insert(current.label)
         let position = engine.position, seek = engine.seekRevision
         notify("영상 서버가 느려 다른 서버로 연결하는 중…")

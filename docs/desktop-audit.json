@@ -1,6 +1,6 @@
 {
-  "desktopCommit": "11e4f25465e673f7766cb09a72bd13e5b16a3bab",
-  "desktopVersion": "0.5.25",
+  "desktopCommit": "f04138cdbf7c4262f9ce335932ab2077e1ed3097",
+  "desktopVersion": "0.5.26",
   "files": [
     {
       "desktop": ".github/workflows/build.yml",
@@ -219,7 +219,7 @@
     },
     {
       "desktop": "package-lock.json",
-      "sha256": "2eb72d4217abe81e8a0dbaba16cf31cd25ceec695269196b9cac440cbacb8370",
+      "sha256": "5c0adef9f57761a5b93f159277ed88d8fe9b75e1a1ce013bd583ace3a9cf69c9",
       "uncommitted": false,
       "category": "platform-build",
       "ios": [
@@ -231,7 +231,7 @@
     },
     {
       "desktop": "package.json",
-      "sha256": "c1372101be3ff9892ce1a531cc1555938102c2a8c40d2f7d147e8ca92fcc8ba8",
+      "sha256": "5c3e64918a395c8e83b43f316d3be53f34201738d731083d10039b2d3d98dcbd",
       "uncommitted": false,
       "category": "platform-build",
       "ios": [

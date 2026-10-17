@@ -397,15 +397,36 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
         header("Accept-Language", "ko-KR,ko;q=0.9")
         params.forEach { (key, value) -> parameter(key, value) }
     }.body<String>()
+    private class MiruroQueryFailure(message: String) : IllegalStateException(message)
     internal suspend fun miruro(path: String, params: Map<String, String> = emptyMap()): JsonObject {
-        val body = client.get("https://www.miruro.to/api/v1/" + path) {
-            header("Referer", "https://www.miruro.to/"); header("Accept", "*/*")
-            params.forEach { (key, value) -> parameter(key, value) }
-        }.body<ByteArray>()
-        require(body.size <= 8 * 1024 * 1024) { "Miruro 응답이 너무 큽니다." }
-        val key = "miruro/catalog".encodeToByteArray()
-        val decoded = ByteArray(body.size) { body[it] xor key[it % key.size] }
-        return Json.parseToJsonElement(inflateCatalogGzip(decoded).decodeToString()).jsonObject
+        var failure: Exception? = null
+        for (origin in listOf("https://www.miruro.to", "https://www.miruro.tv", "https://www.miruro.cx", "https://www.miruro.bz")) {
+            try {
+                val result = withTimeoutOrNull(8000) {
+                    val response = client.get("$origin/api/v1/$path") {
+                        expectSuccess = false
+                        header("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1")
+                        header("Referer", "$origin/"); header("Accept", "*/*")
+                        params.forEach { (key, value) -> if (value.isNotEmpty()) parameter(key, value) }
+                    }
+                    val status = response.status.value
+                    if (status !in 200..299) {
+                        if (status in 400..499 && status !in listOf(403,408,429)) throw MiruroQueryFailure("Miruro HTTP $status")
+                        error("Miruro HTTP $status")
+                    }
+                    val body = response.body<ByteArray>()
+                    require(body.size <= 8 * 1024 * 1024) { "Miruro 응답이 너무 큽니다." }
+                    val key = "miruro/catalog".encodeToByteArray()
+                    val decoded = ByteArray(body.size) { body[it] xor key[it % key.size] }
+                    Json.parseToJsonElement(inflateCatalogGzip(decoded).decodeToString()).jsonObject
+                }
+                if (result != null) return result
+                failure = IllegalStateException("Miruro 응답 시간 초과")
+            } catch (error: CancellationException) { throw error }
+            catch (error: MiruroQueryFailure) { throw error }
+            catch (error: Exception) { failure = error }
+        }
+        throw failure ?: IllegalStateException("Miruro 연결 실패")
     }
     private val linkaniNext = mutableMapOf<String, Boolean>()
     fun hasNextLinkaniPage(page: Int, filter: BrowseFilter, query: String): Boolean = linkaniNext[query + filter.toString() + ":" + page] == true

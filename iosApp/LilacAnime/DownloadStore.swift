@@ -184,6 +184,7 @@ final class DownloadStore: ObservableObject {
         }
     }
     func download(_ item: PlaybackItem, stream: ResolvedStream, quality: String = "Auto", announce: Bool = true) {
+        do { try validateStorage() } catch { self.error = error.localizedDescription; return }
         let id = SubtitleFiles.key(item.anime.id + "#" + item.episodeID)
         guard !restoring else { enqueue([item], quality: quality); return }
         guard !busy(id) else { notice = "이미 다운로드 중인 회차입니다. 내 목록 → 다운로드에서 확인하세요."; return }
@@ -202,7 +203,12 @@ final class DownloadStore: ObservableObject {
         if announce { notice = item.title + " 다운로드를 시작합니다. 내 목록 → 다운로드에서 진행 상황을 확인하세요." }
         start(id)
     }
+    private func validateStorage() throws {
+        try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
+        guard FileManager.default.isWritableFile(atPath: Self.directory.path) else { throw SubtitleFiles.failure("다운로드 저장 폴더에 접근할 수 없습니다. 저장 공간과 권한을 확인해 주세요.") }
+    }
     func enqueue(_ items: [PlaybackItem], quality: String) {
+        do { try validateStorage() } catch { self.error = error.localizedDescription; return }
         for item in items where !(resolvingItem?.anime.id == item.anime.id && resolvingItem?.episodeID == item.episodeID) && !resolutionQueue.contains(where: { $0.0.anime.id == item.anime.id && $0.0.episodeID == item.episodeID }) { resolutionQueue.append((item, quality)); pendingResolution += 1 }
         if !items.isEmpty { notice = "\(items.count)개 회차를 다운로드 대기에 추가했습니다. 내 목록 → 다운로드에서 확인하세요." }
         guard resolutionTask == nil else { return }
@@ -232,7 +238,7 @@ final class DownloadStore: ObservableObject {
                 }
                 if Task.isCancelled { return }
                 let ordered = DesktopStreamPolicy.ordered(resolver.streams, preferRaw: preferRaw, preferred: library?.preferences.preferredServers?[item.anime.source], workingProvider: UserDefaults.standard.string(forKey: "miruro.working-provider"))
-                let chosen = item.anime.source == "miruro" ? await DownloadStreamSelector.choose(ordered, quality: quality) : ordered.first
+                let chosen = item.anime.source == "miruro" ? await DownloadStreamSelector.choose(ordered, quality: quality, preferRaw: preferRaw, preferred: library?.preferences.preferredServers?[item.anime.source]) : ordered.first
                 if Task.isCancelled { return }
                 if let stream = chosen { download(item, stream: stream, quality: quality, announce: false) }
                 else { error = item.title + ": " + (resolver.error ?? "영상 주소를 찾지 못했습니다.") }
@@ -623,7 +629,7 @@ final class DownloadStore: ObservableObject {
                 }
             }
             // Keep a separate translation source beside fansubs, never beside the site's own Korean track.
-            if !siteKorean, preferences.translationPreferences(automatic: true) != nil,
+            if !siteKorean, !(await hasKoreanSubtitle(files, folder: folder)), preferences.translationPreferences(automatic: true) != nil,
                let source = try await subtitlePreparer.translationSource(entry.playback, tracks: entry.stream.subtitles, preferences: preferences) {
                 let name = try copy(source.0, label: source.1, language: source.1 == "jimaku" ? "ja" : "", provider: source.1)
                 EpisodeSubtitleStore.shared.save(source.0, item: entry.playback, provider: source.1, translated: false, behind: primary != nil)
@@ -666,6 +672,10 @@ final class DownloadStore: ObservableObject {
         try Task.checkCancellation()
         update(entry.id) { $0.subtitlesPrepared = true }
     }
+    private func hasKoreanSubtitle(_ files: [String], folder: URL) async -> Bool {
+        for name in files { if await SubtitleFiles.isKorean(folder.appendingPathComponent(name)) { return true } }
+        return false
+    }
     func translateSavedDownloads() {
         guard subtitleTask == nil, let library, library.preferences.translateDownloads != false,
               library.preferences.translationPreferences() != nil, library.preferences.downloadSubtitles != false else { return }
@@ -677,12 +687,13 @@ final class DownloadStore: ObservableObject {
                 let folder = Self.directory.appendingPathComponent(entry.id)
                 let files = (entry.subtitleFiles ?? []).map { folder.appendingPathComponent($0) }
                 guard !DesktopSubtitlePolicy.burnedKorean(source: entry.anime.source, stream: entry.stream), entry.siteKorean != true,
+                      !(await hasKoreanSubtitle(entry.subtitleFiles ?? [], folder: folder)),
                       !files.contains(where: { $0.lastPathComponent.hasPrefix("translated-") }),
                       let preferences = library.preferences.translationPreferences() else { continue }
                 let tracks = entry.subtitleTracks ?? []
                 let jimaku = library.preferences.autoTranslation ? tracks.first { $0.provider == "jimaku" } : nil
                 let remote = tracks.map { RemoteSubtitle(label: $0.label, url: folder.appendingPathComponent($0.file), language: $0.language) }
-                var original = jimaku.map({ folder.appendingPathComponent($0.file) }) ?? DesktopSubtitlePolicy.translationTrack(remote)?.url
+                var original = DesktopSubtitlePolicy.translationTrack(remote, language: "ja")?.url ?? jimaku.map({ folder.appendingPathComponent($0.file) }) ?? DesktopSubtitlePolicy.translationTrack(remote, language: "en")?.url
                 if original == nil && tracks.isEmpty {
                     for file in files { if !(await SubtitleFiles.isKorean(file)) { original = file; break } }
                 }

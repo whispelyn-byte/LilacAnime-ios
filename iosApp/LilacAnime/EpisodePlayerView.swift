@@ -21,15 +21,11 @@ final class EpisodePlayerModel: ObservableObject {
     private var offeredSubtitle: (URL, String)?
     private var offerTask: Task<Void, Never>?
     private var offerTimer: Task<Void, Never>?
-    private var alongsideTask: Task<Void, Never>?
-    private let alongsideTranslation = TranslationCoordinator()
     private var selectedProvider = ""
     /// desktop toast(): a short note over the player.
     struct Toast: Equatable { let id = UUID(); let text: String }
     @Published private(set) var toast: Toast?
     func notify(_ text: String) { toast = Toast(text: text) }
-    /// desktop alongsideNoted: the note about a translation made beside a Korean subtitle is said once a series per launch.
-    private static var alongsideNoted: Set<String> = []
     /// desktop koreanFound: a Korean subtitle (a fansub, Linkkf's) was put on for this episode.
 
     private var koreanFound = false
@@ -74,6 +70,10 @@ final class EpisodePlayerModel: ObservableObject {
     private var automaticTask: Task<Void, Never>?
     private var resolutionTask: Task<Void, Never>?
     private var selectionTask: Task<Void, Never>?
+    private var miruroRecoveryTask: Task<Void, Never>?
+    private var miruroMonitor = MiruroStallMonitor()
+    private var miruroFailedServers: Set<String> = []
+
     private var preferRaw = false
     private let service = IosServices()
     private var proxy: HLSProxy?
@@ -169,6 +169,14 @@ final class EpisodePlayerModel: ObservableObject {
                 Task { _ = await isKoreanSubtitle(file) }
             }
         }
+        miruroRecoveryTask?.cancel(); miruroMonitor = MiruroStallMonitor(); miruroFailedServers = []
+        miruroRecoveryTask = Task { [weak self, weak library] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
+                guard let self, let library, token == self.generation else { return }
+                await self.recoverMiruroIfStalled(library: library, token: token)
+            }
+        }
         configure(library)
         let opening = item
         Task { await jimaku.load(opening) }
@@ -240,14 +248,15 @@ final class EpisodePlayerModel: ObservableObject {
         guard active == nil || ordered.contains(where: { $0.url == active?.url && $0.manifestKey != active?.manifestKey }) else { return }
         selectionTask?.cancel()
         selectionTask = Task {
-            for stream in ordered {
-                guard token == generation, !Task.isCancelled else { return }
-                if item.anime.source == "miruro" && !stream.url.isFileURL {
-                    guard let (data, _) = try? await HLSData.fetch(stream.url, stream: stream), (try? HLSData.manifest(data, key: stream.manifestKey)) != nil else { continue }
-                }
-                guard token == generation, !Task.isCancelled else { return }
-                play(stream, library: library); return
+            if item.anime.source == "miruro", ordered.allSatisfy({ !$0.url.isFileURL }) {
+                do {
+                    let selected = try await MiruroPlayback.choose(ordered, preferRaw: preferRaw, preferred: preferred)
+                    guard token == generation, !Task.isCancelled else { return }
+                    play(selected, library: library)
+                } catch { if token == generation && !Task.isCancelled { self.error = error.localizedDescription } }
+                return
             }
+            if let stream = ordered.first, token == generation, !Task.isCancelled { play(stream, library: library); return }
             if !Task.isCancelled { error = "모든 영상 서버 연결에 실패했습니다." }
         }
     }
@@ -267,6 +276,7 @@ final class EpisodePlayerModel: ObservableObject {
         begin(library: library)
     }
     func play(_ stream: ResolvedStream, library: LibraryStore, paused: Bool = false) {
+        miruroFailedServers = []; miruroMonitor = MiruroStallMonitor()
         playRequest = UUID(); let playing = playRequest
         let token = generation
         Task {
@@ -286,6 +296,30 @@ final class EpisodePlayerModel: ObservableObject {
                 prefetchNext(library: library, token: token)
             } catch { if token == generation, playing == playRequest { self.error = error.localizedDescription } }
         }
+    }
+    private func recoverMiruroIfStalled(library: LibraryStore, token: UUID) async {
+        guard let current = active else { return }
+        let eligible = item.anime.source == "miruro" && !current.url.isFileURL && !engine.paused && !holdProgress && !systemPlayback && UIApplication.shared.applicationState == .active
+        guard miruroMonitor.update(context: current.id, position: engine.position, seek: engine.seekRevision, eligible: eligible,
+            buffering: engine.buffering, now: Date().timeIntervalSinceReferenceDate), miruroFailedServers.count < 2 else { return }
+        miruroFailedServers.insert(current.label)
+        let position = engine.position, seek = engine.seekRevision
+        notify("영상 서버가 느려 다른 서버로 연결하는 중…")
+        do {
+            let selected = try await MiruroPlayback.choose(resolver.streams, preferRaw: preferRaw, preferred: current.label, excluded: miruroFailedServers)
+            var playable = selected
+            var replacement: HLSProxy?
+            if selected.manifestKey != nil || selected.hlsManifest != nil || (library.preferences.quality != "Auto" && selected.url.pathExtension.lowercased() == "m3u8") {
+                let nextProxy = HLSProxy(); replacement = nextProxy
+                do { playable = try await nextProxy.start(selected, quality: library.preferences.quality) }
+                catch { nextProxy.stop(); throw error }
+            }
+            guard token == generation, !Task.isCancelled, active?.id == current.id, !engine.paused, !holdProgress,
+                  engine.seekRevision == seek, abs(engine.position - position) <= 0.1, engine.buffering else { replacement?.stop(); return }
+            proxy?.stop(); proxy = replacement
+            active = selected; systemStream = playable; playbackError = nil; error = nil
+            reloadVideo(playable, resume: position)
+        } catch { if token == generation, !Task.isCancelled { error = error.localizedDescription } }
     }
     func applyPreferences(_ library: LibraryStore) { configure(library) }
     func updateAutoSkip(position: Double, enabled: Bool, now: Date = Date()) {
@@ -456,7 +490,6 @@ final class EpisodePlayerModel: ObservableObject {
         guard !Task.isCancelled, token == generation, request == subtitleRequest, subtitle == url else { return }
         if !automatic && saved?.translated != true && korean { library.preferAI(false, animeID: item.anime.id) }
         if translate && selectedProvider != "user" && saved?.translated != true && library.preferences.translationPreferences(automatic: true) != nil && !korean { self.translate(library: library, manual: false) }
-        else { prepareAlongside(library: library) }
         if automatic && saved?.translated != true && !korean && !["kairan", "csora", "anissia", "user"].contains(selectedProvider) { offerKorean(library: library) }
         prefetchNext(library: library, token: generation)
         }
@@ -487,7 +520,7 @@ final class EpisodePlayerModel: ObservableObject {
     }
     func translate(library: LibraryStore, fresh: Bool = false, provider: String? = nil, manual: Bool = true) {
         if manual { subtitleRequest = UUID(); automaticTask?.cancel(); cancelSubtitleBackground() }
-        stopPrefetch(); alongsideTask?.cancel(); alongsideTranslation.cancel()
+        stopPrefetch()
         var preferences = library.preferences
         if let provider = provider ?? (manual ? nil : seriesSide(library)) { preferences.translationProvider = provider; preferences.translationModel = preferences.translationModels?[provider] ?? "" }
         guard let configured = preferences.translationPreferences(localOnly: manual && preferences.translationProvider == "local") else { error = "번역 API 키 또는 로컬 GGUF 모델을 먼저 설정하세요."; return }
@@ -528,8 +561,8 @@ final class EpisodePlayerModel: ObservableObject {
         prefetchNext(library: library, token: generation)
     }
     private func cancelSubtitleBackground() {
-        offerTask?.cancel(); offerTimer?.cancel(); alongsideTask?.cancel(); alongsideTranslation.cancel()
-        offerTask = nil; offerTimer = nil; alongsideTask = nil; offeredSubtitle = nil; koreanOffer = nil
+        offerTask?.cancel(); offerTimer?.cancel()
+        offerTask = nil; offerTimer = nil; offeredSubtitle = nil; koreanOffer = nil
     }
     private func offerKorean(library: LibraryStore) {
         let token = generation; let request = subtitleRequest
@@ -549,29 +582,6 @@ final class EpisodePlayerModel: ObservableObject {
         guard let found = offeredSubtitle else { return }
         library.preferAI(false, animeID: item.anime.id)
         selectSubtitle(found.0, library: library, translate: false, provider: found.1)
-    }
-    private func prepareAlongside(library: LibraryStore) {
-        let site = DesktopSubtitlePolicy.siteKorean(source: item.anime.source, tracks: active?.subtitles ?? [], stream: active)
-        guard DesktopSubtitlePolicy.shouldTranslateAlongside(source: selectedProvider, siteKorean: site),
-              let preferences = automaticPreferences(library),
-              !EpisodeSubtitleStore.shared.list(item).contains(where: \.translated) else { return }
-        let token = generation; let request = subtitleRequest; let episode = item
-        alongsideTask = Task {
-            defer { if token == generation { alongsideTask = nil } }
-            do {
-                guard let prepared = try await preparer.translationSource(episode, tracks: active?.subtitles ?? [], preferences: preferences), token == generation, request == subtitleRequest, !Task.isCancelled else { return }
-                EpisodeSubtitleStore.shared.save(prepared.0, item: episode, provider: prepared.1, translated: false, behind: true)
-                alongsideTranslation.translate(prepared.0, preferences: preferences, anime: episode.anime, background: true) { output in
-                    guard token == self.generation, request == self.subtitleRequest else { return }
-                    EpisodeSubtitleStore.shared.save(output, item: episode, provider: preferences.translationProvider, translated: true, behind: true, original: prepared.0)
-                    if Self.alongsideNoted.insert(episode.anime.id).inserted {
-                        self.notify("번역본도 만들어 뒀어요. 한국어 자막이 맞지 않으면 플레이어 설정 > 자막에서 'AI 번역'을 눌러 보세요.")
-                    }
-                }
-                while alongsideTranslation.running && !Task.isCancelled { try await Task.sleep(nanoseconds: 300_000_000) }
-                if !Task.isCancelled, token == generation { prefetchNext(library: library, token: token) }
-            } catch { }
-        }
     }
     func loadMakers() {
         subtitleSearchRequest = UUID()
@@ -743,7 +753,7 @@ final class EpisodePlayerModel: ObservableObject {
         let next = item.next[0]
         prefetchTask = Task {
             defer { if token == generation { prefetchTask = nil } }
-            while !Task.isCancelled && token == generation && (translation.running || alongsideTranslation.running || alongsideTask != nil || subtitle == nil) {
+            while !Task.isCancelled && token == generation && (translation.running || subtitle == nil) {
                 do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
             }
             guard !Task.isCancelled, token == generation else { return }
@@ -754,7 +764,7 @@ final class EpisodePlayerModel: ObservableObject {
             }
             do {
                 try Task.checkCancellation()
-                guard token == generation, let prepared = try await preparer.prepare(next, tracks: nextResolver.streams.first?.subtitles ?? [], preferences: preferences, prefersAI: library.aiSubtitleSeries[next.anime.id] == true, stream: nextResolver.streams.first) else { prefetchStatus = nil; return }
+                guard token == generation, let prepared = try await preparer.prepare(next, tracks: nextResolver.streams.first?.subtitles ?? [], preferences: preferences, prefersAI: false, stream: nextResolver.streams.first) else { prefetchStatus = nil; return }
                 if EpisodeSubtitleStore.shared.list(next).contains(where: { $0.file == prepared.0 && $0.translated }) { prefetchStatus = "다음 화 번역 자막 저장 완료"; return }
                 EpisodeSubtitleStore.shared.save(prepared.0, item: next, provider: prepared.1, translated: false)
                 if await SubtitleFiles.isKorean(prepared.0) { prefetchStatus = "다음 화 한국어 자막 저장 완료"; return }
@@ -782,7 +792,7 @@ final class EpisodePlayerModel: ObservableObject {
         pictureInPicture.stop()
         subtitleClassification?.cancel()
         resolutionTask?.cancel(); selectionTask?.cancel()
-        save(library: library); stopPrefetch(); automaticTask?.cancel(); cancelSubtitleBackground(); preparer.cancel(); generation = UUID(); engine.shutdown(); resolver.cancel(); translation.shutdown(); service.cancel(); titleLookup.cancel(); proxy?.stop(); proxy = nil; cast.stop()
+        save(library: library); stopPrefetch(); automaticTask?.cancel(); cancelSubtitleBackground(); preparer.cancel(); generation = UUID(); miruroRecoveryTask?.cancel(); miruroRecoveryTask = nil; engine.shutdown(); resolver.cancel(); translation.shutdown(); service.cancel(); titleLookup.cancel(); proxy?.stop(); proxy = nil; cast.stop()
     }
 }
 struct EpisodePlayerView: View {
@@ -1031,7 +1041,11 @@ struct EpisodePlayerView: View {
                     guard let choice = choices.first(where: { $0.id == id }) else { return }
                     library.preferences.preferredServers = (library.preferences.preferredServers ?? [:]).merging([model.item.anime.source: choice.label]) { _, new in new }
                     model.save(library: library); showWeb = false
-                    if let stream = choice.stream { library.preferences.preferredStream = stream.label; model.play(stream, library: library) }
+                    if let stream = choice.stream {
+                        library.preferences.preferredStream = stream.label
+                        if model.item.anime.source == "miruro" { model.active = nil; model.selectResolved(model.resolver.streams, library: library) }
+                        else { model.play(stream, library: library) }
+                    }
                     else if let server = choice.server { model.active = nil; model.engine.pause(); model.resolver.selectServer(server) }
                 }), identifier: "player-servers")
             if let note = ServerChoice.note(open) { PSNote(note) }

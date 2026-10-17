@@ -679,7 +679,7 @@
           "url": "https://fixture.test/sub.ass"
         }
       ],
-      "expected": "English forced"
+      "expected": null
     },
     {
       "tracks": [

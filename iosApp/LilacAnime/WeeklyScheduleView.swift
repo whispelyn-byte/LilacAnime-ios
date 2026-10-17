@@ -93,8 +93,8 @@ struct WeeklyScheduleView: View {
                             Text(ScheduleWeek.label(dates[index])).font(.caption2)
                             Text(ScheduleWeek.calendar.isDateInToday(dates[index]) ? "오늘" : " ").font(.caption2)
                         }.frame(maxWidth: .infinity).padding(.vertical, 8)
-                            .foregroundStyle(selected == index ? Color.white : LilacStyle.text)
-                            .background(selected == index ? LilacStyle.accent : LilacStyle.card2, in: RoundedRectangle(cornerRadius: 8))
+                            .foregroundStyle(selected == index ? LilacStyle.text : LilacStyle.muted)
+                            .overlay(alignment: .bottom) { Rectangle().fill(selected == index ? LilacStyle.accent : Color.clear).frame(height: 2) }
                     }.buttonStyle(.plain).accessibilityLabel(weekdays[index] + "요일 " + ScheduleWeek.label(dates[index]))
                 }
             }
@@ -148,13 +148,13 @@ struct WeeklyScheduleView: View {
                 Text(item.time.isEmpty ? (model.result?.timed == true ? "미정" : weekdays[selected] + "요일") : item.time).font(.subheadline.monospacedDigit().bold())
                 Text(status(item)).font(.caption2).foregroundStyle(LilacStyle.muted)
             }.frame(width: 58)
-            if let anime, !anime.poster.isEmpty { AnimeArtwork(url: anime.poster, width: 38, height: 55, alignment: .posterFocus).clipShape(RoundedRectangle(cornerRadius: 4)) }
+            if let anime, !anime.poster.isEmpty { AnimeArtwork(url: anime.poster, width: 32, height: 44, alignment: .posterFocus).clipShape(RoundedRectangle(cornerRadius: 4)) }
             VStack(alignment: .leading, spacing: 5) {
                 if let anime { AnimeDisplayTitle(anime: anime, source: source).font(.subheadline.bold()).lineLimit(2) }
                 else { Text(item.title).font(.subheadline.bold()).lineLimit(2) }
                 Text(metadata(item)).font(.caption).foregroundStyle(LilacStyle.muted).lineLimit(2)
             }
             Spacer(minLength: 0)
-        }.foregroundStyle(LilacStyle.text).padding(10).frame(maxWidth: .infinity, alignment: .leading).background(LilacStyle.card, in: RoundedRectangle(cornerRadius: 8))
+        }.foregroundStyle(LilacStyle.text).padding(10).frame(maxWidth: .infinity, alignment: .leading)
     }
 }

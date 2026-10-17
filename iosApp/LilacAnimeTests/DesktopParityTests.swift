@@ -39,7 +39,7 @@ final class DesktopParityTests: XCTestCase {
     }
     func testOwnKoreanTracksSuppressAlongsideAndCloudPrefetchIsOptIn() {
         XCTAssertFalse(DesktopSubtitlePolicy.shouldTranslateAlongside(source: "kairan", siteKorean: true))
-        XCTAssertTrue(DesktopSubtitlePolicy.shouldTranslateAlongside(source: "kairan", siteKorean: false))
+        XCTAssertFalse(DesktopSubtitlePolicy.shouldTranslateAlongside(source: "kairan", siteKorean: false))
         XCTAssertFalse(DesktopSubtitlePolicy.shouldPrefetch(provider: "gemini", cloud: false, siteKorean: false, prefersAI: false))
         XCTAssertTrue(DesktopSubtitlePolicy.shouldPrefetch(provider: "local", cloud: false, siteKorean: false, prefersAI: false))
         XCTAssertFalse(DesktopSubtitlePolicy.shouldPrefetch(provider: "local", cloud: false, siteKorean: true, prefersAI: false))

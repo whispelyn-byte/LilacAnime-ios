@@ -147,15 +147,18 @@ final class DesktopSubtitlePreparer {
 
     func translationSource(_ item: PlaybackItem, tracks: [RemoteSubtitle], preferences: AppPreferences, requireAutomatic: Bool = true) async throws -> (URL, String)? {
         guard !requireAutomatic || preferences.translationPreferences(automatic: true) != nil else { return nil }
+        if let japanese = DesktopSubtitlePolicy.translationTrack(tracks, language: "ja"),
+           let files = try? await SubtitleFiles.prepare(japanese.url, headers: japanese.headers ?? [:]), let file = select(files, item: item, offsets: []) { return (file, "reanime") }
+        try Task.checkCancellation()
         if let saved = EpisodeSubtitleStore.shared.list(item).first(where: { !$0.translated && $0.provider == "jimaku" }), let file = saved.file { return (file, "jimaku") }
         if item.anime.source != "local" {
             let files = await jimaku.load(item)
-            for asset in files where asset.source != "post" && asset.score > 0 && JimakuRules.shared.validDownload(url: asset.url) {
+            for asset in files where asset.source != "post" && asset.score > 0 && JimakuRules.shared.validDownload(url: asset.url) && asset.name.range(of: #"(?:^|[. _-])(?:en|eng|english)(?:[. _-]|$)"#, options: [.regularExpression, .caseInsensitive]) == nil {
                 try Task.checkCancellation()
                 if let url = URL(string: asset.url), let files = try? await SubtitleFiles.prepare(url, japanese: true, filename: asset.name), let file = files.first { return (file, "jimaku") }
             }
         }
-        if let track = DesktopSubtitlePolicy.translationTrack(tracks), let files = try? await SubtitleFiles.prepare(track.url, headers: track.headers ?? [:]), let file = select(files, item: item, offsets: []) { return (file, "reanime") }
+        if let track = DesktopSubtitlePolicy.translationTrack(tracks, language: "en"), let files = try? await SubtitleFiles.prepare(track.url, headers: track.headers ?? [:]), let file = select(files, item: item, offsets: []) { return (file, "reanime") }
         return nil
     }
 

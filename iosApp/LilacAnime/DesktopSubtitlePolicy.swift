@@ -16,19 +16,22 @@ enum DesktopSubtitlePolicy {
             track.language.range(of: "^ko(?:[-_]|$)", options: [.regularExpression, .caseInsensitive]) != nil ||
             track.url.absoluteString.range(of: "_kor_", options: [.regularExpression, .caseInsensitive]) != nil
     }
-    static func translationTrack(_ tracks: [RemoteSubtitle]) -> RemoteSubtitle? {
-        func language(_ track: RemoteSubtitle, _ expression: String) -> Bool {
-            (track.label + " " + track.language).range(of: expression, options: [.regularExpression, .caseInsensitive]) != nil
+    static func translationTrack(_ tracks: [RemoteSubtitle], language: String? = nil) -> RemoteSubtitle? {
+        func pick(_ lang: String) -> RemoteSubtitle? {
+            let code = lang == "ja" ? #"^(?:ja|jpn)(?:[-_]|$)"# : #"^(?:en|eng)(?:[-_]|$)"#
+            let name = lang == "ja" ? "japanese|日本|일본" : "english|영어"
+            func rank(_ item: RemoteSubtitle) -> Int {
+                if item.label.range(of: #"dubtitle|\(ai\)|\bai\b"#, options: [.regularExpression, .caseInsensitive]) != nil { return 2 }
+                return item.label.range(of: "dialogue|full", options: [.regularExpression, .caseInsensitive]) != nil ? 0 : 1
+            }
+            return tracks.enumerated().filter { _, item in
+                item.label.range(of: "signs|songs|forced", options: [.regularExpression, .caseInsensitive]) == nil &&
+                (item.language.range(of: code, options: [.regularExpression, .caseInsensitive]) != nil ||
+                 (item.label + " " + item.language).range(of: name, options: [.regularExpression, .caseInsensitive]) != nil)
+            }.min { rank($0.element) == rank($1.element) ? $0.offset < $1.offset : rank($0.element) < rank($1.element) }?.element
         }
-        if let japanese = tracks.first(where: { language($0, "japanese|日本|(?:^|\\s)ja(?:[-_]|$)") }) { return japanese }
-        func rank(_ track: RemoteSubtitle) -> Int {
-            if track.label.range(of: "signs|songs|forced", options: [.regularExpression, .caseInsensitive]) != nil { return 3 }
-            if track.label.range(of: "dubtitle|\\(ai\\)|\\bai\\b", options: [.regularExpression, .caseInsensitive]) != nil { return 2 }
-            if track.label.range(of: "dialogue|full", options: [.regularExpression, .caseInsensitive]) != nil { return 0 }
-            return 1
-        }
-        return tracks.enumerated().filter { language($0.element, "english|(?:^|\\s)en(?:[-_]|$)") }
-            .min { rank($0.element) == rank($1.element) ? $0.offset < $1.offset : rank($0.element) < rank($1.element) }?.element
+        if let language { return pick(language) }
+        return pick("ja") ?? pick("en")
     }
     static func preferredSaved(_ saved: [SavedSubtitle], preferred: String?) -> SavedSubtitle? {
         let preferred = source(preferred)
@@ -47,7 +50,7 @@ enum DesktopSubtitlePolicy {
         burnedKorean(source: source, stream: stream) || source == "linkkf" || tracks.contains(where: isKorean)
     }
     static func shouldTranslateAlongside(source: String, siteKorean: Bool) -> Bool {
-        !siteKorean && ["kairan", "csora", "anissia", "provider", "download"].contains(source)
+        false
     }
     static func shouldPrefetch(provider: String, cloud: Bool, siteKorean: Bool, prefersAI: Bool) -> Bool {
         (provider == "local" || cloud) && (!siteKorean || prefersAI)

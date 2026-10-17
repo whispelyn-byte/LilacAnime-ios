@@ -13,6 +13,8 @@ def git(*args):
 shared = 'shared/src/commonMain/kotlin/com/lilac/anime/shared/'
 ios = 'iosApp/LilacAnime/'
 mapping = {
+ 'electron/miruro-playback.cjs': [ios+'MiruroPlayback.swift',ios+'EpisodePlayerView.swift'],
+ 'src/subtitle-source.js': [ios+'DesktopSubtitlePolicy.swift',ios+'DesktopSubtitlePreparer.swift',ios+'DownloadStore.swift'],
  'electron/provider-schedule.cjs': [shared+'WeeklySchedule.kt'],
  'electron/weekly-schedule.cjs': [shared+'WeeklySchedule.kt'],
  'src/weekly-schedule.js': [ios+'WeeklyScheduleView.swift'],

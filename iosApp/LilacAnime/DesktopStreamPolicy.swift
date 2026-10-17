@@ -37,6 +37,13 @@ struct ServerChoice {
 }
 
 enum DesktopStreamPolicy {
+    static func priority(_ stream: ResolvedStream, preferRaw: Bool) -> Double {
+        let kind = ServerChoice.kind(stream.label)
+        let clean = ["raw", "soft"].contains(kind)
+        let english = kind == "soft" && stream.subtitles.contains { $0.language.lowercased().hasPrefix("en") && $0.label.range(of: "forced|sign", options: [.regularExpression, .caseInsensitive]) == nil }
+        let korean = kind == "soft" && stream.subtitles.contains(where: DesktopSubtitlePolicy.isKorean)
+        return korean ? 0.5 : preferRaw ? (clean ? 1 : kind == "sub" ? 2 : 3) : (english ? 1 : kind == "sub" ? 2 : clean ? 3 : 4)
+    }
     static func ordered(_ streams: [ResolvedStream], preferRaw: Bool, preferred: String?, workingProvider: String?) -> [ResolvedStream] {
         let providers = ["anikoto", "kickassanime", "icarus", "aniwaves"]
         func rank(_ stream: ResolvedStream) -> Double {

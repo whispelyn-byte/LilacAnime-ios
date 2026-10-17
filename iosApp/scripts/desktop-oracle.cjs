@@ -3,7 +3,7 @@
 const fs = require('fs'), path = require('path'), vm = require('vm'), crypto = require('crypto');
 const desktop = path.resolve(process.argv[2]), root = path.resolve(__dirname, '../..');
 const app = fs.readFileSync(path.join(desktop, 'src/app.js'), 'utf8');
-const trackBody = app.match(/function translationSourceTrack\(\)\{[\s\S]*?\n\}/)[0];
+const subtitleSource = require(path.join(desktop, 'src/subtitle-source.js'));
 const koreanBody = app.match(/function isKoreanTrack\(track\)\{[^\n]+/)[0];
 const savedBody = app.match(/const savedPreferred=([^;]+);if\(savedPreferred\)/)[1];
 const meta = require(path.join(desktop, 'src/anime-metadata.js'));
@@ -96,7 +96,7 @@ const result = {
     {title:'작품 12.5화 자막',html:'<a href="/12.5.ass">자막</a>',episode:5},
     {title:'작품',html:'<a href="/12.5.ass">12.5화</a><a href="/12.ass">12화</a>',episode:12.5}
   ].map(input=>{const post={title:input.title,html:input.html,url:'https://fixture.test/post'};return {input,expected:context.rules.communityLinks(post,input.episode)}}),
-  subtitleTracks:trackSets.map(tracks=>({tracks,expected:vm.runInNewContext(trackBody+';translationSourceTrack()', {currentPlaybackContext:{subtitleTracks:tracks}})?.label ?? null})),
+  subtitleTracks:trackSets.map(tracks=>({tracks,expected:(subtitleSource.track(tracks,'ja') || subtitleSource.track(tracks,'en'))?.label ?? null})),
   korean:korean.map(input=>({input,expected:vm.runInNewContext(koreanBody+';isKoreanTrack(track)',{track:input})})),
   saved:savedCases.map(c=>({...c,expected:vm.runInNewContext(savedBody,c)?.source ?? null})),
   metadata:metadata.map(input=>({input,release:meta.releaseDate(input),label:meta.episodeLabel(input)})), regions,

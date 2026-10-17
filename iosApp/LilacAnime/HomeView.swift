@@ -11,7 +11,8 @@ struct HomeView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var homeOrder = "season"
     @State private var featured = 0
-    @State private var day = (Calendar.current.component(.weekday, from: Date()) + 5) % 7
+    @State private var day = ScheduleWeek.today
+    @State private var scheduleRefresh = 0
     /// app.js renderHero: up to five shows with art; the one shown moves on every nine seconds.
     private var heroItems: [Anime] {
         let pool = home.sections.first { $0.name == "이번 시즌" }?.items.isEmpty == false ? home.sections.first { $0.name == "이번 시즌" }!.items : items
@@ -36,7 +37,7 @@ struct HomeView: View {
                     } else if model.loading {
                         Rectangle().fill(LilacStyle.card).frame(height: 420).overlay { ProgressView("작품을 불러오는 중…") }
                     }
-                    if model.source == "linkkf" { schedule }
+                    WeeklyScheduleView(source: library.preferences.source, known: items + home.airing + home.sections.flatMap { $0.items } + library.favorites.filter { $0.source == library.preferences.source }.map { $0.anime }, refresh: scheduleRefresh).padding(.horizontal, gutter)
                     if !library.history.isEmpty { continueWatching }
                     if DesktopRecentUpdates.supported.contains(library.preferences.source) {
                         orderChips
@@ -68,7 +69,7 @@ struct HomeView: View {
                 }.padding(.bottom, 40)
             }.background(LilacStyle.background)
                 .toolbar(.hidden, for: .navigationBar)
-                .refreshable { if !UIShowcase.enabled { model.load(); home.load(source: model.source, day: max(day, 0)) } }
+                .refreshable { scheduleRefresh += 1; if !UIShowcase.enabled { model.load(); home.load(source: model.source, day: max(day, 0)) } }
                 .onChange(of: day) { value in if !UIShowcase.enabled { home.load(source: model.source, day: max(value, 0)) } }
                 .task(id: library.preferences.source) { if !UIShowcase.enabled { featured = 0; home.load(source: library.preferences.source, day: max(day, 0)) } }
                 .task(id: "\(featured)/\(heroItems.count)") {
@@ -79,20 +80,6 @@ struct HomeView: View {
                 .task(id: library.preferences.source + homeOrder) { if homeOrder == "updated" && !UIShowcase.enabled { await recent.loadHome(library.preferences.source) } }
                 .task { if !UIShowcase.enabled && model.items.isEmpty { model.source = library.preferences.source; model.load() } }
                 .onChange(of: library.preferences.source) { source in if !UIShowcase.enabled && model.source != source { model.source = source; model.load() } }
-        }
-    }
-    /// Linkkf's weekday schedule: UP is the newest updates.
-    private var schedule: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            LilacSectionTitle(title: "방영 일정").padding(.horizontal, gutter)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(Array(["UP", "월", "화", "수", "목", "금", "토", "일"].enumerated()), id: \.offset) { index, title in
-                        Button { day = index - 1 } label: { LilacChip(text: title, selected: day == index - 1) }.buttonStyle(.plain)
-                    }
-                }.padding(.horizontal, gutter)
-            }
-            AnimeRail(title: day < 0 ? "최신 업데이트" : "오늘의 애니메이션", items: day < 0 ? items : home.airing, source: model.source)
         }
     }
     /// 이번 시즌 신작 / 최근 업데이트 as the desktop's sort chips.

@@ -56,6 +56,7 @@ class IosServices internal constructor(private val worker: CoroutineDispatcher) 
         scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { source.desktopServers(sourceKey, url, number, anilist) } }
     }
     fun sourceSections(sourceKey: String, completion: (List<SourceSection>?, String?) -> Unit) { scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { source.sourceSections(sourceKey) } } }
+    fun weeklySchedule(sourceKey: String, day: Int, date: String, monday: String, completion: (WeeklyScheduleResult?, String?) -> Unit) { scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { source.weeklySchedule(sourceKey, day, date, monday) } } }
     fun sourceSchedule(sourceKey: String, day: Int, completion: (List<Anime>?, String?) -> Unit) { scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { source.sourceSchedule(sourceKey, day) } } }
     fun recordView(anime: Anime, completion: (SourceExtras?, String?) -> Unit) { scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { source.recordView(anime) } } }
     fun sourceExtras(anime: Anime, completion: (SourceExtras?, String?) -> Unit) { scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { source.extras(anime) } } }

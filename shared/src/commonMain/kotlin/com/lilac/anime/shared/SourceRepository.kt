@@ -50,6 +50,8 @@ class SourceRepository(private val client: HttpClient, private val details: Deta
     constructor() : this(newSharedClient(), DetailMemory.shared)
     private val linkkf = LinkkfRepository(client)
     private val desktop = DesktopSourceRepository(client)
+    private val weeklySchedule = WeeklySchedule(this, desktop)
+    suspend fun weeklySchedule(source: String, day: Int, date: String, monday: String) = weeklySchedule.load(source, day, date, monday)
     private val filterCache = mutableMapOf<String, Pair<Long, SourceFilters>>()
     private val updateCache = mutableMapOf<String, Pair<Long, List<Anime>>>()
     suspend fun ohliPlayer(url: String): String = desktop.ohliPlayer(url)

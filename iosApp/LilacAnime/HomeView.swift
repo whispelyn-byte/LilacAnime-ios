@@ -23,6 +23,9 @@ struct HomeView: View {
     var workspace = false
     let browse: () -> Void
     private var items: [Anime] { UIShowcase.enabled ? UIShowcase.items : model.items }
+    private var scheduleKnown: [Anime] {
+        items + home.airing + home.sections.flatMap { $0.items } + library.favorites.filter { $0.source == library.preferences.source }.map { $0.anime }
+    }
     private var gutter: CGFloat { LilacStyle.gutter(sizeClass) }
     private var continuing: [WatchEntry] {
         var seen: Set<String> = []
@@ -37,7 +40,7 @@ struct HomeView: View {
                     } else if model.loading {
                         Rectangle().fill(LilacStyle.card).frame(height: 420).overlay { ProgressView("작품을 불러오는 중…") }
                     }
-                    WeeklyScheduleView(source: library.preferences.source, known: items + home.airing + home.sections.flatMap { $0.items } + library.favorites.filter { $0.source == library.preferences.source }.map { $0.anime }, refresh: scheduleRefresh).padding(.horizontal, gutter)
+                    WeeklyScheduleView(source: library.preferences.source, known: scheduleKnown, refresh: scheduleRefresh).padding(.horizontal, gutter)
                     if !library.history.isEmpty { continueWatching }
                     if DesktopRecentUpdates.supported.contains(library.preferences.source) {
                         orderChips

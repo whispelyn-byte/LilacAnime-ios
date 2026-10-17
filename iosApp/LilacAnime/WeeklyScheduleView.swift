@@ -109,7 +109,7 @@ struct WeeklyScheduleView: View {
     private func matched(_ item: WeeklyScheduleEntry) -> Anime? {
         if let anime = item.anime, anime.source == source { return anime }
         let names = [item.title, item.originalTitle].map(TitleKeys.key).filter { !$0.isEmpty }
-        return known.first { anime in [anime.title, anime.native, anime.english, anime.romaji].map(TitleKeys.key).contains { names.contains($0) } }
+        return known.first { anime in anime.source == source && [anime.title, anime.native, anime.english, anime.romaji].map(TitleKeys.key).contains { names.contains($0) } }
     }
     private func status(_ item: WeeklyScheduleEntry) -> String {
         if item.cancelled { return "결방" }

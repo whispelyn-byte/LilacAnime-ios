@@ -765,7 +765,7 @@ final class EpisodePlayerModel: ObservableObject {
             }
             do {
                 try Task.checkCancellation()
-                guard token == generation, let prepared = try await preparer.prepare(next, tracks: nextResolver.streams.first?.subtitles ?? [], preferences: preferences, prefersAI: false, stream: nextResolver.streams.first) else { prefetchStatus = nil; return }
+                guard token == generation, let prepared = try await preparer.prepare(next, tracks: nextResolver.streams.flatMap { $0.subtitles }, preferences: preferences, prefersAI: false, stream: nextResolver.streams.first) else { prefetchStatus = nil; return }
                 if EpisodeSubtitleStore.shared.list(next).contains(where: { $0.file == prepared.0 && $0.translated }) { prefetchStatus = "다음 화 번역 자막 저장 완료"; return }
                 EpisodeSubtitleStore.shared.save(prepared.0, item: next, provider: prepared.1, translated: false)
                 if await SubtitleFiles.isKorean(prepared.0) { prefetchStatus = "다음 화 한국어 자막 저장 완료"; return }

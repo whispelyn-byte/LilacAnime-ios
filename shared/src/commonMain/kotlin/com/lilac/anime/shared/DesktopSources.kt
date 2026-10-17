@@ -398,7 +398,7 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
         params.forEach { (key, value) -> parameter(key, value) }
     }.body<String>()
     private class MiruroQueryFailure(message: String) : IllegalStateException(message)
-    internal suspend fun miruro(path: String, params: Map<String, String> = emptyMap()): JsonObject {
+    internal suspend fun miruro(path: String, params: Map<String, String> = emptyMap()): JsonObject = withContext(kotlinWork) {
         var failure: Exception? = null
         for (origin in listOf("https://www.miruro.to", "https://www.miruro.tv", "https://www.miruro.cx", "https://www.miruro.bz")) {
             try {
@@ -420,7 +420,7 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
                     val decoded = ByteArray(body.size) { body[it] xor key[it % key.size] }
                     Json.parseToJsonElement(inflateCatalogGzip(decoded).decodeToString()).jsonObject
                 }
-                if (result != null) return result
+                if (result != null) return@withContext result
                 failure = IllegalStateException("Miruro 응답 시간 초과")
             } catch (error: CancellationException) { throw error }
             catch (error: MiruroQueryFailure) { throw error }

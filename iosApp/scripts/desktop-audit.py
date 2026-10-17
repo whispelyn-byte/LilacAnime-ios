@@ -13,6 +13,10 @@ def git(*args):
 shared = 'shared/src/commonMain/kotlin/com/lilac/anime/shared/'
 ios = 'iosApp/LilacAnime/'
 mapping = {
+ 'electron/provider-schedule.cjs': [shared+'WeeklySchedule.kt'],
+ 'electron/weekly-schedule.cjs': [shared+'WeeklySchedule.kt'],
+ 'src/weekly-schedule.js': [ios+'WeeklyScheduleView.swift'],
+ 'src/weekly-schedule.css': [ios+'WeeklyScheduleView.swift'],
  'src/anime4k.js': [ios+'Anime4K.swift',ios+'MPVEngine.swift'],
  'scripts/anime4k-entry.mjs': [ios+'Anime4K.swift',ios+'Resources/Anime4K/upstream.json'],
  'scripts/build-anime4k.cjs': ['iosApp/scripts/verify-anime4k.py'],
@@ -66,6 +70,7 @@ groups = [
  ('installLocalModel cancelLocalModelInstall addLocalModelFile removeLocalModel onLocalModelProgress', [ios+'DesktopModelInstaller.swift',ios+'LocalModelsView.swift']),
  ('openExternal', [ios+'EpisodePlayerView.swift',ios+'SettingsView.swift',ios+'DesktopUpdater.swift']),
 ]
+groups.append(('weeklySchedule providerSchedule', [shared+'WeeklySchedule.kt',shared+'IosServices.kt',ios+'WeeklyScheduleView.swift']))
 api_map = {name: targets for names,targets in groups for name in names.split()}
 apis = re.findall(r'^  (\w+):', (desktop/'electron/preload.cjs').read_text(encoding='utf-8'), re.M)
 assert apis, 'No preload APIs found'
@@ -95,5 +100,5 @@ for file in files:
         committed = None
     inventory.append(dict(desktop=file,sha256=hashlib.sha256(data).hexdigest(),uncommitted=data!=committed,category=category,ios=targets))
 manifest = dict(desktopCommit=git('rev-parse','HEAD').decode().strip(),desktopVersion=json.loads((desktop/'package.json').read_text())['version'], files=inventory,preloadAPIs=[dict(name=name,ios=api_map[name]) for name in apis])
-(root/'docs/desktop-audit.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+(root/'docs/desktop-audit.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8',newline='\n')
 print(f"Inventoried {len(inventory)} files and {len(apis)} APIs; desktop {manifest['desktopVersion']} at {manifest['desktopCommit'][:7]}.")

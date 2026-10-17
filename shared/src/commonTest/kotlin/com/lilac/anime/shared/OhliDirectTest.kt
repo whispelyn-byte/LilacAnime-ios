@@ -7,6 +7,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
 
@@ -28,8 +30,9 @@ class OhliDirectTest {
 
     @Test fun thePlayerIsReadWithoutOpeningIt() = runTest {
         val asked = mutableListOf<String>()
+        val askedMutex = Mutex()
         val client = HttpClient(MockEngine { request ->
-            asked += request.method.value + " " + request.url.encodedPath
+            askedMutex.withLock { asked += request.method.value + " " + request.url.encodedPath }
             when {
                 request.url.encodedPath == "/player/index.php" -> {
                     assertEquals("getVideo", request.url.parameters["do"]); assertEquals("XMLHttpRequest", request.headers["X-Requested-With"])

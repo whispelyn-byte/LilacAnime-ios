@@ -42,6 +42,7 @@ internal class WeeklySchedule(private val repository: SourceRepository, private 
                 .also { cache[key] = now to it }
         } catch (e: CancellationException) { throw e } catch (_: Exception) {
             // Do not cache a provider failure: retry must attempt the source again.
+            documents.keys.removeAll { it.startsWith(source + ":") }
             val raw = Json.parseToJsonElement(document("anissia:$day") { repository.getText("https://api.anissia.net/anime/schedule/$day") }).jsonObject
             check(raw.text("code").let { it.isEmpty() || it == "ok" })
             val rows = raw["data"] as? JsonArray ?: error("방영표 응답이 올바르지 않습니다.")

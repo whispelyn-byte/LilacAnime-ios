@@ -1,5 +1,5 @@
 {
-  "desktopCommit": "aadf40a12f511c334d4edc242b2d60518473e56d",
+  "desktopCommit": "11e4f25465e673f7766cb09a72bd13e5b16a3bab",
   "desktopVersion": "0.5.25",
   "files": [
     {
@@ -117,7 +117,7 @@
     },
     {
       "desktop": "electron/main.cjs",
-      "sha256": "5a48c3d3d32d37ff118fe4c2ce815257bca3a80818ca55be0c6a3ab2de7a006c",
+      "sha256": "fee3fa96aaebf90cfef0451f6b260011ddf64b9bc74d26b6d51146db1e8d51ec",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -150,12 +150,21 @@
     },
     {
       "desktop": "electron/preload.cjs",
-      "sha256": "9da6d22d958901ed38c068f0bea868700e6cae616be69fcb987a9d5ad79e56fc",
+      "sha256": "4667b1679dfbe39cb05c41415f61a1f71452f0f97793cc77f92bf51bae739a8a",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
         "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
         "iosApp/LilacAnime/LibraryStore.swift"
+      ]
+    },
+    {
+      "desktop": "electron/provider-schedule.cjs",
+      "sha256": "dd7b45c0a3d6cc69b4b356a2ba0e79ff38808de33fb7d11c628b2e42e5b34783",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/WeeklySchedule.kt"
       ]
     },
     {
@@ -197,6 +206,15 @@
       "ios": [
         "iosApp/LilacAnime/DesktopUpdater.swift",
         ".github/workflows/ipa.yml"
+      ]
+    },
+    {
+      "desktop": "electron/weekly-schedule.cjs",
+      "sha256": "02a0ed8980d5b68ce319439f0c63aeb063edbc1b970b4c04a85ba800ba18b73e",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/WeeklySchedule.kt"
       ]
     },
     {
@@ -283,7 +301,7 @@
     },
     {
       "desktop": "src/app.js",
-      "sha256": "e75987fbc3009153d6c4062ff64d62d6b83f3780469eafff85ea4b32458b420a",
+      "sha256": "43a5e7305b121288950bc876c777e17e4231c5cfe3a2c1e6f230145674598038",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -375,7 +393,7 @@
     },
     {
       "desktop": "src/index.html",
-      "sha256": "b6c8fdb5d68f3451e31a3813302cbc128b17a5cbd21f33af1eb7b5be23f22a49",
+      "sha256": "c7286edfdf1b30c1f72121ea05ef0c8814c0346146b188d3c62fa0263c5179b7",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -558,6 +576,24 @@
         "iosApp/LilacAnime/UIComponents.swift",
         "iosApp/LilacAnime/PlayerSettingsPanel.swift",
         "iosApp/LilacAnime/EpisodePlayerView.swift"
+      ]
+    },
+    {
+      "desktop": "src/weekly-schedule.css",
+      "sha256": "b66fcdf6df85f5e41c366b5cf5877662438b90500f34b8e77e28b2386b36347d",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "iosApp/LilacAnime/WeeklyScheduleView.swift"
+      ]
+    },
+    {
+      "desktop": "src/weekly-schedule.js",
+      "sha256": "c9fa3b9b1598390601014047b0cb3cf0270759410529c309bc6732da45954bb8",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "iosApp/LilacAnime/WeeklyScheduleView.swift"
       ]
     },
     {
@@ -804,6 +840,28 @@
       ]
     },
     {
+      "desktop": "tests/provider-schedule.live.cjs",
+      "sha256": "deb364f5f27bfb43fe0287417c55abcc72a9efacce47a7e0f8eb7c95c044f9ef",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/provider-schedule.test.cjs",
+      "sha256": "6b417ab77b5bcbb5c9f1072a91024d7ace14f84b9c01b6df002a92a5642ddd99",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
       "desktop": "tests/startup.test.cjs",
       "sha256": "dfcdf9d8e9e7706269d35d5625e23bb3eb148455e7cb396f0590fb9571428df2",
       "uncommitted": false,
@@ -857,6 +915,28 @@
         "iosApp/LilacAnimeUITests",
         "shared/src/commonTest"
       ]
+    },
+    {
+      "desktop": "tests/weekly-schedule.electron.cjs",
+      "sha256": "da586c79f2cf7cf3e3319397d4f5e3e5b82a0d4b53cfefed322b9e0708b40aba",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/weekly-schedule.test.cjs",
+      "sha256": "9698e53d5f6d774c48b9a74fa967c570e167e8441941358e5aca389ddee83d8f",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
     }
   ],
   "preloadAPIs": [
@@ -865,6 +945,22 @@
       "ios": [
         "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
         "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt"
+      ]
+    },
+    {
+      "name": "weeklySchedule",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/WeeklySchedule.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
+        "iosApp/LilacAnime/WeeklyScheduleView.swift"
+      ]
+    },
+    {
+      "name": "providerSchedule",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/WeeklySchedule.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
+        "iosApp/LilacAnime/WeeklyScheduleView.swift"
       ]
     },
     {

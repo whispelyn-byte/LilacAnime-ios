@@ -1,6 +1,6 @@
 {
-  "desktopCommit": "f04138cdbf7c4262f9ce335932ab2077e1ed3097",
-  "desktopVersion": "0.5.26",
+  "desktopCommit": "0640d054f0424b9923f0f2f19c6f081df6893d95",
+  "desktopVersion": "0.5.27",
   "files": [
     {
       "desktop": ".github/workflows/build.yml",
@@ -106,18 +106,21 @@
     },
     {
       "desktop": "electron/local-ai.cjs",
-      "sha256": "a21699a816eeccf2fc8e3edbd9d1d3561559bdda182cf8a5379ae6a124d9ce54",
+      "sha256": "b9c6c3e07fd22c43a49f9cd727ed8504b56a3208ad5ec4efb99d003d84df46b7",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
         "iosApp/LilacAnime/LocalModelsView.swift",
+        "iosApp/LilacAnime/LocalModelInput.swift",
+        "iosApp/LilacAnime/TranslationCoordinator.swift",
+        "iosApp/Native/Sources/LilacLocalAI/LocalAI.cpp",
         "iosApp/LilacAnime/DesktopModelInstaller.swift",
         "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopTranslationPrompt.kt"
       ]
     },
     {
       "desktop": "electron/main.cjs",
-      "sha256": "fee3fa96aaebf90cfef0451f6b260011ddf64b9bc74d26b6d51146db1e8d51ec",
+      "sha256": "da3e88382fda9890cfb000150424a7b1f00bc5685330afff1d02bedf35202d9c",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -150,7 +153,7 @@
     },
     {
       "desktop": "electron/preload.cjs",
-      "sha256": "4667b1679dfbe39cb05c41415f61a1f71452f0f97793cc77f92bf51bae739a8a",
+      "sha256": "b8d88855383cf13a1d617c0c6058b4cbb6bb3b693a805b01142258e56a74e2e1",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -219,7 +222,7 @@
     },
     {
       "desktop": "package-lock.json",
-      "sha256": "5c0adef9f57761a5b93f159277ed88d8fe9b75e1a1ce013bd583ace3a9cf69c9",
+      "sha256": "92543633b6de1b6381f4b6afb4e8a5965d21499a519856acc05c808521d4265a",
       "uncommitted": false,
       "category": "platform-build",
       "ios": [
@@ -231,7 +234,7 @@
     },
     {
       "desktop": "package.json",
-      "sha256": "5c3e64918a395c8e83b43f316d3be53f34201738d731083d10039b2d3d98dcbd",
+      "sha256": "9f1f9809cd08d2f5507a41fa7acccad76bb66e6d4e7fcfc033c122e5f61e5023",
       "uncommitted": false,
       "category": "platform-build",
       "ios": [
@@ -301,7 +304,7 @@
     },
     {
       "desktop": "src/app.js",
-      "sha256": "43a5e7305b121288950bc876c777e17e4231c5cfe3a2c1e6f230145674598038",
+      "sha256": "7312d6ac15b11483b5a49a534e0ca97302a2dbcbd104321e8c24b37edf4fe246",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -532,7 +535,7 @@
     },
     {
       "desktop": "src/settings.css",
-      "sha256": "7214a43bde17b3cd8b3977c9718b88a0c92aff42f02db7cdaa863bc86099b0ba",
+      "sha256": "b7b5df3eed2abda9ac0a9b3c4eeddf33a7dffcb076dba797bd4ffa65ed5b0c3a",
       "uncommitted": false,
       "category": "native-layout",
       "ios": [
@@ -809,6 +812,28 @@
     {
       "desktop": "tests/issue7.electron.cjs",
       "sha256": "775dff0032f84a2b5fe1a8cf9bf025220b1182b6695c1142255b781c0c902d70",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/local-ai-input.electron.cjs",
+      "sha256": "1a66537d266244ce9dc7b9c091aafe1715be667bb3aef2a5940a870fbc2901d7",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/local-ai-input.test.cjs",
+      "sha256": "10be3a38a250c03e9f0959e8c50f2e86ac10613b169176fbc3e44ca9b00aaaab",
       "uncommitted": false,
       "category": "validation",
       "ios": [
@@ -1569,6 +1594,13 @@
       "ios": [
         "iosApp/LilacAnime/DesktopModelInstaller.swift",
         "iosApp/LilacAnime/LocalModelsView.swift"
+      ]
+    },
+    {
+      "name": "setLocalModelOptions",
+      "ios": [
+        "iosApp/LilacAnime/LocalModelInput.swift",
+        "iosApp/LilacAnime/LibraryStore.swift"
       ]
     },
     {

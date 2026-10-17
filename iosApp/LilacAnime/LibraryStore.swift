@@ -98,6 +98,7 @@ struct AppPreferences: Codable, Equatable {
     var translationModels: [String: String]? = nil
     var cloudFallback: Bool? = true
     var qwenRegion = "international"
+    var localModelInputs: [String: LocalModelInputOptions]? = nil
     var selectedGGUF = ""
     var contextSize = 4096
     var threads = 0

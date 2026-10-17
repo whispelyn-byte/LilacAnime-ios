@@ -35,13 +35,14 @@ final class TranslationCoordinator: ObservableObject {
                 }.value
                 try Task.checkCancellation()
                 guard !lines.isEmpty else { throw SubtitleFiles.failure("번역할 자막이 없습니다.") }
+                let input = preferences.selectedLocalInput
                 let settings: [String: Any] = [
                     "desktopPrompt": "prompt-3/local-5/bilingual-1/requests-2", "localOnly": localOnly,
                     "subtitleOutput": "plain-vtt-1",
                     "provider": preferences.translationProvider, "model": preferences.translationModel,
                     "models": preferences.translationModels ?? [:], "cloudFallback": preferences.cloudFallback ?? true,
                     "credentials": ["gemini", "openai", "qwen", "deepl"].map { SubtitleFiles.key(SecureKeys.load($0)) },
-                    "region": preferences.qwenRegion, "local": preferences.selectedGGUF,
+                    "region": preferences.qwenRegion, "local": preferences.selectedGGUF, "localInput": input.cacheIdentity,
                     "context": preferences.contextSize, "maxTokens": preferences.maxTokens,
                     "temperature": preferences.temperature, "topP": preferences.topP, "topK": preferences.topK,
                     "repetition": preferences.repetitionPenalty, "before": preferences.contextCues,
@@ -87,6 +88,7 @@ final class TranslationCoordinator: ObservableObject {
                 var provider = preferences.translationProvider
                 var triedProviders: Set<String> = [provider]
                 var localLines: [String] = []
+                var languageInput = false
                 var localKind: String?
                 var attemptedLocal: Set<String> = []
                 var localFailure: Error?
@@ -105,12 +107,14 @@ final class TranslationCoordinator: ObservableObject {
                     guard let first = pending.first else { break }
                     do {
                         if provider == "local" {
+                            try input.validate()
                             guard !preferences.selectedGGUF.isEmpty else { throw SubtitleFiles.failure("설정에서 GGUF 모델을 선택하세요.") }
                             if localKind == nil {
                                 var seen: Set<String> = []
                                 localLines = lines.filter { kept[$0] == nil && seen.insert($0).inserted }
                                 let template = try await local.chatTemplate(preferences: preferences)
-                                localKind = DesktopTranslationPrompt.shared.kind(modelName: preferences.selectedGGUF, template: template)
+                                languageInput = input.usesTranslationInput(template: template)
+                                localKind = input.inputMode == "chat" ? "chat" : DesktopTranslationPrompt.shared.kind(modelName: preferences.selectedGGUF, template: template)
                             }
                             let available = TranslationPriority.indices(starts: cues.map(\.startSeconds), ends: cues.map(\.endSeconds), lines: lines,
                                 translated: kept.merging(Dictionary(uniqueKeysWithValues: attemptedLocal.map { ($0, "") })) { old, _ in old }, position: position(), limit: 1)
@@ -125,20 +129,25 @@ final class TranslationCoordinator: ObservableObject {
                             let desktop = DesktopTranslationPrompt.shared.request(kind: localKind ?? "chat", text: source, before: before,
                                 terms: AnimeGlossary.shared.localTerms(text: source, characters: characters, custom: preferences.translationGlossary ?? ""),
                                 cast: AnimeGlossary.shared.localCast(characters: characters))
+                            let useDesktopInput = preferences.modelSampling != false || languageInput || !input.customPrompt.isEmpty || input.inputMode == "chat"
+                            let actualPrompt = languageInput ? source : !input.customPrompt.isEmpty ? input.prompt(for: source) : useDesktopInput ? desktop.prompt : prompt
                             var settings = preferences
-                            if preferences.modelSampling != false {
+                            if useDesktopInput {
                                 settings.temperature = desktop.temperature; settings.topP = desktop.topP; settings.topK = Int(desktop.topK); settings.repetitionPenalty = desktop.repetition
                                 settings.maxTokens = Int(DesktopTranslationPrompt.shared.maxTokens(source: source))
                                 settings.thinking = "off"
                             }
+                            if languageInput { settings.temperature = 0 }
+                            else if !input.customPrompt.isEmpty { settings.temperature = 0.3 }
                             attemptedLocal.insert(source)
                             do {
                                 var cleaned = ""
-                                for attempt in 0..<(preferences.modelSampling == false ? 1 : 3) {
-                                    if attempt > 0 && localKind == "jako" { settings.temperature = 0.5 }
-                                    let response = try await local.generate(preferences.modelSampling == false ? prompt : desktop.prompt, preferences: settings, requestID: token)
+                                for attempt in 0..<(useDesktopInput ? 3 : 1) {
+                                    if attempt > 0 && localKind == "jako" && !languageInput { settings.temperature = 0.5 }
+                                    let response = try await local.generate(actualPrompt, preferences: settings, requestID: token, sourceLanguage: languageInput ? input.language(for: source) : nil)
                                     try Task.checkCancellation()
-                                    cleaned = preferences.modelSampling == false ? LocalTranslationPrompt.shared.clean(text: response) : DesktopTranslationPrompt.shared.clean(output: response, original: source)
+                                    cleaned = useDesktopInput ? DesktopTranslationPrompt.shared.clean(output: response, original: source) : LocalTranslationPrompt.shared.clean(text: response)
+                                    if languageInput && !input.acceptsTranslation(cleaned) { cleaned = "" }
                                     if !DesktopTranslationPrompt.shared.needsRetry(text: cleaned) { break }
                                 }
                                 if !cleaned.isEmpty { kept[source] = cleaned }

@@ -30,7 +30,7 @@ mapping = {
  'electron/catalog-updates.cjs': [shared+'DesktopCatalogUpdates.kt',shared+'SourceRepository.kt'],
  'electron/download-manager.cjs': [ios+'DownloadStore.swift',ios+'DownloadTransfer.swift',ios+'DesktopDownloads.swift'],
  'electron/flix-proxy.cjs': [ios+'HLSProxy.swift'],
- 'electron/local-ai.cjs': [ios+'LocalModelsView.swift',ios+'DesktopModelInstaller.swift',shared+'DesktopTranslationPrompt.kt'],
+ 'electron/local-ai.cjs': [ios+'LocalModelsView.swift',ios+'LocalModelInput.swift',ios+'TranslationCoordinator.swift','iosApp/Native/Sources/LilacLocalAI/LocalAI.cpp',ios+'DesktopModelInstaller.swift',shared+'DesktopTranslationPrompt.kt'],
  'electron/main.cjs': [shared+'SourceRepository.kt',shared+'DesktopSources.kt',shared+'DesktopMetadata.kt',shared+'DesktopTmdbRules.kt',shared+'TmdbTitleResolver.kt',shared+'SubtitleDiscovery.kt',shared+'DesktopCommunity.kt',ios+'PlaybackResolver.swift',ios+'DesktopFlixReadiness.swift',ios+'Resources/flix-discovery.js',ios+'OhliPlayback.swift',ios+'Resources/ohli-capture.js',ios+'WinPNGReader.swift'],
  'electron/oped-fingerprint.cjs': [shared+'AudioFingerprint.kt',shared+'DesktopAudioFingerprint.kt',ios+'OfflineAnalyzer.swift',ios+'NativeAudio.m'],
  'electron/preload.cjs': [shared+'IosServices.kt',ios+'LibraryStore.swift'],
@@ -70,6 +70,7 @@ groups = [
  ('installLocalModel cancelLocalModelInstall addLocalModelFile removeLocalModel onLocalModelProgress', [ios+'DesktopModelInstaller.swift',ios+'LocalModelsView.swift']),
  ('openExternal', [ios+'EpisodePlayerView.swift',ios+'SettingsView.swift',ios+'DesktopUpdater.swift']),
 ]
+groups.append(('setLocalModelOptions', [ios+'LocalModelInput.swift',ios+'LibraryStore.swift']))
 groups.append(('weeklySchedule providerSchedule', [shared+'WeeklySchedule.kt',shared+'IosServices.kt',ios+'WeeklyScheduleView.swift']))
 api_map = {name: targets for names,targets in groups for name in names.split()}
 apis = re.findall(r'^  (\w+):', (desktop/'electron/preload.cjs').read_text(encoding='utf-8'), re.M)

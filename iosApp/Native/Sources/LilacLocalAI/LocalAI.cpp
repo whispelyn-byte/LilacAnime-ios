@@ -18,6 +18,7 @@ struct LilacModel {
     std::string error;
     bool gpu = false;
     bool thinking = false;
+    std::string source_language;
     int output_tokens = 0;
     double seconds = 0;
 };
@@ -44,6 +45,7 @@ extern "C" LilacModel *lilac_model_open(const char *path, int context, int threa
     return lilac_model_open_with_backend(path, context, threads, 1);
 }
 extern "C" void lilac_set_thinking(LilacModel *state, int enabled) { if (state) state->thinking = enabled != 0; }
+extern "C" void lilac_set_translation_language(LilacModel *state, const char *source) { if (state) state->source_language = source ? source : ""; }
 extern "C" const char *lilac_backend(LilacModel *state) { return state && state->gpu ? "Metal" : "CPU"; }
 extern "C" const char *lilac_chat_template(LilacModel *state) {
     const char *value = state ? llama_model_chat_template(state->model, nullptr) : nullptr;
@@ -58,10 +60,10 @@ extern "C" void lilac_model_close(LilacModel *state) {
 extern "C" void lilac_cancel(LilacModel *state) { if (state) state->cancelled = true; }
 extern "C" const char *lilac_error(LilacModel *state) { return state ? state->error.c_str() : "GGUF model could not be loaded"; }
 extern "C" void lilac_string_free(char *text) { free(text); }
-static std::string format_prompt(const char *chat_template, const char *prompt, const char *bos, const char *eos, bool thinking = false) {
+static std::string format_prompt(const char *chat_template, const char *prompt, const char *bos, const char *eos, bool thinking = false, const char *source_language = nullptr) {
     std::string formatted;
         std::string input(prompt);
-        const auto separator = input.find('\x1e');
+        const auto separator = source_language ? std::string::npos : input.find('\x1e');
         std::string system = separator == std::string::npos ? "" : input.substr(0, separator);
         std::string user = separator == std::string::npos ? input : input.substr(separator + 1);
         common_json messages = common_json::array();
@@ -72,6 +74,9 @@ static std::string format_prompt(const char *chat_template, const char *prompt, 
                 {"messages", messages}, {"add_generation_prompt", true}, {"enable_thinking", thinking},
                 {"bos_token", std::string(bos ? bos : "")}, {"eos_token", std::string(eos ? eos : "")}
             });
+            if (source_language) {
+                values["type"] = "text"; values["source_lang_code"] = source_language; values["target_lang_code"] = "ko";
+            }
             jinja::lexer lexer;
             auto ast = jinja::parse_from_tokens(lexer.tokenize(chat_template));
             jinja::context context(chat_template);
@@ -88,6 +93,11 @@ extern "C" char *lilac_format_prompt(const char *chat_template, const char *prom
     try { return strdup(format_prompt(chat_template, prompt ? prompt : "", bos, eos).c_str()); }
     catch (const std::exception &failure) { if (error) *error = strdup(failure.what()); return nullptr; }
 }
+extern "C" char *lilac_format_translation_prompt(const char *chat_template, const char *source, const char *source_language, const char *bos, const char *eos, char **error) {
+    if (error) *error = nullptr;
+    try { return strdup(format_prompt(chat_template, source ? source : "", bos, eos, false, source_language ? source_language : "ja").c_str()); }
+    catch (const std::exception &failure) { if (error) *error = strdup(failure.what()); return nullptr; }
+}
 extern "C" char *lilac_generate(LilacModel *state, const char *prompt, int max_tokens, float temperature, float top_p, int top_k, float repetition) {
     if (!state || !prompt) return nullptr;
     state->cancelled = false; state->error.clear(); state->output_tokens = 0;
@@ -100,7 +110,7 @@ extern "C" char *lilac_generate(LilacModel *state, const char *prompt, int max_t
     };
     const auto bos = tokenText(llama_vocab_bos(vocab)), eos = tokenText(llama_vocab_eos(vocab));
     std::string formatted;
-    try { formatted = format_prompt(chat_template, prompt, bos.c_str(), eos.c_str(), state->thinking); }
+    try { formatted = format_prompt(chat_template, prompt, bos.c_str(), eos.c_str(), state->thinking, state->source_language.empty() ? nullptr : state->source_language.c_str()); }
     catch (const std::exception &error) { state->error = std::string("Chat template: ") + error.what(); return nullptr; }
     prompt = formatted.c_str();
     int count = -llama_tokenize(vocab, prompt, (int)strlen(prompt), nullptr, 0, true, true);

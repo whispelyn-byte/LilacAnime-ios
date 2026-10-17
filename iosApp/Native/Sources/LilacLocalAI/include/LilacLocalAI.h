@@ -19,6 +19,8 @@ void lilac_string_free(char *text);
 void *lilac_utf8_locale_begin(void);
 void lilac_utf8_locale_end(void *token);
 char *lilac_format_prompt(const char *chat_template, const char *prompt, const char *bos, const char *eos, char **error);
+void lilac_set_translation_language(LilacModel *model, const char *source);
+char *lilac_format_translation_prompt(const char *chat_template, const char *source, const char *source_language, const char *bos, const char *eos, char **error);
 #ifdef __cplusplus
 }
 #endif

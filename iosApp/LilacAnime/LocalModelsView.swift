@@ -77,10 +77,12 @@ actor LocalInference {
     func chatTemplate(preferences: AppPreferences) throws -> String {
         String(cString: lilac_chat_template(try prepare(preferences)))
     }
-    func generate(_ prompt: String, preferences: AppPreferences, requestID: UUID) throws -> String {
+    func generate(_ prompt: String, preferences: AppPreferences, requestID: UUID, sourceLanguage: String? = nil) throws -> String {
         let model = try prepare(preferences)
         try Task.checkCancellation(); state.begin(requestID)
-        lilac_set_thinking(model, preferences.thinking == "on" ? 1 : 0)
+        if let sourceLanguage { sourceLanguage.withCString { lilac_set_translation_language(model, $0) } }
+        else { lilac_set_translation_language(model, nil) }
+        lilac_set_thinking(model, sourceLanguage == nil && preferences.thinking == "on" ? 1 : 0)
         defer { state.end(requestID) }
         guard let result = lilac_generate(model, prompt, Int32(preferences.maxTokens), Float(preferences.temperature),
                                          Float(preferences.topP), Int32(preferences.topK), Float(preferences.repetitionPenalty)) else {
@@ -119,11 +121,16 @@ struct LocalModelsView: View {
             SettingBlock(title: "내 GGUF 모델", note: files.isEmpty ? "가져온 모델이 없습니다. 파일 앱에서 GGUF 파일을 가져오거나 아래에서 받으세요." : nil) {
                 ForEach(files, id: \.path) { file in
                     let using = library.preferences.selectedGGUF == file.lastPathComponent
+                    VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 10) {
                         Text(file.lastPathComponent).font(.system(size: 13, weight: .semibold)).foregroundStyle(LilacStyle.text).lineLimit(2)
                         Spacer(minLength: 0)
                         Button(using ? "사용 중" : "사용") { library.preferences.selectedGGUF = file.lastPathComponent }.disabled(using)
                         Button { remove(file) } label: { Image(systemName: "trash") }.buttonStyle(SettingButtonStyle(danger: true)).accessibilityLabel("삭제")
+                    }
+                    if !DesktopModelPreset.all.contains(where: { $0.file == file.lastPathComponent }) {
+                        LocalModelOptionsEditor(fileName: file.lastPathComponent)
+                    }
                     }.buttonStyle(SettingButtonStyle()).padding(10)
                         .background(LilacStyle.background, in: RoundedRectangle(cornerRadius: LilacStyle.radius))
                         .overlay(RoundedRectangle(cornerRadius: LilacStyle.radius).stroke(using ? LilacStyle.accent : LilacStyle.line))

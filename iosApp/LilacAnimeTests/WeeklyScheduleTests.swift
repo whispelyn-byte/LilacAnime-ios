@@ -2,6 +2,11 @@ import XCTest
 @testable import LilacAnime
 
 final class WeeklyScheduleTests: XCTestCase {
+    func testScheduleTitleMatchingPreservesSeasonAndNormalizesPunctuation() {
+        XCTAssertEqual(ScheduleTitles.key("ＡＢＣ： 애니!"), ScheduleTitles.key("abc 애니"))
+        XCTAssertNotEqual(ScheduleTitles.key("애니 2기"), ScheduleTitles.key("애니 3기"))
+        XCTAssertNotEqual(ScheduleTitles.key("애니 극장판"), ScheduleTitles.key("애니"))
+    }
     func testKoreanMondayBoundaryAndSundayRemainInTheirWeek() {
         let formatter = ISO8601DateFormatter()
         let sunday = ScheduleWeek.dates(now: formatter.date(from: "2026-10-18T14:59:00Z")!)

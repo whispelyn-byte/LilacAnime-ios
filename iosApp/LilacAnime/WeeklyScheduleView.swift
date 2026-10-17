@@ -26,6 +26,15 @@ enum ScheduleWeek {
     static var today: Int { (calendar.component(.weekday, from: Date()) + 5) % 7 }
 }
 
+enum ScheduleTitles {
+    /// Desktop weekly-schedule.js preserves season numbers and words, stripping only spacing, punctuation and symbols.
+    static func key(_ title: String) -> String {
+        let excluded = CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters).union(.symbols)
+        let normalized = title.precomposedStringWithCompatibilityMapping.lowercased()
+        return String(String.UnicodeScalarView(normalized.unicodeScalars.filter { !excluded.contains($0) }))
+    }
+}
+
 @MainActor final class WeeklyScheduleModel: ObservableObject {
     @Published var result: WeeklyScheduleResult?
     @Published var error: String?
@@ -54,7 +63,14 @@ struct WeeklyScheduleView: View {
     @State private var selected = ScheduleWeek.today
     @State private var expanded = false
     private let weekdays = ["월", "화", "수", "목", "금", "토", "일"]
-    private var items: [WeeklyScheduleEntry] { model.result?.items ?? [] }
+    private var items: [WeeklyScheduleEntry] {
+        (model.result?.items ?? []).sorted { left, right in
+            let a = left.time.isEmpty ? "99:99" : left.time
+            let b = right.time.isEmpty ? "99:99" : right.time
+            if a != b { return a < b }
+            return left.title.compare(right.title, locale: Locale(identifier: "ko_KR")) == .orderedAscending
+        }
+    }
     private var heading: String {
         if model.result?.native == true && model.result?.timed == false { return source == "linkani" ? "요일별 애니 목록" : "요일별 방영표" }
         return "이번 주 방영표"
@@ -108,8 +124,8 @@ struct WeeklyScheduleView: View {
     private func reload() { expanded = false; if !UIShowcase.enabled { model.load(source: source, date: dates[selected], monday: dates[0]) } }
     private func matched(_ item: WeeklyScheduleEntry) -> Anime? {
         if let anime = item.anime, anime.source == source { return anime }
-        let names = [item.title, item.originalTitle].map(TitleKeys.key).filter { !$0.isEmpty }
-        return known.first { anime in anime.source == source && [anime.title, anime.native, anime.english, anime.romaji].map(TitleKeys.key).contains { names.contains($0) } }
+        let names = [item.title, item.originalTitle].map(ScheduleTitles.key).filter { !$0.isEmpty }
+        return known.first { anime in anime.source == source && [anime.title, anime.native, anime.english, anime.romaji].map(ScheduleTitles.key).contains { names.contains($0) } }
     }
     private func status(_ item: WeeklyScheduleEntry) -> String {
         if item.cancelled { return "결방" }

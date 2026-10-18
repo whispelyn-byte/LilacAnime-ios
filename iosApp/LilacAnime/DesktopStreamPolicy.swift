@@ -60,3 +60,18 @@ enum DesktopStreamPolicy {
         return streams.enumerated().sorted { rank($0.element) == rank($1.element) ? $0.offset < $1.offset : rank($0.element) < rank($1.element) }.map(\.element)
     }
 }
+
+/// desktop stream:alive: whether a stream found earlier still answers (its address may carry a token that runs out),
+/// by its first bytes.
+enum StreamProbe {
+    static func alive(_ stream: ResolvedStream) async -> Bool {
+        if stream.url.isFileURL { return FileManager.default.fileExists(atPath: stream.url.path) }
+        guard ["http", "https"].contains(stream.url.scheme?.lowercased() ?? "") else { return false }
+        var request = URLRequest(url: stream.url, timeoutInterval: 8)
+        for (name, value) in stream.headers where !value.isEmpty { request.setValue(value, forHTTPHeaderField: name) }
+        if !stream.referer.isEmpty && request.value(forHTTPHeaderField: "Referer") == nil { request.setValue(stream.referer, forHTTPHeaderField: "Referer") }
+        request.setValue("bytes=0-1023", forHTTPHeaderField: "Range")
+        guard let (_, response) = try? await URLSession.shared.data(for: request), let http = response as? HTTPURLResponse else { return false }
+        return (200..<300).contains(http.statusCode)
+    }
+}

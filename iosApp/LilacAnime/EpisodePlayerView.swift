@@ -73,6 +73,21 @@ final class EpisodePlayerModel: ObservableObject {
     private var miruroRecoveryTask: Task<Void, Never>?
     private var miruroMonitor = MiruroStallMonitor()
     private var miruroFailedServers: Set<String> = []
+    // 자막 싱크 맞추기 (desktop runSubtitleSync / checkSubtitleSync): one run at a time, each subtitle once.
+    @Published private(set) var syncRunning = false
+    @Published private(set) var syncStatus: String?
+    @Published private(set) var syncNotice: String?
+    private var syncUndo: (() -> Bool)?
+    private var syncNoticeTimer: Task<Void, Never>?
+    private var syncTask: Task<Void, Never>?
+    private var syncCancel = SyncCancel()
+    private var syncChecked: Set<URL> = []
+    /// The fix found for a subtitle still being translated, by that source: the translation's lines get it as they come.
+    private var syncFixes: [URL: SubtitleAutoSync.Fix] = [:]
+    private var waitingSync: URL?
+    private var lastTranslation: URL?
+    /// 다음 화 미리 준비 > 영상: what the next episode's resolver found, kept until that episode opens.
+    private var preparedStreams: (key: String, streams: [ResolvedStream], subtitles: [RemoteSubtitle], servers: [DesktopPlaybackServer], label: String, raw: Bool)?
 
     private var preferRaw = false
     private let service = IosServices()
@@ -215,6 +230,16 @@ final class EpisodePlayerModel: ObservableObject {
         refreshSeries(token: token)
         resolutionTask?.cancel()
         resolutionTask = Task {
+            // 다음 화 미리 준비 > 영상: the stream found while the episode before played, when it still answers.
+            if let ready = preparedStreams, ready.key == item.anime.id + "#" + item.episodeID {
+                preparedStreams = nil
+                if item.directURL == nil, let first = ready.streams.first, await StreamProbe.alive(first) {
+                    guard token == generation, !Task.isCancelled else { return }
+                    preferRaw = ready.raw
+                    resolver.adopt(item, streams: ready.streams, subtitles: ready.subtitles, servers: ready.servers, label: ready.label)
+                    return
+                }
+            }
             preferRaw = await preparer.preferRaw(item, preferences: library.preferences)
             guard token == generation, !Task.isCancelled else { return }
             resolver.resolve(item, preferRaw: preferRaw, preferred: library.preferences.preferredServers?[item.anime.source] ?? library.preferences.preferredStream)
@@ -266,7 +291,7 @@ final class EpisodePlayerModel: ObservableObject {
         resolutionTask?.cancel(); selectionTask?.cancel()
         if remember { previous.append(self.item) }
         save(library: library); engine.pause(); proxy?.stop(); proxy = nil; stopPrefetch(); automaticTask?.cancel(); translation.cancel(); cast.stop()
-        cancelSubtitleBackground(); preparer.cancel()
+        cancelSubtitleBackground(); preparer.cancel(); cancelSync()
         generation = UUID(); titleLookup.cancel(); searchTitle = item.anime.title; self.item = item; active = nil; subtitle = nil; sourceSubtitle = nil; assets = []; subtitleFiles = []; chapters = []; selectedProvider = ""; koreanFound = false; skipEntered = nil
         selectedJimakuURL = nil
         subtitleSearchRequest = UUID(); subtitleSearchCache = [:]; subtitleResultsProvider = ""; subtitleSearchError = nil; searching = false; makers = []
@@ -478,6 +503,7 @@ final class EpisodePlayerModel: ObservableObject {
         if selectedProvider != "jimaku" { selectedJimakuURL = nil }
         if selectedProvider != "reanime" { selectedTrackURL = nil }
         if selectedProvider != "anissia" { selectedMaker = nil }
+        checkSubtitleSync(url, library: library)
         if !automatic {
             library.saveSubtitle(animeID: item.anime.id, episodeID: item.episodeID, file: url, offset: subtitleOffset)
             if saved?.translated == true { library.preferAI(true, animeID: item.anime.id) }
@@ -555,6 +581,21 @@ final class EpisodePlayerModel: ObservableObject {
         }
         translation.translate(original, preferences: preferences, position: { [weak self] in self?.engine.position ?? 0 }, seekRevision: { [weak self] in self?.engine.seekRevision ?? 0 }, anime: item.anime, fresh: fresh, localOnly: manual && preferences.translationProvider == "local") { [weak self] output in
             guard let self, token == self.generation, request == self.subtitleRequest else { return }
+            self.lastTranslation = output
+            // Its source was synced while it ran: the translation is retimed the same way (desktop retimeSubtitle).
+            if let fix = self.syncFixes[original] {
+                let working = output.lastPathComponent.hasPrefix("working-")
+                Task {
+                    guard let shown = try? await SubtitleAutoSync.retimed(output, fix, stable: working), token == self.generation, request == self.subtitleRequest, self.lastTranslation == output else { return }
+                    if !working {
+                        self.syncChecked.insert(shown); self.syncFixes[original] = nil
+                        EpisodeSubtitleStore.shared.save(shown, item: episode, provider: preferences.translationProvider, translated: true, original: original)
+                        self.notify("번역을 마치고 맞춰 둔 자막 싱크를 적용했습니다.")
+                    }
+                    if self.subtitle == shown { self.engine.reloadSubtitle() } else { self.subtitle = shown; self.engine.subtitle(shown, translated: true) }
+                }
+                return
+            }
             EpisodeSubtitleStore.shared.save(output, item: episode, provider: preferences.translationProvider, translated: true, original: original)
             if self.subtitle == output { self.engine.reloadSubtitle() }
             else { self.subtitle = output; self.engine.subtitle(output, translated: true) }
@@ -744,44 +785,256 @@ final class EpisodePlayerModel: ObservableObject {
         return (clouds.contains(wanted) ? [wanted] + clouds.filter { $0 != wanted } : clouds).first { !SecureKeys.load($0).isEmpty }
     }
 
+    // MARK: 자막 싱크 맞추기
+    // Every subtitle put on is matched in the background (자동으로 맞추기) and changed only when a candidate fits clearly
+    // better than the subtitle as it is; otherwise it stays without a word. A change is told in the box over the player,
+    // with 되돌리기. The 자막 타이밍 setting goes back to 0 with it, since the copy is matched as it is.
+
+    /// The video to listen to: the file, or the address mpv plays (the local proxy's, which needs no headers).
+    private var syncVideo: SubtitleAutoSync.Video? {
+        guard let stream = active else { return nil }
+        let playing = systemStream ?? stream
+        var headers = playing.url == stream.url ? stream.headers : [:]
+        if playing.url == stream.url, !stream.referer.isEmpty, headers["Referer"] == nil { headers["Referer"] = stream.referer }
+        return SubtitleAutoSync.Video(url: playing.url, headers: headers, duration: engine.duration)
+    }
+    var syncAvailable: Bool { subtitle != nil && syncVideo != nil && !systemPlayback }
+    var syncButtonTitle: String { syncRunning ? (syncStatus ?? "싱크 맞추는 중") + " · 눌러서 취소" : "음성에 맞춰 싱크 맞추기" }
+    private func cancelSync() {
+        syncCancel.cancel(); syncTask?.cancel(); syncTask = nil; syncRunning = false; syncStatus = nil
+        syncFixes = [:]; waitingSync = nil; lastTranslation = nil; dismissSyncNotice()
+    }
+    func dismissSyncNotice() { syncNotice = nil; syncUndo = nil; syncNoticeTimer?.cancel() }
+    func undoSync() {
+        let undo = syncUndo; dismissSyncNotice()
+        if undo?() == false { notify("이미 다른 자막으로 바뀌어 되돌릴 수 없습니다.") }
+    }
+    private func showSyncDone(_ text: String, undo: @escaping () -> Bool) {
+        dismissKoreanOffer()
+        syncNotice = text; syncUndo = undo; syncNoticeTimer?.cancel()
+        let token = generation
+        syncNoticeTimer = Task { try? await Task.sleep(nanoseconds: 20_000_000_000); if !Task.isCancelled, token == generation { syncNotice = nil; syncUndo = nil } }
+    }
+    /// Each subtitle put on is synced once, as soon as the episode's length is known, or right after a sync still running.
+    /// A translation is timed as the file it was made from, so it is not run again when that file was.
+    func checkSubtitleSync(_ url: URL, library: LibraryStore) {
+        guard library.preferences.subtitleSyncCheck != false, !SubtitleAutoSync.isSynced(url), !syncChecked.contains(url) else { return }
+        if let original = EpisodeSubtitleStore.shared.list(item).first(where: { $0.file == url })?.original, syncChecked.contains(original) { return }
+        let token = generation
+        Task {
+            var waited = 0
+            while (engine.duration <= 0 || active == nil) && waited < 240 {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                if token != generation { return }
+                waited += 1
+            }
+            guard token == generation, subtitle == url || sourceSubtitle == url, !syncChecked.contains(url), syncAvailable else { return }
+            if syncRunning { waitingSync = url; return }
+            runSubtitleSync(library: library, auto: true)
+        }
+    }
+    /// auto: started by itself for the subtitle put on, not by the button: it says nothing unless it changes the subtitle.
+    func runSubtitleSync(library: LibraryStore, auto: Bool = false) {
+        if syncRunning { if !auto { syncCancel.cancel(); syncTask?.cancel() }; return }
+        // A subtitle being translated is synced by its source (its lines come in on the source's times).
+        let translating = translation.running && sourceSubtitle != nil
+        guard let target = translating ? sourceSubtitle : subtitle, let video = syncVideo else { if !auto { notify("싱크를 맞출 자막이 없습니다.") }; return }
+        let saved = EpisodeSubtitleStore.shared.list(item).first { $0.file == target }
+        let timing = saved?.translated == true ? saved?.original : nil
+        syncChecked.insert(target); if let timing { syncChecked.insert(timing) }
+        let token = generation, cancel = SyncCancel(), tracks = selectedProvider == "reanime" || trackSource != "reanime" ? [] : SubtitleAutoSync.referenceTracks(siteTracks)
+        let chapters = self.chapters, provider = selectedProvider
+        syncCancel = cancel; syncRunning = true; syncStatus = "자막 싱크 확인 중..."
+        if !auto { dismissSyncNotice() }
+        syncTask = Task {
+            defer {
+                if token == generation {
+                    syncRunning = false; syncStatus = nil; syncTask = nil
+                    if let next = waitingSync { waitingSync = nil; checkSubtitleSync(next, library: library) }
+                }
+            }
+            do {
+                var references: [URL] = []
+                for track in tracks {
+                    if let file = try? await SubtitleFiles.prepare(track.url, headers: track.headers ?? [:]).first { references.append(file) }
+                    if cancel.cancelled || token != generation { return }
+                }
+                let outcome = try await SubtitleAutoSync.sync(subtitle: target, timing: timing, references: references, video: video, chapters: chapters,
+                    status: { [weak self] message, progress in
+                        guard let self, token == self.generation else { return }
+                        self.syncStatus = message + (progress.map { " \(Int(($0 * 100).rounded()))%" } ?? "")
+                    }, cancelled: { cancel.cancelled })
+                guard token == generation, !cancel.cancelled else { return }
+                switch outcome {
+                case .unchanged: if !auto { notify("자막 싱크가 이미 잘 맞아요") }
+                case let .uncertain(message): if !auto { notify("자막 싱크: " + message) }
+                case let .synced(copy, fix, method):
+                    applySync(target: target, copy: copy, fix: fix, method: method, saved: saved, provider: provider, auto: auto, library: library)
+                }
+            } catch is CancellationError {
+                if token == generation && !auto { notify("자막 싱크 맞추기를 취소했습니다.") }
+            } catch {
+                if token == generation && !auto && !cancel.cancelled { notify("자막 싱크 맞추기 실패: " + error.localizedDescription) }
+            }
+        }
+    }
+    private func applySync(target: URL, copy: URL, fix: SubtitleAutoSync.Fix, method: String, saved: SavedSubtitle?, provider: String, auto: Bool, library: LibraryStore) {
+        syncChecked.insert(copy)
+        let manual = subtitleOffset
+        if abs(manual) >= 0.0005 { setSubtitleOffset(0, library: library) }
+        let done = "자막 싱크를 " + (auto ? "자동으로 " : "") + "맞췄어요 (" + SubtitleAutoSync.moved(fix) + (method == "track" ? " · 사이트 자막 기준" : "") + (abs(manual) >= 0.0005 ? " · 수동 싱크 0으로" : "") + ")"
+        // Still being translated: its lines are shown moved as they come in, and the translation gets the fix when done.
+        if translation.running && sourceSubtitle == target {
+            syncFixes[target] = fix
+            if let output = lastTranslation { let latest = output; lastTranslation = nil; Task { await reshowTranslation(latest) } }
+            showSyncDone(done + " · 번역이 끝나면 번역 자막에도 적용돼요") { [weak self] in
+                guard let self, self.syncFixes[target] == fix else { return false }
+                self.syncFixes[target] = nil
+                if abs(manual) >= 0.0005 { self.setSubtitleOffset(manual, library: library) }
+                if let output = self.lastTranslation, self.subtitle != output { self.subtitle = output; self.engine.subtitle(output, translated: true) }
+                self.notify("자막 싱크를 원래대로 되돌렸습니다."); return true
+            }
+            return
+        }
+        // The subtitle on screen now: the one synced, or the translation of it finished meanwhile (timed as it is).
+        if subtitle != target {
+            guard let current = subtitle, let saved = currentSaved, saved.original == target else { return }
+            Task {
+                guard let retimed = try? await SubtitleAutoSync.retimed(current, fix), subtitle == current else { return }
+                syncChecked.insert(retimed)
+                finishSync(from: current, copy: retimed, record: saved, provider: provider, done: done, manual: manual, library: library)
+            }
+            return
+        }
+        finishSync(from: target, copy: copy, record: saved, provider: provider, done: done, manual: manual, library: library)
+    }
+    private func reshowTranslation(_ output: URL) async {
+        guard let source = sourceSubtitle, let fix = syncFixes[source], let shown = try? await SubtitleAutoSync.retimed(output, fix, stable: true) else { return }
+        guard syncFixes[source] == fix, lastTranslation == nil || lastTranslation == output else { return }
+        lastTranslation = output
+        if subtitle == shown { engine.reloadSubtitle() } else { subtitle = shown; engine.subtitle(shown, translated: true) }
+    }
+    /// The synced copy on screen, kept for the episode (so it comes first next time); 되돌리기 puts the subtitle and the
+    /// 자막 타이밍 setting back.
+    private func finishSync(from original: URL, copy: URL, record: SavedSubtitle?, provider: String, done: String, manual: Double, library: LibraryStore) {
+        let translated = record?.translated == true
+        EpisodeSubtitleStore.shared.save(copy, item: item, provider: record?.provider ?? provider, translated: translated, original: record?.original)
+        if !translated { sourceSubtitle = copy }
+        subtitle = copy; subtitleFiles = subtitleFiles.map { $0 == original ? copy : $0 }
+        engine.subtitle(copy, translated: translated)
+        library.saveSubtitle(animeID: item.anime.id, episodeID: item.episodeID, file: translated ? copy : sourceSubtitle, offset: subtitleOffset)
+        showSyncDone(done) { [weak self] in
+            guard let self, self.subtitle == copy else { return false }
+            EpisodeSubtitleStore.shared.save(original, item: self.item, provider: record?.provider ?? provider, translated: translated, original: record?.original)
+            if !translated { self.sourceSubtitle = original }
+            self.subtitle = original; self.engine.subtitle(original, translated: translated)
+            if abs(manual) >= 0.0005 { self.setSubtitleOffset(manual, library: library) }
+            else { library.saveSubtitle(animeID: self.item.anime.id, episodeID: self.item.episodeID, file: translated ? original : self.sourceSubtitle, offset: self.subtitleOffset) }
+            self.notify("자막 싱크를 원래대로 되돌렸습니다."); return true
+        }
+    }
+
     private func stopPrefetch() {
         prefetchTask?.cancel(); prefetchTask = nil; pretranslation.cancel(); nextResolver.cancel(); prefetchStatus = nil
     }
+    /// 다음 화 미리 준비 (desktop prepareNext, 설정 > 재생): while an episode plays, the next one is made ready in the
+    /// background, each part as 설정 says: its stream (영상: found now, used when the episode opens if it still answers),
+    /// its Korean subtitle synced to it (자막과 싱크: found and kept for the episode, synced by its site track), and its
+    /// machine translation when it has no Korean one (AI 번역). Once per next episode.
     private func prefetchNext(library: LibraryStore, token: UUID) {
-        guard let preferences = automaticPreferences(library), library.preferences.pretranslateNext != false, !item.next.isEmpty, prefetchTask == nil,
-              DesktopSubtitlePolicy.shouldPrefetch(provider: preferences.translationProvider, cloud: preferences.prepareNextCloud == true,
-                siteKorean: DesktopSubtitlePolicy.siteKorean(source: item.anime.source, tracks: active?.subtitles ?? [], stream: active), prefersAI: library.aiSubtitleSeries[item.anime.id] == true) else { return }
-        let next = item.next[0]
+        guard !item.next.isEmpty, prefetchTask == nil else { return }
+        let next = item.next[0], key = next.anime.id + "#" + next.episodeID
+        let offline = DownloadStore.shared.offline(next) != nil || next.directURL != nil
+        let wantsVideo = library.preferences.prepareNextVideo != false && !offline && preparedStreams?.key != key
+        let wantsSubtitle = library.preferences.prepareNextSubtitle != false && !offline && !["ohli24", "linkani"].contains(next.anime.source)
+        let siteKorean = DesktopSubtitlePolicy.siteKorean(source: item.anime.source, tracks: active?.subtitles ?? [], stream: active)
+        let translating = automaticPreferences(library).flatMap { preferences -> AppPreferences? in
+            library.preferences.pretranslateNext != false && DesktopSubtitlePolicy.shouldPrefetch(provider: preferences.translationProvider, cloud: preferences.prepareNextCloud == true,
+                siteKorean: siteKorean, prefersAI: library.aiSubtitleSeries[item.anime.id] == true) ? preferences : nil
+        }
+        guard wantsVideo || wantsSubtitle || translating != nil else { return }
         prefetchTask = Task {
             defer { if token == generation { prefetchTask = nil } }
+            // As this episode starts playing.
+            while !Task.isCancelled && token == generation && (active == nil || engine.duration <= 0) {
+                do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
+            }
+            guard !Task.isCancelled, token == generation else { return }
+            var raw = false
+            let known = preparedStreams?.key == key ? preparedStreams?.streams ?? [] : []
+            if !offline && known.isEmpty {
+                raw = await preparer.preferRaw(next, preferences: library.preferences)
+                guard !Task.isCancelled, token == generation else { return }
+                nextResolver.resolve(next, preferRaw: raw, preferred: library.preferences.preferredServers?[next.anime.source] ?? library.preferences.preferredStream)
+                let deadline = Date().addingTimeInterval(60)
+                while nextResolver.loading && nextResolver.streams.isEmpty && Date() < deadline && !Task.isCancelled {
+                    do { try await Task.sleep(nanoseconds: 250_000_000) } catch { return }
+                }
+            }
+            guard !Task.isCancelled, token == generation else { return }
+            let streams = known.isEmpty ? nextResolver.streams : known, tracks = streams.flatMap { $0.subtitles }
+            if wantsVideo, known.isEmpty, !streams.isEmpty {
+                preparedStreams = (key, streams, nextResolver.subtitles, nextResolver.servers, nextResolver.serverLabel, raw)
+            }
+            var korean = false
+            if wantsSubtitle {
+                if let found = try? await preparer.community(next, preferences: library.preferences), token == generation, !Task.isCancelled {
+                    korean = true
+                    EpisodeSubtitleStore.shared.save(found.0, item: next, provider: found.1, translated: false)
+                    prefetchStatus = "다음 화 한국어 자막 저장 완료"
+                    await syncPrepared(found.0, item: next, provider: found.1, translated: false, original: nil, tracks: tracks)
+                }
+            }
+            guard !korean, let preferences = translating, !Task.isCancelled, token == generation else { return }
+            // The episode playing translates first.
             while !Task.isCancelled && token == generation && (translation.running || subtitle == nil) {
                 do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
             }
             guard !Task.isCancelled, token == generation else { return }
             prefetchStatus = "다음 화 자막 준비 중"
-            nextResolver.resolve(next)
-            while nextResolver.loading && nextResolver.streams.isEmpty && !Task.isCancelled {
-                do { try await Task.sleep(nanoseconds: 250_000_000) } catch { return }
-            }
             do {
                 try Task.checkCancellation()
-                guard token == generation, let prepared = try await preparer.prepare(next, tracks: nextResolver.streams.flatMap { $0.subtitles }, preferences: preferences, prefersAI: false, stream: nextResolver.streams.first) else { prefetchStatus = nil; return }
+                guard token == generation, let prepared = try await preparer.prepare(next, tracks: tracks, preferences: preferences, prefersAI: false, stream: streams.first) else { prefetchStatus = nil; return }
                 if EpisodeSubtitleStore.shared.list(next).contains(where: { $0.file == prepared.0 && $0.translated }) { prefetchStatus = "다음 화 번역 자막 저장 완료"; return }
                 EpisodeSubtitleStore.shared.save(prepared.0, item: next, provider: prepared.1, translated: false)
                 if await SubtitleFiles.isKorean(prepared.0) { prefetchStatus = "다음 화 한국어 자막 저장 완료"; return }
                 prefetchStatus = "다음 화 미리 번역 중"
+                var translated: URL?
                 pretranslation.translate(prepared.0, preferences: preferences, anime: next.anime, background: true) { output in
                     guard token == self.generation else { return }
                     EpisodeSubtitleStore.shared.save(output, item: next, provider: preferences.translationProvider, translated: true, original: prepared.0)
+                    if !output.lastPathComponent.hasPrefix("working-") { translated = output }
                 }
                 while pretranslation.running && !Task.isCancelled {
                     try await Task.sleep(nanoseconds: 500_000_000)
                 }
                 try Task.checkCancellation()
-                if token == generation { prefetchStatus = pretranslation.error.map { "다음 화 번역: " + $0 } ?? "다음 화 자막 번역 저장 완료" }
+                guard token == generation else { return }
+                prefetchStatus = pretranslation.error.map { "다음 화 번역: " + $0 } ?? "다음 화 자막 번역 저장 완료"
+                // 자막과 싱크: the translation is synced with the next episode's site track too.
+                if wantsSubtitle, let translated {
+                    await syncPrepared(translated, item: next, provider: preferences.translationProvider, translated: true, original: prepared.0, tracks: tracks)
+                }
             } catch is CancellationError { }
             catch { if token == generation { prefetchStatus = error.localizedDescription } }
         }
+    }
+    /// desktop syncPrepared: a subtitle made ready for the next episode, synced with that episode's site tracks and kept for
+    /// it ("… · 자동 싱크"). Only by a site track (seconds, nothing downloaded) and after the player's own syncs, so the
+    /// episode playing never waits behind it; without a track the episode is synced when it opens. Left as it is (and
+    /// not kept) when the sync finds nothing better.
+    private func syncPrepared(_ file: URL, item next: PlaybackItem, provider: String, translated: Bool, original: URL?, tracks: [RemoteSubtitle]) async {
+        var references: [URL] = []
+        for track in SubtitleAutoSync.referenceTracks(tracks) {
+            if let file = try? await SubtitleFiles.prepare(track.url, headers: track.headers ?? [:]).first { references.append(file) }
+            if Task.isCancelled { return }
+        }
+        guard !references.isEmpty else { return }
+        while syncRunning { do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return } }
+        guard case let .synced(copy, _, method)? = try? await SubtitleAutoSync.sync(subtitle: file, timing: original, references: references, video: nil, chapters: [],
+            status: { _, _ in }, cancelled: { Task.isCancelled }), method == "track", !Task.isCancelled else { return }
+        EpisodeSubtitleStore.shared.save(copy, item: next, provider: provider, translated: translated, original: original)
+        prefetchStatus = "다음 화 자막 싱크까지 맞춰 둠"
     }
     func save(library: LibraryStore) {
         // Only a position mpv reports for an open video, and none while suspended (it may read as the end).
@@ -793,7 +1046,7 @@ final class EpisodePlayerModel: ObservableObject {
         pictureInPicture.stop()
         subtitleClassification?.cancel()
         resolutionTask?.cancel(); selectionTask?.cancel()
-        save(library: library); stopPrefetch(); automaticTask?.cancel(); cancelSubtitleBackground(); preparer.cancel(); generation = UUID(); miruroRecoveryTask?.cancel(); miruroRecoveryTask = nil; engine.shutdown(); resolver.cancel(); translation.shutdown(); service.cancel(); titleLookup.cancel(); proxy?.stop(); proxy = nil; cast.stop()
+        save(library: library); stopPrefetch(); automaticTask?.cancel(); cancelSubtitleBackground(); preparer.cancel(); cancelSync(); generation = UUID(); miruroRecoveryTask?.cancel(); miruroRecoveryTask = nil; engine.shutdown(); resolver.cancel(); translation.shutdown(); service.cancel(); titleLookup.cancel(); proxy?.stop(); proxy = nil; cast.stop()
     }
 }
 struct EpisodePlayerView: View {
@@ -856,6 +1109,15 @@ struct EpisodePlayerView: View {
                     Button("바꾸기") { model.acceptKoreanOffer(library: library) }.buttonStyle(.borderedProminent)
                     Button("닫기") { model.dismissKoreanOffer() }
                 }.padding(16).background(.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 16)).padding(.bottom, 100) }.foregroundStyle(.white).padding(.horizontal, 24).zIndex(9)
+            }
+            if let notice = model.syncNotice {
+                // desktop showSyncDone: what the sync did, and 되돌리기 while the subtitle it changed is still on screen.
+                VStack { Spacer(); HStack(spacing: 16) {
+                    Text(notice).font(.subheadline).fixedSize(horizontal: false, vertical: true)
+                    Button("되돌리기") { model.undoSync() }.buttonStyle(.borderedProminent)
+                    Button("확인") { model.dismissSyncNotice() }
+                }.padding(16).background(.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 16)).padding(.bottom, 100) }.foregroundStyle(.white).padding(.horizontal, 24).zIndex(9)
+                    .accessibilityIdentifier("player-sync-notice")
             }
             if model.pictureInPicture.active {
                 // Keep the PiP source attached underneath; covering it does not alter its frames.
@@ -958,8 +1220,19 @@ struct EpisodePlayerView: View {
             PlayerChoiceGrid(options: [0.75, 1, 1.25, 1.5, 2, 3, 4].map { ($0, String(format: "%.2fx", $0)) }, selection: Binding(get: { library.preferences.speed }, set: {
                 model.engine.finishSpaceHold(); library.preferences.speed = $0; model.engine.setSpeed($0)
             }), identifier: "player-speed")
-            PSNote("뒤로/앞으로 버튼 이동: \(Int(library.preferences.seekSeconds))초")
-        }.padding(.top, 14).padding(.bottom, 12)
+        }.padding(.top, 14)
+        // 뒤로/앞으로 이동 (desktop 0.5.32 #psSeekSteps): the same setting as 설정 > 재생 (1–120 seconds).
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("뒤로/앞으로 이동").font(.system(size: 13, weight: .medium))
+                Text("\(Int(library.preferences.seekSeconds))초").font(.system(size: 11)).foregroundStyle(PS.detail)
+            }
+            PlayerChoiceGrid(options: SeekStep.choices.map { (Double($0), "\($0)초") }, selection: Binding(get: { library.preferences.seekSeconds }, set: {
+                library.preferences.seekSeconds = SeekStep.clamped($0)
+            }), identifier: "player-seek-steps")
+            PSSecondsInput(value: library.preferences.seekSeconds) { library.preferences.seekSeconds = SeekStep.clamped($0) }
+            PSNote("화면 가운데 뒤로/앞으로 버튼과 ←/→ 방향키로 이동할 시간이에요. 1~120초로 직접 입력할 수도 있어요.")
+        }.padding(.top, 12).padding(.bottom, 12)
         PSSection {
             PSGroup("화면 비율")
             PlayerChoiceGrid(options: PlayerAspect.allCases.map { ($0.rawValue, $0.title) }, selection: Binding(get: { library.preferences.playerAspect ?? "original" }, set: {
@@ -1076,11 +1349,19 @@ struct EpisodePlayerView: View {
             Button("파일 앱에서 자막 열기") { importingFont = false; settings = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { importer = true } }
         }
         PSNote("자막 파일은 ASS · SSA · SRT · VTT · SMI를 열 수 있어요.").padding(.top, 6)
+        PSButtonRow {
+            Button(model.syncButtonTitle) { model.runSubtitleSync(library: library) }
+                .disabled(!model.syncRunning && !model.syncAvailable).accessibilityIdentifier("player-subtitle-sync-run")
+        }
+        PSNote("자막이 대사보다 일찍·늦게 나오면 영상 음성에 맞춰 시간을 고쳐요. Re:Anime·Miruro처럼 사이트 자막 트랙이 있으면 그 트랙에 맞춰 몇 초 만에 맞춥니다.").padding(.top, 6)
+        PSSwitch(title: "싱크가 어긋나면 자동으로 맞추기", detail: "자막을 켜면 뒤에서 영상 음성(사이트 자막 트랙이 있으면 그 트랙)과 비교해, 확실히 어긋나 있을 때만 맞춰요. 확실하지 않으면 그대로 둬요. 잘못 맞으면 알림에서 되돌릴 수 있어요",
+                 isOn: Binding(get: { library.preferences.subtitleSyncCheck ?? true }, set: { library.preferences.subtitleSyncCheck = $0 }), small: true)
         if let status = model.prefetchStatus { PSNote(status).padding(.top, 4) }
         if let error = model.error { PSNote(error, color: .red).padding(.top, 8) }
     }
     private var subtitleStateText: String {
         if let state = model.subtitleState { return state }
+        if let status = model.syncStatus { return status }
         if model.translation.running, let status = model.translation.status { return status }
         if let label = model.subtitleLabel { return label + " 적용됨" }
         if model.active == nil { return "영상 연결 후 자막을 확인합니다." }

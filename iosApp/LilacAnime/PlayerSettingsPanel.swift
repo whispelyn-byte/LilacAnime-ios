@@ -309,6 +309,37 @@ struct PSSyncInput: View {
     private func show(_ seconds: Double) { input = String(format: "%.0f", (seconds * 1000).rounded()); invalid = false }
 }
 
+/// 뒤로/앞으로 이동 (desktop setSeekSeconds): whole seconds from 1 to 120, 10 for anything unreadable.
+enum SeekStep {
+    static let choices = [5, 10, 15, 30, 60]
+    static func clamped(_ value: Double) -> Double {
+        let rounded = value.isFinite ? value.rounded() : 0
+        return min(120, max(1, rounded == 0 ? 10 : rounded))
+    }
+}
+/// #psSeekSeconds: the seek step typed in seconds.
+struct PSSecondsInput: View {
+    let value: Double
+    let update: (Double) -> Void
+    @State private var input = ""
+    @FocusState private var focused: Bool
+    var body: some View {
+        HStack(spacing: 8) {
+            TextField("10", text: $input).keyboardType(.numberPad).submitLabel(.done).focused($focused)
+                .font(.system(size: 13)).padding(8).frame(width: 90)
+                .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(focused ? LilacStyle.accent : .white.opacity(0.19), lineWidth: focused ? 2 : 1))
+                .onSubmit(apply).accessibilityLabel("뒤로/앞으로 이동 시간(초)").accessibilityIdentifier("player-seek-input")
+            Text("초").font(.system(size: 12)).foregroundStyle(.white.opacity(0.72))
+            if focused { Button("적용", action: apply).buttonStyle(PSTextButtonStyle()).foregroundStyle(LilacStyle.accent) }
+        }.onAppear { input = String(Int(value)) }.onChange(of: value) { input = String(Int($0)) }
+    }
+    private func apply() {
+        update(SeekStep.clamped(Double(input.trimmingCharacters(in: .whitespacesAndNewlines)) ?? .nan)); focused = false
+        input = String(Int(value))
+    }
+}
+
 /// Lays its children out in rows, moving to the next row when one is full (CSS flex-wrap).
 struct PSFlow: Layout {
     var spacing: CGFloat = 5

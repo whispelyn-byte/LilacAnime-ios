@@ -144,5 +144,6 @@ enum SubtitleLabels {
     }
     static func label(_ record: SavedSubtitle, maker: String? = nil) -> String {
         label(provider: record.provider, translated: record.translated, name: record.name, maker: maker)
+            + (SubtitleAutoSync.isSynced(URL(fileURLWithPath: record.name)) ? SubtitleAutoSync.label : "")
     }
 }

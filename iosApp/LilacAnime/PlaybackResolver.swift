@@ -210,6 +210,12 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
         }
         loadPage(item.watchURL, seconds: 45)
     }
+    /// 다음 화 미리 준비 > 영상: what another resolver found for this episode while the one before it played, taken as
+    /// this one's (the player checks first that the stream still answers).
+    func adopt(_ item: PlaybackItem, streams: [ResolvedStream], subtitles: [RemoteSubtitle], servers: [DesktopPlaybackServer], label: String) {
+        cancel(); currentItem = item; serverCandidates = []; error = nil; loading = false
+        self.servers = servers; serverLabel = label; self.subtitles = subtitles; self.streams = streams
+    }
     func setWebPlaybackActive(_ active: Bool) {
         webPlaybackActive = active
         let target = selectedResolver ?? self

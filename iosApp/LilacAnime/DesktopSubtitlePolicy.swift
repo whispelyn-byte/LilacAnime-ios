@@ -38,6 +38,10 @@ enum DesktopSubtitlePolicy {
         if ["reanime", "jimaku"].contains(preferred), let first = saved.first, first.translated { return first }
         return saved.first { source($0.provider) == preferred && !$0.translated }
     }
+    /// main.cjs DOWNLOAD_KOREAN_SOURCES: the saved subtitles a download counts as Korean (a machine translation among them).
+    static func downloadKorean(_ saved: SavedSubtitle) -> Bool {
+        saved.translated || ["kairan", "csora", "anissia", "linkkf", "user"].contains(saved.provider)
+    }
     static func burnedKorean(source: String, stream: ResolvedStream? = nil) -> Bool {
         // A stream said to have it in the picture has; 애니24's does, except a raw video whose player puts the Korean
         // subtitle over it from a file (desktop: stream.burnedKorean || (ohli24 && !stream.subtitleUrl)).

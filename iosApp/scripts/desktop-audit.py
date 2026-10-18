@@ -38,6 +38,7 @@ mapping = {
  'electron/preload.cjs': [shared+'IosServices.kt',ios+'LibraryStore.swift'],
  'electron/device-sync.cjs': [ios+'DeviceSync.swift'],
  'electron/subtitle-store.cjs': [ios+'EpisodeSubtitleStore.swift'],
+ 'electron/subtitle-sync.cjs': [shared+'SubtitleSync.kt',ios+'SubtitleAutoSync.swift',ios+'NativeAudio.m',ios+'EpisodePlayerView.swift'],
  'electron/subtitle-translator.cjs': [shared+'CloudTranslator.kt',shared+'DesktopCloudPrompt.kt',ios+'TranslationCoordinator.swift',ios+'CloudSubtitleScheduler.swift'],
  'electron/updater.cjs': [ios+'DesktopUpdater.swift','.github/workflows/ipa.yml'],
  'src/anime-metadata.js': [shared+'DesktopAnimeMetadata.kt',ios+'UIComponents.swift'],
@@ -73,6 +74,9 @@ groups = [
  ('openExternal', [ios+'EpisodePlayerView.swift',ios+'SettingsView.swift',ios+'DesktopUpdater.swift']),
 ]
 groups.append(('setLocalModelOptions', [ios+'LocalModelInput.swift',ios+'LibraryStore.swift']))
+groups.append(('defaultTranslationRules', [shared+'DesktopCloudPrompt.kt',ios+'TranslationPromptSettings.swift']))
+groups.append(('syncSubtitle retimeSubtitle prepareSubtitleSync cancelSubtitleSync onSubtitleSyncStatus syncPreparedSubtitle', [shared+'SubtitleSync.kt',ios+'SubtitleAutoSync.swift',ios+'EpisodePlayerView.swift']))
+groups.append(('prepareEpisodeStream useEpisodeStream streamAlive streamWarm', [ios+'EpisodePlayerView.swift',ios+'PlaybackResolver.swift',ios+'DesktopStreamPolicy.swift']))
 groups.append(('weeklySchedule providerSchedule', [shared+'WeeklySchedule.kt',shared+'IosServices.kt',ios+'WeeklyScheduleView.swift']))
 api_map = {name: targets for names,targets in groups for name in names.split()}
 apis = re.findall(r'^  (\w+):', (desktop/'electron/preload.cjs').read_text(encoding='utf-8'), re.M)

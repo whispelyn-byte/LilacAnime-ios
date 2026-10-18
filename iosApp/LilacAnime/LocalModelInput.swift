@@ -13,10 +13,33 @@ struct LocalModelInputOptions: Codable, Equatable {
             throw SubtitleFiles.failure("프롬프트는 8,000자 이하이며 원문이 들어갈 {text}를 포함해야 합니다.")
         }
     }
+    /// A language template (TranslateGemma's) puts whatever the user turn holds after its own "translate the following text"
+    /// instruction, so a prompt of the user's own was translated as part of the line and showed up in the subtitle: such a
+    /// model takes the source alone, whatever prompt is saved for it (only 일반 지시문 chosen by hand asks it otherwise).
+    static func languageTemplate(_ template: String) -> Bool {
+        template.range(of: #"\bsource_lang_code\b"#, options: .regularExpression) != nil &&
+            template.range(of: #"\btarget_lang_code\b"#, options: .regularExpression) != nil
+    }
     func usesTranslationInput(template: String) -> Bool {
-        inputMode == "translation" || (inputMode == "auto" && customPrompt.isEmpty &&
-            template.range(of: #"\bsource_lang_code\b"#, options: .regularExpression) != nil &&
-            template.range(of: #"\btarget_lang_code\b"#, options: .regularExpression) != nil)
+        inputMode == "translation" || (inputMode == "auto" && Self.languageTemplate(template))
+    }
+    /// Known to the settings by the template it was last translated with (desktop: saved with the run).
+    private static let translationOnlyKey = "local.translation-only"
+    static func remember(template: String, model: String) {
+        guard !template.isEmpty, !model.isEmpty else { return }
+        var known = UserDefaults.standard.dictionary(forKey: translationOnlyKey) as? [String: Bool] ?? [:]
+        guard known[model] != languageTemplate(template) else { return }
+        known[model] = languageTemplate(template); UserDefaults.standard.set(known, forKey: translationOnlyKey)
+    }
+    static func translationOnly(_ model: String) -> Bool {
+        (UserDefaults.standard.dictionary(forKey: translationOnlyKey) as? [String: Bool])?[model] == true
+    }
+    /// desktop setModelOptions: a prompt is refused, with the reason, for a translation-only model asked 자동.
+    func validate(model: String) throws {
+        try validate()
+        if !customPrompt.isEmpty && inputMode == "auto" && Self.translationOnly(model) {
+            throw SubtitleFiles.failure("이 모델은 번역 전용이라 프롬프트를 지시로 따르지 않고 원문과 함께 번역해 버립니다. 프롬프트를 비워 주세요.")
+        }
     }
     func language(for source: String) -> String {
         if sourceLanguage != "auto" { return sourceLanguage }
@@ -45,6 +68,10 @@ struct LocalModelInputOptions: Codable, Equatable {
 }
 extension AppPreferences {
     var selectedLocalInput: LocalModelInputOptions { localModelInputs?[selectedGGUF] ?? LocalModelInputOptions() }
+    /// 번역 프롬프트 as the engines take it (trimmed; DeepL and the translation-tuned models are not given it).
+    var translationRules: (extra: String, custom: String) {
+        ((promptExtra ?? "").trimmingCharacters(in: .whitespacesAndNewlines), (promptRules ?? "").trimmingCharacters(in: .whitespacesAndNewlines))
+    }
 }
 
 struct LocalModelOptionsEditor: View {
@@ -52,6 +79,7 @@ struct LocalModelOptionsEditor: View {
     @EnvironmentObject private var library: LibraryStore
     @State private var draft = LocalModelInputOptions()
     @State private var message: String?
+    private var translationOnly: Bool { LocalModelInputOptions.translationOnly(fileName) }
     var body: some View {
         DisclosureGroup("번역 입력 설정") {
             VStack(alignment: .leading, spacing: 10) {
@@ -64,7 +92,11 @@ struct LocalModelOptionsEditor: View {
                     Text("자동").tag("auto"); Text("일본어").tag("ja"); Text("영어").tag("en")
                     Text("중국어").tag("zh"); Text("한국어").tag("ko")
                 }
-                if draft.inputMode != "translation" {
+                // A translation-only model (its template takes the source and the languages) is never asked with a prompt in 자동.
+                if draft.inputMode == "auto" && translationOnly {
+                    Text("번역 전용 모델(TranslateGemma 등)이라 프롬프트를 쓰지 않아요. 이런 모델은 지시를 따르지 않고 프롬프트까지 번역해서 자막에 나옵니다. 효과음·화자 이름은 설정 > 자막 자동 번역의 효과음·화자 이름 빼고 번역으로 뺄 수 있어요.")
+                        .font(.caption).foregroundStyle(LilacStyle.muted).fixedSize(horizontal: false, vertical: true)
+                } else if draft.inputMode != "translation" {
                     Text("사용자 프롬프트").font(.subheadline)
                     TextEditor(text: $draft.customPrompt).font(.system(size: 13)).frame(minHeight: 100)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -72,7 +104,8 @@ struct LocalModelOptionsEditor: View {
                 }
                 Button("저장") {
                     do {
-                        try draft.validate()
+                        if draft.inputMode == "auto" && translationOnly { draft.customPrompt = "" }
+                        try draft.validate(model: fileName)
                         var values = library.preferences.localModelInputs ?? [:]
                         values[fileName] = draft; library.preferences.localModelInputs = values
                         message = "번역 입력 설정을 저장했어요."

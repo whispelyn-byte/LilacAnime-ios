@@ -28,15 +28,21 @@ final class TranslationCoordinator: ObservableObject {
                 try Task.checkCancellation()
                 let ext = file.pathExtension
                 // Reading and parsing the whole file happens off the main thread, which is playing the video.
-                let (content, lines, cues, blanks) = try await Task.detached(priority: .userInitiated) { () throws -> (String, [String], [SubtitleCue], [KotlinInt]) in
+                // 효과음·화자 이름 빼고 번역: the engines get each line without its caption labels and speaker name (originals: the
+                // lines as they are, shown where a line is left untranslated); a line left with nothing is left out of the file.
+                let dropCaptions = preferences.dropCaptions == true
+                let (content, originals, cues, blanks) = try await Task.detached(priority: .userInitiated) { () throws -> (String, [String], [SubtitleCue], [KotlinInt]) in
                     let content = try SubtitleFiles.text(file)
                     return (content, SubtitleTools.shared.lines(content: content, extension: ext), SubtitleTools.shared.cues(content: content, extension: ext),
                             SubtitleTools.shared.translationBlanks(content: content, extension: ext))
                 }.value
+                let lines = dropCaptions ? originals.map { DesktopCaptions.shared.drop(text: $0) } : originals
                 try Task.checkCancellation()
                 guard !lines.isEmpty else { throw SubtitleFiles.failure("번역할 자막이 없습니다.") }
                 let input = preferences.selectedLocalInput
-                let settings: [String: Any] = [
+                // 번역 프롬프트: the user's rules after the app's (extra) or in their place (custom).
+                let rules = preferences.translationRules
+                var settings: [String: Any] = [
                     "desktopPrompt": "prompt-3/local-5/bilingual-1/requests-2", "localOnly": localOnly,
                     "subtitleOutput": "plain-vtt-1",
                     "provider": preferences.translationProvider, "model": preferences.translationModel,
@@ -49,6 +55,9 @@ final class TranslationCoordinator: ObservableObject {
                     "modelSampling": preferences.modelSampling ?? true, "after": preferences.prefetchAhead, "thinking": preferences.thinking, "prompt": preferences.prompt,
                     "glossary": (preferences.translationGlossary ?? "") + AnimeGlossary.shared.characterTerms(characters: characters) + characters.map { $0.name + $0.gender }.joined(), "fallback": preferences.translationFallback ?? true
                 ]
+                // Only while set, so the translations kept before these settings came are still found.
+                if dropCaptions { settings["dropCaptions"] = "drop-captions-1" }
+                if !rules.extra.isEmpty || !rules.custom.isEmpty { settings["rules"] = [rules.extra, rules.custom] }
                 let configuration = try JSONSerialization.data(withJSONObject: settings, options: [.sortedKeys])
                 let cacheID = SubtitleFiles.key(content + String(decoding: configuration, as: UTF8.self))
                 try FileManager.default.createDirectory(at: SubtitleFiles.translations, withIntermediateDirectories: true)
@@ -74,7 +83,7 @@ final class TranslationCoordinator: ObservableObject {
                 workingFiles.insert(working)
                 @MainActor func publish() throws {
                     guard token == generation else { return }
-                    let translated = lines.map { kept[$0] ?? $0 }, saved = kept
+                    let translated = lines.indices.map { kept[lines[$0]] ?? originals[$0] }, saved = kept
                     progress = Double(lines.filter { kept[$0] != nil }.count) / Double(lines.count)
                     writer.async { [weak self] in
                         do {
@@ -113,6 +122,7 @@ final class TranslationCoordinator: ObservableObject {
                                 var seen: Set<String> = []
                                 localLines = lines.filter { kept[$0] == nil && seen.insert($0).inserted }
                                 let template = try await local.chatTemplate(preferences: preferences)
+                                LocalModelInputOptions.remember(template: template, model: preferences.selectedGGUF)
                                 languageInput = input.usesTranslationInput(template: template)
                                 localKind = input.inputMode == "chat" ? "chat" : DesktopTranslationPrompt.shared.kind(modelName: preferences.selectedGGUF, template: template)
                             }
@@ -128,7 +138,7 @@ final class TranslationCoordinator: ObservableObject {
                                 text: lines[first], before: before, after: after, thinking: preferences.thinking) + (terms.isEmpty ? "" : "\n표기 기준:\n" + terms)
                             let desktop = DesktopTranslationPrompt.shared.request(kind: localKind ?? "chat", text: source, before: before,
                                 terms: AnimeGlossary.shared.localTerms(text: source, characters: characters, custom: preferences.translationGlossary ?? ""),
-                                cast: AnimeGlossary.shared.localCast(characters: characters))
+                                cast: AnimeGlossary.shared.localCast(characters: characters), extra: rules.extra, custom: rules.custom)
                             let useDesktopInput = preferences.modelSampling != false || languageInput || !input.customPrompt.isEmpty || input.inputMode == "chat"
                             let actualPrompt = languageInput ? source : !input.customPrompt.isEmpty ? input.prompt(for: source) : useDesktopInput ? desktop.prompt : prompt
                             var settings = preferences
@@ -169,7 +179,8 @@ final class TranslationCoordinator: ObservableObject {
                             contextParts.append(AnimeGlossary.shared.hints(text: lines.joined(separator: "\n"), characters: characters, custom: preferences.translationGlossary ?? ""))
                             let context = contextParts.filter { !$0.isEmpty }.joined(separator: "\n")
                             let config = TranslationConfig(provider: provider, key: SecureKeys.load(provider),
-                                model: preferences.translationModels?[provider] ?? (provider == preferences.translationProvider ? preferences.translationModel : ""), region: preferences.qwenRegion, terminology: context)
+                                model: preferences.translationModels?[provider] ?? (provider == preferences.translationProvider ? preferences.translationModel : ""), region: preferences.qwenRegion, terminology: context,
+                                rulesExtra: rules.extra, rulesCustom: rules.custom)
                             try await CloudSubtitleScheduler.translate(lines: lines, cues: cues, provider: provider, config: config,
                                 service: service, position: position, seekRevision: seekRevision, cached: { kept }) { additions in
                                     kept.merge(additions) { old, _ in old }
@@ -201,7 +212,7 @@ final class TranslationCoordinator: ObservableObject {
                 guard outcome.translated > 0 else { throw terminalFailure ?? SubtitleFiles.failure("번역 결과를 받지 못했습니다.") }
                 // A partial result is usable, but must never masquerade as a finished cache hit.
                 let destination = outcome.failed == 0 ? resultFile : SubtitleFiles.translations.appendingPathComponent(cacheID + "-partial-" + token.uuidString + ".vtt")
-                let finished = lines.map { kept[$0] ?? $0 }
+                let finished = lines.indices.map { kept[lines[$0]] ?? originals[$0] }
                 // After the batches still being written, so none of them replaces the finished file in the player.
                 let written: Result<Void, Error> = await withCheckedContinuation { continuation in
                     writer.async {

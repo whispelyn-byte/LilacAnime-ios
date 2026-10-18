@@ -68,6 +68,17 @@ struct AppPreferences: Codable, Equatable {
     var localGPU: Bool? = true
     var pretranslateNext: Bool? = true
     var prepareNextCloud: Bool? = false
+    /// 설정 > 재생 > 다음 화 미리 준비 (desktop prepareNextVideo / prepareNextSubtitle; AI 번역 is pretranslateNext): each on
+    /// until turned off.
+    var prepareNextVideo: Bool? = true
+    var prepareNextSubtitle: Bool? = true
+    /// 자막 탭 > 싱크가 어긋나면 자동으로 맞추기 (desktop subtitleSyncCheck).
+    var subtitleSyncCheck: Bool? = true
+    /// 효과음·화자 이름 빼고 번역 (desktop dropCaptions).
+    var dropCaptions: Bool? = false
+    /// 번역 프롬프트: the user's rules after the app's (promptExtra) or in their place (promptRules), 4000 characters each.
+    var promptExtra: String? = ""
+    var promptRules: String? = ""
     var vttStyle: Bool? = true
     var downloadSubtitles: Bool? = true
     var translateDownloads: Bool? = true

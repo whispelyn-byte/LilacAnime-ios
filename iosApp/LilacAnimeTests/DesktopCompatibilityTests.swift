@@ -8,7 +8,7 @@ final class DesktopCompatibilityTests: XCTestCase {
         let original = AppPreferences()
         let encoded = try JSONEncoder().encode(original)
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
-        for key in ["playerFit", "playerAspect", "showSkipButton", "titleLanguage", "desktopWorkspace", "preferredServer", "modelSampling", "pretranslateNext", "downloadSubtitles", "translationModels", "cloudFallback", "localGPU", "translateDownloads"] { object.removeValue(forKey: key) }
+        for key in ["playerFit", "playerAspect", "showSkipButton", "titleLanguage", "desktopWorkspace", "preferredServer", "modelSampling", "pretranslateNext", "downloadSubtitles", "translationModels", "cloudFallback", "localGPU", "translateDownloads", "prepareNextVideo", "prepareNextSubtitle", "subtitleSyncCheck", "dropCaptions", "promptExtra", "promptRules"] { object.removeValue(forKey: key) }
         object["selectedGGUF"] = "existing.gguf"; object["source"] = "miruro"; object["subtitleOffset"] = 1.7
         object["autoSkip"] = true
         let restored = try JSONDecoder().decode(AppPreferences.self, from: JSONSerialization.data(withJSONObject: object))
@@ -19,6 +19,9 @@ final class DesktopCompatibilityTests: XCTestCase {
         XCTAssertNil(restored.playerAspect)
         XCTAssertTrue(restored.showSkipButton ?? true)
         XCTAssertTrue(restored.autoSkip, "An existing user's choice must survive the new default.")
+        // Desktop 0.5.29–0.5.37 settings: an older file reads as their defaults (on; captions kept; no rules).
+        XCTAssertNotEqual(restored.prepareNextVideo, false); XCTAssertNotEqual(restored.prepareNextSubtitle, false); XCTAssertNotEqual(restored.subtitleSyncCheck, false)
+        XCTAssertNotEqual(restored.dropCaptions, true); XCTAssertEqual(restored.translationRules.extra, ""); XCTAssertEqual(restored.translationRules.custom, "")
     }
     func testActualGemma4TemplateKeepsSystemAndUserAndDisablesThinking() throws {
         let file = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "gemma4-template", withExtension: "txt"))

@@ -14,7 +14,11 @@ import kotlinx.coroutines.ensureActive
 import kotlin.time.TimeSource
 import kotlin.time.Duration.Companion.seconds
 
-data class TranslationConfig(val provider: String, val key: String, val model: String = "", val region: String = "international", val terminology: String = "")
+// rulesExtra / rulesCustom: 번역 프롬프트 (the user's rules after the app's, or in their place). DeepL takes no instruction.
+data class TranslationConfig(val provider: String, val key: String, val model: String = "", val region: String = "international", val terminology: String = "",
+                             val rulesExtra: String = "", val rulesCustom: String = "") {
+    constructor(provider: String, key: String, model: String, region: String, terminology: String) : this(provider, key, model, region, terminology, "", "")
+}
 class CloudTranslator(private val client: HttpClient = HttpClient {
     expectSuccess = true
     install(HttpTimeout) { requestTimeoutMillis = 180_000; connectTimeoutMillis = 20_000 }
@@ -67,7 +71,7 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
     private suspend fun translate(lines: List<String>, config: TranslationConfig, recoveryDepth: Int): List<String> {
         if (lines.isEmpty()) return emptyList()
         require(config.key.isNotBlank()) { "API Key를 설정하세요." }
-        val cacheKey = config.provider + "|" + config.model + "|" + config.region + "|" + config.key.hashCode() + "|" + config.terminology + "|" + lines.joinToString("\u0000")
+        val cacheKey = config.provider + "|" + config.model + "|" + config.region + "|" + config.key.hashCode() + "|" + config.terminology + "|" + config.rulesExtra + "|" + config.rulesCustom + "|" + lines.joinToString("\u0000")
         cache[cacheKey]?.let { return it }
         var result: List<String>? = null
         var failure: Exception? = null
@@ -134,7 +138,7 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
         }
         error("번역 API 요청 실패")
     }
-    private fun instruction(config: TranslationConfig) = DesktopCloudPrompt.build(config.terminology, config.provider != "gemini")
+    private fun instruction(config: TranslationConfig) = DesktopCloudPrompt.build(config.terminology, config.provider != "gemini", config.rulesExtra, config.rulesCustom)
     private fun itemSchema() = JSONObject().put("type", "object").put("properties", JSONObject()
         .put("i", JSONObject().put("type", "integer")).put("t", JSONObject().put("type", "string")))
         .put("required", JSONArray().put("i").put("t")).put("additionalProperties", false)

@@ -617,7 +617,7 @@ final class DownloadStore: ObservableObject {
             return name
         }
         if preferences.downloadSubtitles != false && !DesktopSubtitlePolicy.burnedKorean(source: entry.anime.source, stream: entry.stream) {
-            if let prepared = try await subtitlePreparer.prepare(entry.playback, tracks: entry.stream.subtitles, preferences: preferences, stream: entry.stream) {
+            if let prepared = try await subtitlePreparer.prepare(entry.playback, tracks: entry.stream.subtitles, preferences: preferences, stream: entry.stream, koreanFirst: true) {
                 let korean = await SubtitleFiles.isKorean(prepared.0)
                 primary = try copy(prepared.0, label: prepared.1, language: korean ? "ko" : prepared.1 == "jimaku" ? "ja" : "", provider: prepared.1)
                 EpisodeSubtitleStore.shared.save(prepared.0, item: entry.playback, provider: prepared.1, translated: EpisodeSubtitleStore.shared.list(entry.playback).contains { $0.file == prepared.0 && $0.translated })

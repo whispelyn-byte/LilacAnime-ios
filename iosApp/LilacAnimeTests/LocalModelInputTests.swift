@@ -13,8 +13,23 @@ final class LocalModelInputTests: XCTestCase {
         XCTAssertFalse(options.usesTranslationInput(template: template))
         options.inputMode = "translation"
         XCTAssertTrue(options.usesTranslationInput(template: ""))
+        // desktop 0.5.29: a language template takes the source alone, a saved prompt or not (it was translated into the line).
         options.inputMode = "auto"; options.customPrompt = "Translate {text}"
-        XCTAssertFalse(options.usesTranslationInput(template: template))
+        XCTAssertTrue(options.usesTranslationInput(template: template))
+        XCTAssertFalse(options.usesTranslationInput(template: "{{ messages }}"))
+    }
+    func testTranslationOnlyModelRefusesAPromptOnceItsTemplateIsKnown() throws {
+        let model = "translategemma-test-" + UUID().uuidString + ".gguf"
+        var options = LocalModelInputOptions(); options.customPrompt = "Rules
+{text}"
+        XCTAssertNoThrow(try options.validate(model: model))
+        LocalModelInputOptions.remember(template: "{{ source_lang_code }} {{ target_lang_code }}", model: model)
+        XCTAssertTrue(LocalModelInputOptions.translationOnly(model))
+        XCTAssertThrowsError(try options.validate(model: model)) { XCTAssertTrue($0.localizedDescription.contains("번역 전용")) }
+        options.inputMode = "chat"; XCTAssertNoThrow(try options.validate(model: model))
+        options.inputMode = "auto"; options.customPrompt = ""; XCTAssertNoThrow(try options.validate(model: model))
+        LocalModelInputOptions.remember(template: "{{ messages }}", model: model)
+        XCTAssertFalse(LocalModelInputOptions.translationOnly(model))
     }
     func testSourceLanguageMatchesDesktopIncludingExplicitChinese() {
         var options = LocalModelInputOptions()

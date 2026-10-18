@@ -53,9 +53,11 @@ final class DesktopSubtitlePreparer {
         return false
     }
 
-    func prepare(_ item: PlaybackItem, tracks: [RemoteSubtitle], preferences: AppPreferences, prefersAI: Bool = false, skipSaved: Bool = false, stream: ResolvedStream? = nil) async throws -> (URL, String)? {
+    /// koreanFirst: a download's subtitle (main.cjs findDownloadSubtitle, desktop 0.5.32).
+    func prepare(_ item: PlaybackItem, tracks: [RemoteSubtitle], preferences: AppPreferences, prefersAI: Bool = false, skipSaved: Bool = false, stream: ResolvedStream? = nil, koreanFirst: Bool = false) async throws -> (URL, String)? {
         guard preferences.subtitleProvider != "manual", !DesktopSubtitlePolicy.burnedKorean(source: item.anime.source, stream: stream) else { return nil }
         let saved = skipSaved ? [] : EpisodeSubtitleStore.shared.list(item)
+        if koreanFirst { return try await downloadSubtitle(item, saved: saved, tracks: tracks, preferences: preferences) }
         if prefersAI {
             if let translated = saved.first(where: \.translated), let file = translated.file { return (file, translated.provider) }
             if let result = try await translationSource(item, tracks: tracks, preferences: preferences) { return result }
@@ -70,6 +72,23 @@ final class DesktopSubtitlePreparer {
         if let local = item.localSubtitles.first { return (local, "download") }
         guard item.anime.source != "local" && item.anime.source != "linkkf" else { return nil }
         if let found = try await community(item, preferences: preferences) { return found }
+        return try await translationSource(item, tracks: tracks, preferences: preferences)
+    }
+
+    /// A Korean subtitle comes first for a download: one saved for the episode (the preferred source's, a machine
+    /// translation standing for the site's subtitle it was made from when it was the last one put on), the site's Korean
+    /// track, then Kairan / Csora / Anissia. A saved subtitle in another language (a site's English track, Jimaku) is
+    /// used only when none of them has one, so a Korean fansub keeps the episode from being translated.
+    private func downloadSubtitle(_ item: PlaybackItem, saved: [SavedSubtitle], tracks: [RemoteSubtitle], preferences: AppPreferences) async throws -> (URL, String)? {
+        let preferred = DesktopSubtitlePolicy.preferredSaved(saved, preferred: preferences.subtitleProvider)
+        if let preferred, DesktopSubtitlePolicy.downloadKorean(preferred), let file = preferred.file { return (file, preferred.provider) }
+        for track in tracks where DesktopSubtitlePolicy.isKorean(track) {
+            try Task.checkCancellation()
+            if let files = try? await SubtitleFiles.prepare(track.url, headers: track.headers ?? [:]), let file = select(files, item: item, offsets: []) { return (file, "reanime") }
+        }
+        if let korean = saved.first(where: DesktopSubtitlePolicy.downloadKorean), let file = korean.file { return (file, korean.provider) }
+        if item.anime.source != "local" && item.anime.source != "linkkf", let found = try await community(item, preferences: preferences) { return found }
+        if let other = preferred ?? saved.first, let file = other.file { return (file, other.provider) }
         return try await translationSource(item, tracks: tracks, preferences: preferences)
     }
 

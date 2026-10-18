@@ -137,6 +137,15 @@ struct SettingsView: View {
                 Slider(value: $store.preferences.speed, in: 0.1...4, step: 0.05).tint(LilacStyle.accent).accessibilityLabel("기본 재생 배속")
                 HStack { Text("0.1x"); Spacer(); Text("1.0x"); Spacer(); Text("4.0x") }.font(.system(size: 11)).foregroundStyle(LilacStyle.muted)
             }
+            // 다음 화 미리 준비 (desktop 0.5.37): while an episode plays, the next one's stream, Korean subtitle (synced by the
+            // site's track) and machine translation are made ready, each as set here.
+            SettingBlock(title: "다음 화 미리 준비", note: "보는 동안 다음 화를 미리 준비해 두면, 넘기자마자 바로 재생되고 자막도 바로 나와요.")
+            SettingSwitch(title: "영상", detail: "다음 화의 영상 주소와 시작 부분(이어볼 위치부터)을 미리 받아 둡니다. 넘길 때 그 주소가 아직 되는지 확인하고, 안 되면 새로 받아요.",
+                          isOn: Binding(get: { store.preferences.prepareNextVideo ?? true }, set: { store.preferences.prepareNextVideo = $0 }))
+            SettingSwitch(title: "자막과 싱크", detail: "다음 화의 한국어 자막을 미리 찾고, 사이트 자막 트랙이 있으면 싱크까지 맞춰 둡니다. 영상이 켜져 있어야 싱크를 맞출 수 있어요.",
+                          isOn: Binding(get: { store.preferences.prepareNextSubtitle ?? true }, set: { store.preferences.prepareNextSubtitle = $0 }))
+            SettingSwitch(title: "AI 번역", detail: "한국어 자막이 없으면 다음 화를 미리 번역해 둡니다 (설정 > 자막 자동 번역이 켜져 있을 때. 번역 API는 거기서 따로 켜야 해요).",
+                          isOn: Binding(get: { store.preferences.pretranslateNext ?? true }, set: { store.preferences.pretranslateNext = $0 }))
             SettingBlock(title: "뒤로/앞으로 버튼 이동 시간", note: "재생 화면 중앙 버튼과 두 번 탭, 방향키로 이동할 시간입니다.") {
                 SettingStepperRow(title: "이동 시간", value: "\(Int(store.preferences.seekSeconds))초", number: $store.preferences.seekSeconds, range: 1...120, step: 1)
             }
@@ -220,10 +229,11 @@ struct SettingsView: View {
             }.buttonStyle(.plain).accessibilityIdentifier("settings-local-models")
             Group {
                 SettingSwitch(title: "자막 자동 번역", detail: "한국어 자막이 없으면 그 회차의 Jimaku 일본어 자막을, 없으면 영상 사이트의 일본어 트랙을, 그것도 없으면 영어 트랙을 알아서 번역해 띄웁니다. 보고 있는 장면부터 번역합니다.", isOn: $store.preferences.autoTranslation)
-                SettingSwitch(title: "다음 화 자막 미리 번역", detail: "로컬 AI로 보는 동안 다음 화도 미리 번역해 둡니다.",
-                              isOn: Binding(get: { store.preferences.pretranslateNext ?? true }, set: { store.preferences.pretranslateNext = $0 }))
                 SettingSwitch(title: "번역 API로도 다음 화 미리 번역", detail: "번역 API로 번역하면 다음 화도 미리 번역해 둬서, 다음 화를 열면 처음부터 한국어로 나옵니다. 다음 화를 안 봐도 한 화 분량의 사용량을 씁니다.",
                               isOn: Binding(get: { store.preferences.prepareNextCloud ?? false }, set: { store.preferences.prepareNextCloud = $0 }))
+                SettingSwitch(title: "효과음·화자 이름 빼고 번역", detail: "（ため息）·[laughs] 같은 효과음 설명, 웃음소리·신음만 있는 줄은 지우고, 줄 앞의 （소타）·SOTA: 같은 화자 이름을 떼고 번역합니다. 프롬프트를 따르지 않는 번역 전용 모델(TranslateGemma 등)에도 적용돼요.",
+                              isOn: Binding(get: { store.preferences.dropCaptions ?? false }, set: { store.preferences.dropCaptions = $0 }))
+                TranslationPromptSettings()
                 SettingSwitch(title: "다운로드할 때 자막 번역", detail: "회차를 다운로드하면 일본어 트랙(없으면 영어 트랙)을 한국어로 번역해 함께 저장합니다. 번역 API로 번역할 때는 회차마다 API 요청을 씁니다.",
                               isOn: Binding(get: { store.preferences.translateDownloads ?? true }, set: { store.preferences.translateDownloads = $0 }))
                 SettingSwitch(title: "실패하면 다른 번역 API로", detail: "키를 등록한 다른 번역 API로 이어서 번역합니다.",

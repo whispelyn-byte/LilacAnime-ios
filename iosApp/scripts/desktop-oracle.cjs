@@ -25,9 +25,12 @@ vm.runInNewContext(helper+pure+';globalThis.rules={titleKey,titleSeason,cleanKor
 const winPngBody = main.slice(main.indexOf('async function winPngEntries(')).match(/executeJavaScript\(`([\s\S]*?)`,true\)/)[1];
 fs.writeFileSync(path.join(root,'iosApp/LilacAnime/Resources/winpng-reader.js'),vm.runInNewContext('`'+winPngBody+'`')+'\n');
 const systemBody = translator.match(/const system = \(context = \{\}, wrapped = false\) => \{[\s\S]*?\n  \};/)[0];
-const prompts = [false,true].map(wrapped=>vm.runInNewContext(systemBody+';system({},wrapped)',{wrapped,characterTerms:()=>[]}));
+// 번역 프롬프트: the app's rules, which the user's own replace (custom) or are followed by (extra).
+const rulesBody = translator.match(/const TRANSLATION_RULES = \[[\s\S]*?\]\.join\('\\n'\);/)[0];
+const translationRules = vm.runInNewContext(rulesBody+';TRANSLATION_RULES');
+const prompts = [false,true].map(wrapped=>vm.runInNewContext(systemBody+';system({},wrapped)',{wrapped,characterTerms:()=>[],TRANSLATION_RULES:translationRules}));
 fs.writeFileSync(path.join(root,'shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopCloudPrompt.kt'),
-  'package com.lilac.anime.shared\n\n// Copied by desktop-oracle.cjs from electron/subtitle-translator.cjs/system.\nobject DesktopCloudPrompt {\n    private val array = """'+prompts[0]+'"""\n    private val wrapped = """'+prompts[1]+'"""\n    fun build(context: String, objectInput: Boolean): String {\n        val source = if (objectInput) wrapped else array\n        if (context.isBlank()) return source\n        return source.replace("\\n\\nFORMAT", "\\n" + context.trim() + "\\n\\nFORMAT")\n    }\n}\n');
+  'package com.lilac.anime.shared\n\n// Copied by desktop-oracle.cjs from electron/subtitle-translator.cjs/system.\nobject DesktopCloudPrompt {\n    private val array = """'+prompts[0]+'"""\n    private val wrapped = """'+prompts[1]+'"""\n    /** TRANSLATION_RULES: 번역 프롬프트 > 기본 규칙 불러오기 starts from it. */\n    val rules = """'+translationRules+'"""\n    /** 번역 프롬프트 (system\'s context.rules): custom takes the place of [rules], extra comes after them and is followed first. */\n    fun build(context: String, objectInput: Boolean, extra: String = "", custom: String = ""): String {\n        var source = if (objectInput) wrapped else array\n        if (custom.isNotBlank()) source = source.replace(rules, custom.trim())\n        if (extra.isNotBlank()) source += "\\n\\nADDITIONAL RULES FROM THE USER (follow these first where they differ from the rules above)\\n" + extra.trim()\n        source = source.replace(Regex("\\n{3,}"), "\\n\\n").trim()\n        if (context.isBlank()) return source\n        return source.replace("\\n\\nFORMAT", "\\n" + context.trim() + "\\n\\nFORMAT")\n    }\n}\n');
 const track = (label, language = '', url = 'https://fixture.test/sub.ass') => ({label, language, url});
 const trackSets = [[], [track('English signs', 'en'), track('English dialogue', 'en')],
   [track('English full', 'en'), track('日本語', 'ja')], [track('English (AI)', 'en'), track('English', 'en')],
@@ -130,6 +133,48 @@ result.localClean = [
 ].map(([output,original])=>({output,original,expected:localContext.rules.clean(output,original)}));
 result.localTerms = ['（創太）お姉ちゃん、ただいま！','（京子）お兄ちゃん','藤宮周くんと周辺','ただいまー','ただいま走っています','（堀）お兄ちゃん'].map(source=>({source,characters,
   expected:[...glossary.termsFor(source,glossary.characterTerms(characters)),...glossary.speakerTerms(source,characters)].map(t=>`${t.ja}=${t.ko}`).join('\n'),cast}));
+// 번역 프롬프트: the user's rules in the local models' requests and the APIs' system prompt.
+const ruleSets = [{extra:'EXTRA RULE'},{custom:'CUSTOM RULES'},{extra:'둘째 규칙',custom:'첫째 규칙\n- 의역'}];
+result.localRules = ['gemma-4-e4b','aya-expanse-8b','Qwen3-8B','Hy-MT2-7B','HY-MT1.5-7B','ja-ko-vn'].flatMap((model,i) => (i < 3 ? ruleSets : ruleSets.slice(2)).map(rules => {
+  const source='（創太）お姉ちゃん、ただいま！', kind=localContext.rules.modelKind({id:model,file:model,label:model}), body=localContext.rules.request(source,[],kind,['前の台詞'],[],rules);
+  return {model,kind,source,before:'前の台詞',extra:rules.extra||'',custom:rules.custom||'',prompt:body.messages.map(m=>m.content).join('\u001e')};
+}));
+result.cloudRules = [false,true].flatMap(wrapped => (wrapped ? ruleSets.slice(2) : ruleSets).map(rules => ({wrapped,extra:rules.extra||'',custom:rules.custom||'',
+  expected:vm.runInNewContext(systemBody+';system({rules},wrapped)',{wrapped,rules,characterTerms:()=>[],TRANSLATION_RULES:translationRules})})));
+// 효과음·화자 이름 빼고 번역 (desktop tests/drop-captions.test.cjs and more).
+const { dropCaptions } = require(path.join(desktop, 'electron/subtitle-translator.cjs'));
+result.dropCaptions = ['（創太）えっ？','（男の子）こんにちは\n（拍手）','（ため息）','（ドアの開く音）','そうだね（笑い）','創太：行くぞ','[laughs]','(SIGHS) Okay.','SOTA: Hey there.','Note: this works',
+  'あっ','うう…','くっ','はあ…','あはは','ふふっ','Ugh!','Hahaha','うん','ええ','ううん','えっ','（どうしよう）','♪～','（足音）\n行こう','[Door opens] Come in.','KYOKO: (sighs) Fine.',
+  'ホリ：（笑）そう？','（小声で）ねえ','Mr. Smith: Hello','(in English) Thank you','［拍手］ありがとう','うふふ…\nそれで？','Hmm...','Oh!','Ahh','Grr','Ow!'].map(source=>({source,expected:dropCaptions(source)}));
+// 자막 싱크 맞추기 (subtitle-sync.cjs): retiming, the lines that are speech, the fit score and the segments kept.
+const sync = require(path.join(desktop, 'electron/subtitle-sync.cjs'));
+const pairs = cues => cues.map(cue => [cue[0], cue[1]]);
+const syncVtt = 'WEBVTT\n\n1\n00:00:04.000 --> 00:00:07.500 line:85%\n12:00 시에\n\n00:01.000 --> 00:02.000\n둘째\n';
+const syncSegments = [{from:0,shift:-1},{from:90,shift:89.25}];
+const syncAss = '[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:07.20,0:00:10.64,Default,,0,0,0,,{\\an8}안녕, 0:00:01.00\nComment: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,메모\nDialogue: 0,0:01:58.50,0:02:00.00,Default,,0,0,0,,b\nStyle: Default,Arial,60\n';
+result.syncRetime = [
+  {kind:'vtt',text:syncVtt,offset:-3.09,scale:1,segments:null},{kind:'vtt',text:'00:00:10.000 --> 00:00:20.000\nx',offset:1,scale:1.001,segments:null},
+  {kind:'vtt',text:'WEBVTT\n\n00:00:10.000 --> 00:00:12.000\na\n\n00:01:58.500 --> 00:02:00.000\nb\n',offset:89.25,scale:1,segments:syncSegments},
+  {kind:'ass',text:syncAss,offset:-3.2,scale:1,segments:null},{kind:'ass',text:syncAss,offset:0,scale:1,segments:syncSegments},{kind:'ass',text:syncAss,offset:2.5,scale:1.0427,segments:null}
+].map(c=>({...c,expected:c.kind==='vtt'?sync.retimeVtt(c.text,c.offset,c.scale,c.segments):sync.retimeAss(c.text,c.offset,c.scale,c.segments)}));
+const stampAt = i => `00:${String(Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}.000`;
+const dialogueLines = Array.from({ length: 60 }, (_, i) => `${stampAt(i * 2)} --> ${stampAt(i * 2 + 1)}\n${['（竜児）こんなもん…', 'つっかまえた～', '（拍手）', '♪ 歌詞', '{\\an8}看板', 'ハァ…'][i % 6]}`);
+const assAt = t => `0:${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}.00`;
+const assRows = Array.from({ length: 60 }, (_, i) => `Dialogue: 0,${assAt(10 + i * 2)},${assAt(11 + i * 2)},${['Default', 'OP Romaji', 'ED English-furigana', 'Signs', 'Default-Alt', 'Typeset'][i % 6]},,0,0,0,,${i % 6 === 5 ? '{\\pos(10,10)}Sign text' : `line ${i}`}`);
+const assHead = '[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n';
+result.syncDialogue = [`WEBVTT\n\n${dialogueLines.join('\n\n')}\n`, `WEBVTT\n\n${dialogueLines.slice(0, 6).join('\n\n')}\n`].map(text=>({text,expected:sync.vttCues(sync.dialogueVtt(text))}));
+result.syncSpeech = [assHead+assRows.join('\n')+'\n', assHead+assRows.slice(0,12).join('\n')+'\n'].map(text=>({text,expected:pairs(sync.assSpeech(text))}));
+let syncSeed = 11; const syncRandom = () => (syncSeed = (syncSeed * 16807) % 2147483647) / 2147483647;
+const syncRound = value => Math.round(value * 1000) / 1000;
+const syncCues = []; for (let t = 1; t < 1200; t += 2 + syncRandom() * 6) syncCues.push([syncRound(t), syncRound(t + 1 + syncRandom() * 2)]);
+const syncTurn = syncCues.find(([start]) => start >= 600)[0];
+const syncSpeechTimes = syncCues.map(([s, e]) => [s + (s >= 600 ? 3 : 0), e + (s >= 600 ? 3 : 0)]);
+const syncScore = parts => sync.fitScore(syncCues, syncSpeechTimes, sync.mover(0, 1, parts));
+const syncTruth = [{ from: 0, shift: 0 }, { from: syncTurn, shift: 3 }];
+const syncStray = [{ from: 0, shift: 0 }, { from: 300, shift: 60 }, { from: 360, shift: -60 }, { from: 420, shift: 0.1 }, { from: syncTurn, shift: 3 }];
+result.syncKept = {cues:syncCues,speech:syncSpeechTimes,cases:[[syncStray,null],[syncTruth,[{startTime:90,endTime:180}]],[syncTruth,[{startTime:510,endTime:598}]]].map(([segments,chapters])=>({segments,chapters,expected:sync.keptSegments(segments,syncCues,chapters,syncScore)}))};
+result.syncFit = [[[[9,11],[19,21]],[[10,12],[11,13],[20,22]],0,1],[[[9,11],[19,21]],[[10,12],[11,13],[20,22]],1,1],[[[9,11],[19,21]],[[10,12],[11,13],[20,22]],500,1],[syncCues.slice(0,25),syncSpeechTimes.slice(0,25),0,1],[syncCues.slice(0,25),syncSpeechTimes.slice(0,25),1.5,1.001]]
+  .map(([cues,speech,offset,scale])=>({cues,speech,offset,scale,merged:sync.merged(speech),expected:sync.fitScore(cues,sync.merged(speech),sync.mover(offset,scale))}));
 const target=path.join(root,'iosApp/LilacAnimeTests/Fixtures/desktop-oracle.json');
 fs.writeFileSync(target,JSON.stringify(result,null,2)+'\n');
 const kotlin = `package com.lilac.anime.shared\n\n// Generated by iosApp/scripts/desktop-oracle.cjs from desktop source.\ninternal val desktopOracle = kotlinx.serialization.json.Json.parseToJsonElement("""\n${JSON.stringify(result)}\n""").jsonObject\n`;

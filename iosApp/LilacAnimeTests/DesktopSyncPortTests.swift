@@ -50,7 +50,12 @@ final class DesktopSyncPortTests: XCTestCase {
             return String(format: "%02d:%02d:%02d.%03d", ms / 3_600_000, ms / 60_000 % 60, ms / 1000 % 60, ms % 1000)
         }
         func vtt(_ shift: Double, _ word: String) -> String {
-            "WEBVTT\n\n" + starts.enumerated().map { i, start in stamp(start + shift) + " --> " + stamp(start + shift + 1.5) + "\n" + word + " \(i)" }.joined(separator: "\n\n") + "\n"
+            var cues: [String] = []
+            for (i, start) in starts.enumerated() {
+                let timing: String = stamp(start + shift) + " --> " + stamp(start + shift + 1.5)
+                cues.append(timing + "\n" + word + " \(i)")
+            }
+            return "WEBVTT\n\n" + cues.joined(separator: "\n\n") + "\n"
         }
         let late = folder.appendingPathComponent("late.vtt"), track = folder.appendingPathComponent("track.vtt")
         try vtt(2.5, "대사").write(to: late, atomically: true, encoding: .utf8)

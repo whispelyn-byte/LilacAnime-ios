@@ -407,10 +407,11 @@ final class MPVEngine: ObservableObject {
     }
     private func updateScreenAwake() { screenAwake.update(playing: fileLoaded && !paused) }
     private func setupAudio() {
-        do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [.allowAirPlay])
-            try AVAudioSession.sharedInstance().setActive(true)
-        } catch { self.error = error.localizedDescription }
+        // .playback already plays over AirPlay; .allowAirPlay is only for playAndRecord, and iOS refused the whole category
+        // with it (OSStatus -50), which showed over the player as a playback error. A refused audio session is noted, not
+        // shown: the video still plays.
+        do { try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback) } catch { audioSessionFailed(error) }
+        do { try AVAudioSession.sharedInstance().setActive(true) } catch { audioSessionFailed(error) }
         let center = MPRemoteCommandCenter.shared()
         remoteTargets = [
             (center.playCommand, center.playCommand.addTarget { [weak self] _ in DispatchQueue.main.async { self?.play() }; return .success }),
@@ -432,13 +433,16 @@ final class MPVEngine: ObservableObject {
         notifications.append(NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             guard let self else { return }
             self.updateScreenAwake()
-            do { try AVAudioSession.sharedInstance().setActive(true) } catch { self.error = error.localizedDescription }
+            do { try AVAudioSession.sharedInstance().setActive(true) } catch { self.audioSessionFailed(error) }
             if !self.pictureInPictureOutput && self.softwareOutput { self.endPictureInPictureOutput() }
             else { self.setVideoOutputActive(true) }
         })
         notifications.append(NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
             if (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) == AVAudioSession.InterruptionType.began.rawValue { self?.pause() }
         })
+    }
+    private func audioSessionFailed(_ error: Error) {
+        NSLog("LilacAnime audio session: %@", error.localizedDescription)
     }
     func shutdown() {
         loadTimeout?.cancel(); loadTimeout = nil

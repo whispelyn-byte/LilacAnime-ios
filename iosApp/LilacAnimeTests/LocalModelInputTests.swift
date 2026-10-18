@@ -20,8 +20,7 @@ final class LocalModelInputTests: XCTestCase {
     }
     func testTranslationOnlyModelRefusesAPromptOnceItsTemplateIsKnown() throws {
         let model = "translategemma-test-" + UUID().uuidString + ".gguf"
-        var options = LocalModelInputOptions(); options.customPrompt = "Rules
-{text}"
+        var options = LocalModelInputOptions(); options.customPrompt = "Rules\n{text}"
         XCTAssertNoThrow(try options.validate(model: model))
         LocalModelInputOptions.remember(template: "{{ source_lang_code }} {{ target_lang_code }}", model: model)
         XCTAssertTrue(LocalModelInputOptions.translationOnly(model))

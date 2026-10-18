@@ -27,4 +27,11 @@ The desktop runs ffsubsync in its own Python (installed by uv). iOS cannot run P
 - 설정 > 재생 > 다음 화 미리 준비: 영상 (the next episode's resolved streams are kept and used when it opens if their first bytes still answer), 자막과 싱크 (its Korean subtitle is found and, with site tracks, synced by track and kept as "· 자동 싱크"; a prepared translation is synced the same way), AI 번역 (the former 다음 화 자막 미리 번역).
 - Not ported: the desktop FlixCloud proxy's held playlists and first segments (`stream:warm`). iOS creates its HLS proxy per playback and has no shared segment cache to hold them in.
 
-Validation: see the Actions run recorded with the implementation commit.
+Validation passed on implementation commit `5e68315a325cbc304c37ba2fcf8fb838d22da6bf`:
+
+- Kotlin JVM: 144 tests, zero failures (prompt rules, caption removal and subtitle-sync functions compared with the desktop source; synthetic shift, segment, unchanged and other-episode cases); Kotlin Native simulator tests and framework build passed.
+- iOS unit tests: 187 tests, zero failures (including eight new sync, download-subtitle, seek-step and prompt tests); iPhone and iPad UI tests passed.
+- Universal iOS device build and arm64 iPhoneOS IPA packaging succeeded.
+- Actions: https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/39124293687
+
+The audio path (LilacSpeechLevels on a real stream) is compiled and linked but not exercised by CI; it needs a check on a device. No release tag was created; the CI artifact keeps 0.4.18/build 60.

@@ -62,8 +62,10 @@ object SubtitleSync {
         return shift
     }
     /** time → time * scale + offset (ffsubsync's order), or by segments: a line by the shift of the segment its start is in. */
-    fun mover(offset: Double, scale: Double, segments: List<SyncSegment>?): (Double, Double) -> Double =
-        if (segments != null && segments.size > 1) { time, start -> time + shiftAt(segments, start) } else { time, _ -> time * scale + offset }
+    fun mover(offset: Double, scale: Double, segments: List<SyncSegment>?): (Double, Double) -> Double {
+        if (segments != null && segments.size > 1) return { time, start -> time + shiftAt(segments, start) }
+        return { time, _ -> time * scale + offset }
+    }
 
     // MARK: Retiming (only the times change: styles, tags and text stay as they are)
 
@@ -374,9 +376,9 @@ object SubtitleSync {
         val none = candidates[0]
         val ranked = candidates.drop(1).sortedByDescending { it.score }
         // Segments only when they fit clearly better than the best single shift (which is the more precise).
-        var chosen = ranked.firstOrNull()
+        val top = ranked.firstOrNull()
         val single = ranked.firstOrNull { it.segments == null }
-        if (chosen?.segments != null && single != null && chosen.score - single.score < 0.02) chosen = single
+        val chosen = if (top?.segments != null && single != null && top.score - single.score < 0.02) single else top
         val floor = if (byTrack) TRACK_FLOOR else AUDIO_FLOOR; val margin = if (byTrack) TRACK_MARGIN else AUDIO_MARGIN
         fun round(value: Double) = (value * 1000).roundToInt() / 1000.0
         fun result(offset: Double, scale: Double, segments: List<SyncSegment>?, unchanged: Boolean, uncertain: Boolean = false) =

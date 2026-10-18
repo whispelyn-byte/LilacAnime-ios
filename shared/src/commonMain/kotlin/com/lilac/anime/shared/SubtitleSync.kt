@@ -294,10 +294,11 @@ object SubtitleSync {
             // The smaller shift wins a tie between apart peaks, as an unmoved subtitle is the likelier one.
             if (value > score + 0.5 || abs(value - score) <= 0.5 && abs(lag) < abs(best)) { score = max(score, value); best = lag }
         }
-        // Lines shorter than the speech they sit in fit equally well over a stretch of shifts: its middle.
+        // Lines shorter than the speech they sit in fit equally well over a stretch of shifts: its middle. The stretch is
+        // tilted by the signals' ends (one sample of overlap per lag), while leaving it costs every line's edge at once.
         var low = best; var high = best
-        while (low > -reach && at(low - 1) >= score - 0.5) low--
-        while (high < reach && at(high + 1) >= score - 0.5) high++
+        while (low > -reach && at(low - 1) >= score - 2.0 * (best - low + 1) - 1) low--
+        while (high < reach && at(high + 1) >= score - 2.0 * (high + 1 - best) - 1) high++
         return (low + high) / 2 to score
     }
     /** One shift (and, with [frameRates], a scale) within ±[reach] s: null when the best is at the edge of where it looked. */

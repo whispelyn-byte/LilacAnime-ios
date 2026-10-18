@@ -288,12 +288,17 @@ object SubtitleSync {
         fft(ar, ai, true)
         var best = 0; var score = Double.NEGATIVE_INFINITY
         val reach = min(maxLag, size / 2 - 1)
+        fun at(lag: Int) = ar[if (lag >= 0) lag else size + lag]
         for (lag in -reach..reach) {
-            val value = ar[if (lag >= 0) lag else size + lag]
-            // The smaller shift wins a tie, as an unmoved subtitle is the likelier one.
-            if (value > score + 1e-9 || abs(value - score) <= 1e-9 && abs(lag) < abs(best)) { score = value; best = lag }
+            val value = at(lag)
+            // The smaller shift wins a tie between apart peaks, as an unmoved subtitle is the likelier one.
+            if (value > score + 0.5 || abs(value - score) <= 0.5 && abs(lag) < abs(best)) { score = max(score, value); best = lag }
         }
-        return best to score
+        // Lines shorter than the speech they sit in fit equally well over a stretch of shifts: its middle.
+        var low = best; var high = best
+        while (low > -reach && at(low - 1) >= score - 0.5) low--
+        while (high < reach && at(high + 1) >= score - 0.5) high++
+        return (low + high) / 2 to score
     }
     /** One shift (and, with [frameRates], a scale) within ±[reach] s: null when the best is at the edge of where it looked. */
     private fun align(reference: DoubleArray, cues: List<SyncCue>, reach: Double, frameRate: Boolean): Pair<Double, Double>? {

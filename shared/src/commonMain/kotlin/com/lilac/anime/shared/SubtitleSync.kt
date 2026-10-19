@@ -132,47 +132,82 @@ object SubtitleSync {
     // Tags of lines placed, drawn or sung on the picture: signs and karaoke, not speech.
     private val placed = Regex("\\\\(pos|move|an[789]|p[1-9]|i?clip|org|k[fo]?\\d|K\\d)")
     private class AssRow(val style: String, val start: Double, val end: Double, val text: String, val words: String)
-    private fun assRows(text: String): List<AssRow> {
-        var fields: List<String>? = null; var events = false
-        val rows = mutableListOf<AssRow>()
-        for (line in text.removePrefix("﻿").split(Regex("\\r?\\n"))) {
-            if (Regex("^\\[events]", RegexOption.IGNORE_CASE).containsMatchIn(line)) { events = true; continue }
+    private class AssStyle(val name: String) { var lines = 0; var placed = 0; var first = Double.POSITIVE_INFINITY; var last = Double.NEGATIVE_INFINITY }
+    // Written with arrays and index loops: the release-optimized Kotlin/Native build threw "Unexpected receiver type:
+    // kotlin.collections.ArrayList" from the list calls this had (0.4.20 crash on a device; debug builds never did).
+    private fun assRows(text: String): Array<AssRow> {
+        var fields: Array<String>? = null; var events = false
+        val rows = ArrayList<AssRow>()
+        val lines = text.removePrefix("﻿").split('\n').toTypedArray()
+        for (index in lines.indices) {
+            val line = lines[index].removeSuffix("\r")
+            val lower = line.lowercase()
+            if (lower.startsWith("[events]")) { events = true; continue }
             if (line.startsWith("[")) { events = false; continue }
             if (!events) continue
-            if (Regex("^format:", RegexOption.IGNORE_CASE).containsMatchIn(line)) { fields = line.substringAfter(':').split(',').map { it.trim().lowercase() }; continue }
+            if (lower.startsWith("format:")) {
+                val names = line.substring(line.indexOf(':') + 1).split(',').toTypedArray()
+                fields = Array(names.size) { names[it].trim().lowercase() }; continue
+            }
             val names = fields ?: continue
-            if (!Regex("^dialogue:", RegexOption.IGNORE_CASE).containsMatchIn(line)) continue
-            val parts = line.substringAfter(':').split(',')
-            val row = names.mapIndexed { i, field -> field to if (i == names.size - 1) parts.drop(i).joinToString(",") else parts.getOrElse(i) { "" }.trim() }.toMap()
-            val start = assSeconds(row["start"].orEmpty()); val end = assSeconds(row["end"].orEmpty())
-            val body = row["text"].orEmpty()
-            val words = body.replace(Regex("\\{[^}]*\\}"), "").replace(Regex("\\\\[Nn]"), " ").replace("\\h", " ").trim()
-            if (end > start) rows += AssRow(row["style"].orEmpty(), start, end, body, words)
+            if (!lower.startsWith("dialogue:")) continue
+            // desktop assLines: the fields by comma, the last one taking the rest (the text has commas).
+            val body = line.substring(line.indexOf(':') + 1)
+            var style = ""; var start = ""; var end = ""; var words = ""
+            var from = 0
+            for (i in names.indices) {
+                val value: String
+                if (i == names.size - 1) value = if (from <= body.length) body.substring(from) else ""
+                else {
+                    val comma = if (from <= body.length) body.indexOf(',', from) else -1
+                    value = if (comma >= 0) body.substring(from, comma).trim() else if (from <= body.length) body.substring(from).trim() else ""
+                    from = if (comma >= 0) comma + 1 else body.length + 1
+                }
+                when (names[i]) { "style" -> style = value; "start" -> start = value; "end" -> end = value; "text" -> words = value }
+            }
+            val from0 = assSeconds(start); val to = assSeconds(end)
+            val plain = words.replace(Regex("\\{[^}]*\\}"), "").replace(Regex("\\\\[Nn]"), " ").replace("\\h", " ").trim()
+            if (to > from0) rows.add(AssRow(style, from0, to, words, plain))
         }
-        return rows
+        return Array(rows.size) { rows[it] }
     }
     /** The styles that hold the speech: not named as signs or songs, few lines placed on the picture, spread over the episode. */
-    private fun speechStyles(rows: List<AssRow>): Set<String> {
-        class Style(var lines: Int = 0, var placed: Int = 0, var first: Double = Double.POSITIVE_INFINITY, var last: Double = Double.NEGATIVE_INFINITY)
-        val styles = LinkedHashMap<String, Style>()
+    private fun speechStyles(rows: Array<AssRow>): HashSet<String> {
+        val styles = ArrayList<AssStyle>()
+        var low = Double.POSITIVE_INFINITY; var high = Double.NEGATIVE_INFINITY
         for (row in rows) {
-            val style = styles.getOrPut(row.style) { Style() }
-            style.lines++; if (placed.containsMatchIn(row.text)) style.placed++
-            style.first = min(style.first, row.start); style.last = max(style.last, row.start)
+            var style: AssStyle? = null
+            for (k in 0 until styles.size) if (styles[k].name == row.style) { style = styles[k]; break }
+            val found = style ?: AssStyle(row.style).also { styles.add(it) }
+            found.lines++; if (placed.containsMatchIn(row.text)) found.placed++
+            found.first = min(found.first, row.start); found.last = max(found.last, row.start)
+            low = min(low, row.start); high = max(high, row.start)
         }
-        val span = rows.maxOf { it.start } - rows.minOf { it.start }
-        val speech = styles.filter { (name, s) -> !notSpeechStyle.containsMatchIn(name) && s.lines >= 5 && s.placed.toDouble() / s.lines < 0.3 && s.last - s.first >= span / 3 }.keys
-        if (speech.isNotEmpty()) return speech
-        return setOfNotNull(styles.entries.maxByOrNull { it.value.lines - it.value.placed }?.key)
+        val span = high - low
+        val speech = HashSet<String>()
+        for (k in 0 until styles.size) {
+            val s = styles[k]
+            if (!notSpeechStyle.containsMatchIn(s.name) && s.lines >= 5 && s.placed.toDouble() / s.lines < 0.3 && s.last - s.first >= span / 3) speech.add(s.name)
+        }
+        if (speech.size > 0) return speech
+        // When none is, the style with the most plain lines (the first of equals, as the desktop's sort keeps it).
+        var best: AssStyle? = null
+        for (k in 0 until styles.size) { val s = styles[k]; if (best == null || s.lines - s.placed > best.lines - best.placed) best = s }
+        best?.let { speech.add(it.name) }
+        return speech
     }
     /** desktop assSpeech: an ASS file's spoken lines, each once (typesetting repeats a line in layers). */
     fun assSpeech(text: String): List<SyncCue> {
         val rows = assRows(text)
         if (rows.isEmpty()) return emptyList()
-        val styles = speechStyles(rows); val seen = mutableSetOf<String>()
-        return rows.filter { row ->
-            styles.contains(row.style) && !placed.containsMatchIn(row.text) && row.words.isNotEmpty() && seen.add(row.start.toString() + "|" + row.end + "|" + row.words)
-        }.map { SyncCue(it.start, it.end) }.sortedBy { it.start }
+        val styles = speechStyles(rows); val seen = HashSet<String>()
+        val out = ArrayList<SyncCue>()
+        for (row in rows) {
+            if (!styles.contains(row.style) || placed.containsMatchIn(row.text) || row.words.isEmpty()) continue
+            if (seen.add(row.start.toString() + "|" + row.end + "|" + row.words)) out.add(SyncCue(row.start, row.end))
+        }
+        val sorted = out.toTypedArray(); sorted.sortWith(compareBy { it.start })
+        return ArrayList<SyncCue>(sorted.size).apply { for (cue in sorted) add(cue) }
     }
     /** desktop spokenVtt: the spoken lines of a subtitle, from its ASS styles when it is one (20 lines at least), else by content. */
     @Throws(Throwable::class)

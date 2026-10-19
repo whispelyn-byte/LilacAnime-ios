@@ -47,15 +47,15 @@ enum SubtitleAutoSync {
         let prepared = try await Task.detached(priority: .utility) { () throws -> ([SyncCue], [SyncCue], (count: Int, cues: [SyncCue])?) in
             let content = try SubtitleFiles.text(subtitle), ext = subtitle.pathExtension
             let timingCues: [SyncCue]
-            if let timing, let source = try? SubtitleFiles.text(timing) { timingCues = try SubtitleSync.shared.spokenCues(content: source, extension: timing.pathExtension) }
-            else { timingCues = try SubtitleSync.shared.spokenCues(content: content, extension: ext) }
+            if let timing, let source = try? SubtitleFiles.text(timing) { timingCues = SubtitleSync.shared.spokenCues(content: source, extension: timing.pathExtension) }
+            else { timingCues = SubtitleSync.shared.spokenCues(content: content, extension: ext) }
             // The track with the most spoken lines (by content: a "S&S" track has none).
             let best = references.compactMap { file -> (count: Int, cues: [SyncCue])? in
                 guard let text = try? SubtitleFiles.text(file) else { return nil }
-                guard let cues = try? SubtitleSync.shared.spokenCues(content: text, extension: file.pathExtension) else { return nil }
+                let cues = SubtitleSync.shared.spokenCues(content: text, extension: file.pathExtension)
                 return (cues.count, cues)
             }.max { $0.count < $1.count }
-            return (timingCues, try SubtitleSync.shared.allCues(content: content, extension: ext), best)
+            return (timingCues, SubtitleSync.shared.allCues(content: content, extension: ext), best)
         }.value
         let (timing, all, best) = prepared
         guard !timing.isEmpty else { throw SubtitleFiles.failure("싱크를 맞출 자막 줄이 없습니다.") }
@@ -75,8 +75,8 @@ enum SubtitleAutoSync {
         if cancelled() { throw CancellationError() }
         let marks = chapters.filter { ["op", "ed"].contains($0.type.lowercased()) || $0.type.lowercased().hasSuffix("op") || $0.type.lowercased().hasSuffix("ed") }
             .map { SyncCue(start: $0.start, end: $0.end) }
-        let result = try await Task.detached(priority: .utility) {
-            try SubtitleSync.shared.sync(timing: timing, all: all, reference: reference, byTrack: byTrack, chapters: marks, duration: duration)
+        let result = await Task.detached(priority: .utility) {
+            SubtitleSync.shared.sync(timing: timing, all: all, reference: reference, byTrack: byTrack, chapters: marks, duration: duration)
         }.value
         if cancelled() { throw CancellationError() }
         if result.uncertain { return .uncertain("이 자막이 영상과 맞는 위치를 찾지 못해 그대로 뒀어요 (다른 판본이나 다른 회차의 자막일 수 있어요).") }
@@ -99,7 +99,7 @@ enum SubtitleAutoSync {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let name = stable ? base + ".synced." + ext : base + ".sync-" + String(Int(Date().timeIntervalSince1970 * 1000), radix: 36) + "." + ext
             let target = folder.appendingPathComponent(name)
-            let text = try SubtitleSync.shared.retime(content: content, extension: file.pathExtension, offset: fix.offset, scale: fix.scale, segments: fix.segments)
+            let text = SubtitleSync.shared.retime(content: content, extension: file.pathExtension, offset: fix.offset, scale: fix.scale, segments: fix.segments)
             try text.write(to: target, atomically: true, encoding: .utf8)
             try? SubtitleFiles.associateFonts(SubtitleFiles.fonts(for: file), with: target)
             return target
@@ -139,7 +139,7 @@ enum SubtitleAutoSync {
             let count = data.count / 4
             let values = KotlinFloatArray(size: Int32(count))
             data.withUnsafeBytes { buffer in for index in 0..<count { values.set(index: Int32(index), value: buffer.loadUnaligned(fromByteOffset: index * 4, as: Float.self)) } }
-            return try SubtitleSync.shared.speechFromLevels(levels: values, frameSeconds: 0.01)
+            return SubtitleSync.shared.speechFromLevels(levels: values, frameSeconds: 0.01)
         }.value
         await MainActor.run { if levels.count > 4 { levels.removeAll() }; levels[key] = found }
         return found

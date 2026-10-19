@@ -305,8 +305,6 @@ int LilacSpeechLevels(const char *source, const char *headers, const char *desti
     if (status < 0) { speechFail(&state, "Cannot copy audio parameters", status); goto cleanup; }
     status = avcodec_open2(state.codec, decoder, NULL);
     if (status < 0) { speechFail(&state, "Cannot initialize audio decoder", status); goto cleanup; }
-    // Resampling divides by the source rate.
-    if (state.codec->sample_rate <= 0 || state.codec->ch_layout.nb_channels <= 0) { speechFail(&state, "Audio format is unknown", 0); goto cleanup; }
     // The filter takes the stereo mix (any layout is folded down to it first); without it, the plain mono mix.
     if (speechGraph(&state) < 0) { avfilter_graph_free(&state.graph); state.source = NULL; state.sink = NULL; }
     AVChannelLayout stereo = AV_CHANNEL_LAYOUT_STEREO, mono = AV_CHANNEL_LAYOUT_MONO;

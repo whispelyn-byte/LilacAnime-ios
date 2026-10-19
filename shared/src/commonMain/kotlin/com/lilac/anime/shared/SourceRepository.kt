@@ -74,6 +74,13 @@ class SourceRepository(private val client: HttpClient, private val details: Deta
             }))
             "animenosub" -> {
                 val base = "https://animenosub.to"
+                // Desktop provider:search uses WordPress search pagination and only result links.
+                if (query.isNotBlank()) {
+                    val path = if (page == 1) "$base/" else "$base/page/$page/"
+                    return AnimenosubParser.parseAnimeList(
+                        Ksoup.parse(getText(path, mapOf("s" to query)), path), onlyResults = true
+                    )
+                }
                 val filtered = query.isBlank() && (filter.extras.isNotEmpty() || filter.sort.isNotBlank() || filter.status.isNotBlank() || filter.season.isNotBlank() || filter.year.isNotBlank() || filter.genres.isNotEmpty() || filter.format.isNotBlank())
                 val path = if (filtered) "$base/anime/" else if (page == 1) "$base/" else "$base/page/$page/"
                 val seasonValues = if (filter.year.isNotBlank()) filters("animenosub").seasonValues.filter { it.endsWith("-" + filter.year) && (filter.season.isBlank() || it == filter.season.lowercase() + "-" + filter.year) } else emptyList()

@@ -13,13 +13,15 @@ object AnimenosubParser {
     private const val BASE_URL = "https://animenosub.to"
     private const val ID_PREFIX = "animenosub:"
 
-    fun parseAnimeList(document: Document): List<Anime> {
+    fun parseAnimeList(document: Document, onlyResults: Boolean = false): List<Anime> {
         val result = linkedMapOf<String, Anime>()
 
         // The current homepage/list pages often link to the *latest episode*
         // rather than the /anime/... detail page. Accept both forms and derive
         // the series detail URL from an episode URL when necessary.
+        // Desktop animenosubList: search must not include recommendations or site navigation.
         document.select("a[href]").forEach { link ->
+            if (onlyResults && link.closest("#sidebar, header, footer, nav") != null) return@forEach
             val href = link.absUrl("href").trim()
             if (!isAnimenosubUrl(href)) return@forEach
 

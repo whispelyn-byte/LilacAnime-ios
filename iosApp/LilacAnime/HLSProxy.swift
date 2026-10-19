@@ -255,7 +255,9 @@ final class HLSProxy {
         let key = SubtitleFiles.key(url.absoluteString)
         routes[key] = url
         let original = url.pathExtension.lowercased()
-        let ext = url == stream?.url && stream?.hlsManifest != nil ? "m3u8" : original == "html" ? "ts" : original.isEmpty ? "bin" : original
+        // FFmpeg (mpv) refuses HLS segments named .html/.png/.webp (allowed_segment_extensions): the playlist then
+        // reads as empty and the video never starts. They are served decoded as transport stream, so they are named so.
+        let ext = url == stream?.url && stream?.hlsManifest != nil ? "m3u8" : ["html", "png", "webp"].contains(original) ? "ts" : original.isEmpty ? "bin" : original
         return URL(string: "http://127.0.0.1:\(port)/\(token)/\(key).\(ext)")!
     }
     private func receive(_ connection: NWConnection) {

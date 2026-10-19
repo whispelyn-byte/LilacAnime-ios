@@ -74,7 +74,9 @@ actor HLSPlanBuilder {
     }
     private func filename(_ url: URL, manifest: Bool = false, namespace: String = "") -> String {
         let original = url.pathExtension.lowercased()
-        let ext = manifest ? "m3u8" : stream.hlsManifest != nil && original == "html" ? "ts" : original
+        // FlixCloud's image-wrapped segments are saved decoded, as .ts: mpv refuses .png/.webp segments offline too.
+        let disguised = (stream.hlsManifest != nil && original == "html") || (stream.manifestKey != nil && ["png", "webp"].contains(original))
+        let ext = manifest ? "m3u8" : disguised ? "ts" : original
         let suffix = ext.range(of: "^[a-z0-9]{1,10}$", options: .regularExpression) == nil ? "bin" : ext
         return SubtitleFiles.key(namespace + DownloadIdentity.resource(url)) + "." + suffix
     }

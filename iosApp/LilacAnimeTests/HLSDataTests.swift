@@ -54,4 +54,26 @@ final class HLSDataTests: XCTestCase {
         order.insert(Array(video.dropFirst()))
         XCTAssertEqual(order.following(audio[1]), Array(audio[2...6]))
     }
+    /// FlixCloud's CDN now names its segments .png/.webp; FFmpeg refuses those extensions for HLS segments, so mpv
+    /// never started the episode (it timed out). The proxy and the downloaded files name them .ts.
+    private func flixStream() -> ResolvedStream {
+        let media = "#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:4.6,\nhttps://vault.invalid/_v7/id/seg-0-f1-v1-a0.png\n#EXTINF:4.1,\nhttps://vault.invalid/_v7/id/seg-1-f1-v1-a0.webp\n#EXT-X-ENDLIST"
+        return ResolvedStream(label: "HD-2", url: URL(string: "https://fetch.invalid/_v7/id/video.m3u8")!, referer: "https://flixcloud.cc/e/test",
+            headers: [:], manifestKey: Data("key".utf8).base64EncodedString(), hlsManifest: media)
+    }
+    func testFlixImageSegmentsAreProxiedAsTransportStream() async throws {
+        let proxy = HLSProxy(); defer { proxy.stop() }
+        let proxied = try await proxy.start(flixStream())
+        let (data, _) = try await URLSession.shared.data(from: proxied.url)
+        let text = String(decoding: data, as: UTF8.self)
+        XCTAssertEqual(HLSData.references(text, base: proxied.url).map(\.pathExtension), ["ts", "ts"])
+    }
+    func testFlixImageSegmentsAreDownloadedAsTransportStreamFiles() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (_, parts, _) = try await HLSPlanBuilder(stream: flixStream(), folder: folder, quality: "Auto").build()
+        XCTAssertEqual(parts.map(\.url.pathExtension).sorted(), ["png", "webp"])
+        XCTAssertTrue(parts.allSatisfy { $0.name.hasSuffix(".ts") })
+    }
 }

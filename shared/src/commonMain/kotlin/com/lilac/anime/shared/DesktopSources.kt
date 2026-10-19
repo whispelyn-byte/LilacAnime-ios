@@ -35,9 +35,13 @@ object DesktopSourceParser {
         return if (url.startsWith("https://")) listOf(DesktopPlaybackServer("기본", "sub", url)) else emptyList()
     }
 
-    fun reanimeServers(root: JsonObject): List<DesktopPlaybackServer> {
+    fun reanimeServers(root: JsonObject, dub: Boolean = false): List<DesktopPlaybackServer> {
         val links = root.list("episode_links").ifEmpty { root.list("servers") }
         return links.filterIsInstance<JsonObject>().mapNotNull {
+            // Desktop 0ac2590: preserve requested audio before HD ranking and URL deduplication.
+            val dubbed = Regex("^dub(?:bed)?$", RegexOption.IGNORE_CASE).matches(it.text("dataType")) ||
+                Regex("\\bdub(?:bed)?\\b", RegexOption.IGNORE_CASE).containsMatchIn(it.text("serverName"))
+            if (dubbed != dub) return@mapNotNull null
             val url = it.text("dataLink").ifBlank { it.text("link") }
             if (!Regex("^https://flixcloud\\.cc/e/", RegexOption.IGNORE_CASE).containsMatchIn(url)) null
             else DesktopPlaybackServer(it.text("serverName"), "soft", url)
@@ -382,7 +386,7 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
         if (source != "reanime") return emptyList()
         val slug = Url(url).encodedPath.trimEnd('/').substringAfterLast('/')
         // The current API often serves streams only from /api/flix: both are asked at once (an empty /api/watch cost a
-        // whole request first), /api/watch's links used when it has any.
+        // whole request first). Only links matching the requested audio count toward the watch result.
         return coroutineScope {
             val flix = if (anilist > 0) async { runCatching { DesktopSourceParser.reanimeServers(Json.parseToJsonElement(text("https://reanime.to/api/flix/$anilist/$number")).jsonObject) } } else null
             val links = try { DesktopSourceParser.reanimeServers(Json.parseToJsonElement(text("https://reanime.to/api/watch/$slug/$number")).jsonObject) }

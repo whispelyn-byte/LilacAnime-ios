@@ -40,7 +40,6 @@ struct HomeView: View {
                     } else if model.loading {
                         Rectangle().fill(LilacStyle.card).frame(height: 420).overlay { ProgressView("작품을 불러오는 중…") }
                     }
-                    WeeklyScheduleView(source: library.preferences.source, known: scheduleKnown, refresh: scheduleRefresh).padding(.horizontal, gutter)
                     if !library.history.isEmpty { continueWatching }
                     if DesktopRecentUpdates.supported.contains(library.preferences.source) {
                         orderChips
@@ -66,6 +65,8 @@ struct HomeView: View {
                     } else if items.isEmpty && !model.loading {
                         LilacEmptyState(icon: "sparkles", title: "새로운 작품을 찾아보세요", message: "다른 영상 소스를 선택하거나 탐색에서 검색해 보세요.")
                     }
+                    // The weekly schedule last, under the rails (asked for by testers: it pushed the rails down).
+                    WeeklyScheduleView(source: library.preferences.source, known: scheduleKnown, refresh: scheduleRefresh).padding(.horizontal, gutter)
                     Button(action: browse) { Label("전체 작품 둘러보기", systemImage: "square.grid.2x2").frame(maxWidth: .infinity) }
                         .buttonStyle(LilacOutlineButtonStyle()).padding(.horizontal, gutter)
                     if UIShowcase.enabled { Text("UI PREVIEW · 예시 데이터").font(.caption).foregroundStyle(LilacStyle.muted).padding(.horizontal, gutter) }

@@ -36,7 +36,9 @@ object DesktopCaptions {
         return !japanese.containsMatchIn(value) && value.split(Regex("\\s+")).size <= 3
     }
 
-    fun drop(text: String): String = text.split('\n').mapNotNull { line ->
+    // A line the patterns cannot read is translated as it is (a Kotlin exception would end the app on iOS).
+    fun drop(text: String): String = runCatching { dropLabels(text) }.getOrDefault(text)
+    private fun dropLabels(text: String): String = text.split('\n').mapNotNull { line ->
         // A short label before the words is the speaker's, hiragana or not: （男の子）こんにちは.
         var value = leadingLabel.replaceFirst(line.trim()) { if (marks.containsMatchIn(it.groupValues[1])) it.value else "" }
         value = label.replace(value) { if (captionLabel(it.groupValues[1])) " " else it.value }.trim()

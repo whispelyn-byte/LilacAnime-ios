@@ -91,6 +91,9 @@ object SubtitleSync {
         }
     }
     /** A retimed copy of a subtitle file's text, in its own format (a format with no timing lines of its own: as a VTT). */
+    // Swift calls these: a Kotlin exception that reaches Swift undeclared ends the app (SIGABRT, 0.4.20 crash report:
+    // assSpeech from spokenCues), so each is declared and Swift's sync fails quietly instead.
+    @Throws(Throwable::class)
     fun retime(content: String, extension: String, offset: Double, scale: Double, segments: List<SyncSegment>): String {
         val parts = segments.takeIf { it.size > 1 }
         return when (extension.lowercase()) {
@@ -119,6 +122,7 @@ object SubtitleSync {
         return use.map { SyncCue(it.startMs / 1000.0, it.endMs / 1000.0) }.sortedBy { it.start }
     }
     /** Every line of the file (the desktop's second ask runs on the subtitle as it is). */
+    @Throws(Throwable::class)
     fun allCues(content: String, extension: String): List<SyncCue> =
         SubtitleDocument.parse(content, extension.lowercase()).filter { it.endMs > it.startMs }.map { SyncCue(it.startMs / 1000.0, it.endMs / 1000.0) }.sortedBy { it.start }
 
@@ -171,6 +175,7 @@ object SubtitleSync {
         }.map { SyncCue(it.start, it.end) }.sortedBy { it.start }
     }
     /** desktop spokenVtt: the spoken lines of a subtitle, from its ASS styles when it is one (20 lines at least), else by content. */
+    @Throws(Throwable::class)
     fun spokenCues(content: String, extension: String): List<SyncCue> {
         if (extension.lowercase() in listOf("ass", "ssa")) assSpeech(content).takeIf { it.size >= 20 }?.let { return it }
         return dialogueCues(content, extension)
@@ -360,6 +365,7 @@ object SubtitleSync {
      * split. Candidates as the desktop asks ffsubsync for them: one shift within 60 s, 5 minutes and the whole episode,
      * the file as it is within 5 minutes, segments within 150 s and 5 minutes, and against a site track a changed frame rate.
      */
+    @Throws(Throwable::class)
     fun sync(timing: List<SyncCue>, all: List<SyncCue>, reference: List<SyncCue>, byTrack: Boolean, chapters: List<SyncCue>, duration: Double): SyncResult {
         val speech = merged(reference)
         val cues = timing.sortedBy { it.start }
@@ -408,6 +414,7 @@ object SubtitleSync {
      * gaps under 0.25 s joined and blips under 0.12 s left out. It stands in for WebRTC's voice detector, which the
      * desktop runs in ffsubsync's Python.
      */
+    @Throws(Throwable::class)
     fun speechFromLevels(levels: FloatArray, frameSeconds: Double): List<SyncCue> {
         val count = levels.size
         if (count == 0) return emptyList()

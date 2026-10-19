@@ -46,6 +46,34 @@ class SubtitleSyncTest {
         assertEquals(89.25, SubtitleSync.shiftAt(listOf(SyncSegment(0.0, -1.0), SyncSegment(90.0, 89.25)), 90.0))
     }
 
+    /** A fansub's ASS as files come (BOM, CRLF, styles, comments, layered signs, karaoke, a short opening style). */
+    private fun fansubAss(): String {
+        val head = "﻿[Script Info]\r\nScriptType: v4.00+\r\nPlayResX: 1920\r\n\r\n[V4+ Styles]\r\nFormat: Name, Fontname, Fontsize\r\n" +
+            "Style: Default,Arial,60\r\nStyle: Signs,Arial,40\r\n\r\n[Events]\r\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\r\n"
+        val rows = (0 until 120).flatMap { i ->
+            val t = 30.0 + i * 9.5
+            listOfNotNull(
+                "Dialogue: 0,${SubtitleSync.assStamp(t)},${SubtitleSync.assStamp(t + 2.2)},Default,Sota,0,0,0,,{\\i1}대사 $i, 쉼표도\\N둘째 줄",
+                if (i % 10 == 0) "Dialogue: 1,${SubtitleSync.assStamp(t)},${SubtitleSync.assStamp(t + 3)},Signs,,0,0,0,,{\\pos(960,80)}간판 $i" else null,
+                if (i % 15 == 0) "Comment: 0,${SubtitleSync.assStamp(t)},${SubtitleSync.assStamp(t + 1)},Default,,0,0,0,,메모" else null,
+                if (i < 9) "Dialogue: 0,${SubtitleSync.assStamp(t + 1)},${SubtitleSync.assStamp(t + 3)},OP,,0,0,0,karaoke,{\\k20}la {\\k30}la" else null)
+        }
+        return head + rows.joinToString("\r\n") + "\r\n"
+    }
+    @Test fun aFansubAssGivesItsSpokenLinesAndRetimes() {
+        val ass = fansubAss()
+        val spoken = SubtitleSync.spokenCues(ass, "ass")
+        assertEquals(120, spoken.size)
+        assertEquals(30.0, spoken.first().start); assertEquals(32.2, spoken.first().end, 1e-9)
+        assertTrue(SubtitleSync.allCues(ass, "ass").size >= 120)
+        val moved = SubtitleSync.retime(ass, "ass", -1.5, 1.0, emptyList())
+        assertTrue(moved.contains("Dialogue: 0,0:00:28.50,0:00:30.70,Default,Sota,0,0,0,,{\\i1}대사 0, 쉼표도\\N둘째 줄"), moved.take(600))
+        // Odd files: no events, a format line only, rows with missing fields.
+        assertEquals(emptyList(), SubtitleSync.assSpeech("[Script Info]\nTitle: x\n"))
+        assertEquals(emptyList(), SubtitleSync.assSpeech("[Events]\nFormat: Layer, Start, End, Style, Text\n"))
+        assertEquals(1, SubtitleSync.assSpeech("[Events]\nFormat: Layer, Start, End, Style, Text\nDialogue: 0,0:00:03.00,0:00:04.00,Default,말\nDialogue: 0,0:00:05.00,0:00:06.00\n").size)
+    }
+
     /** Speech-like lines at uneven times over [length] seconds (an even rhythm would fit any shift of its step). */
     private fun lines(length: Double, seed: Int = 11): List<SyncCue> {
         var value = seed.toLong(); fun random() = ((value * 16807) % 2147483647).also { value = it } / 2147483647.0

@@ -6,7 +6,13 @@ kotlin {
     jvm()
     if (includeAndroid) androidTarget()
     iosArm64()
-    iosSimulatorArm64()
+    iosSimulatorArm64 {
+        // The app ships release-optimized Kotlin, whose devirtualization alone threw in assSpeech on a device (0.4.20):
+        // the tests also run built that way (iosSimulatorArm64ReleaseTest).
+        val release = org.jetbrains.kotlin.gradle.plugin.mpp.NativeBuildType.RELEASE
+        binaries.test(listOf(release))
+        testRuns.create("release") { setExecutionSourceFrom(binaries.getTest(release)) }
+    }
     iosX64()
     targets.withType<org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget>().configureEach {
         binaries.framework { baseName = "LilacShared"; isStatic = true }

@@ -12,7 +12,7 @@ if [ "${GITHUB_REF_TYPE:-}" = tag ]; then
 else
   python3 iosApp/scripts/android-version.py --check
 fi
-sh ./gradlew :shared:iosSimulatorArm64Test
+sh ./gradlew :shared:iosSimulatorArm64Test :shared:iosSimulatorArm64ReleaseTest
 cd iosApp
 APP_VERSION="$(python3 scripts/android-version.py --version)"
 APP_BUILD="$(python3 scripts/android-version.py --build)"

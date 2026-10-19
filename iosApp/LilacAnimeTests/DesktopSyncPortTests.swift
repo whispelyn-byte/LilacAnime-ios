@@ -67,6 +67,18 @@ final class DesktopSyncPortTests: XCTestCase {
         guard case .unchanged = again else { return XCTFail("\(again)") }
         try? FileManager.default.removeItem(at: copy)
     }
+    /// The 0.4.20 crash: an ASS subtitle's spoken lines read from Swift (spokenCues → assSpeech).
+    func testAnAssSubtitlesSpokenLinesAreReadFromSwift() throws {
+        func stamp(_ seconds: Int) -> String { String(format: "0:%02d:%02d.00", seconds / 60, seconds % 60) }
+        var rows: [String] = []
+        for i in 0..<60 {
+            rows.append("Dialogue: 0," + stamp(10 + i * 9) + "," + stamp(12 + i * 9) + ",Default,,0,0,0,,대사 \(i), 쉼표")
+            if i % 10 == 0 { rows.append("Dialogue: 1," + stamp(10 + i * 9) + "," + stamp(13 + i * 9) + ",Signs,,0,0,0,,{\\pos(960,80)}간판") }
+        }
+        let ass = "[Script Info]\r\nScriptType: v4.00+\r\n\r\n[Events]\r\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\r\n" + rows.joined(separator: "\r\n") + "\r\n"
+        XCTAssertEqual(try SubtitleSync.shared.spokenCues(content: ass, extension: "ass").count, 60)
+        XCTAssertGreaterThanOrEqual(try SubtitleSync.shared.allCues(content: ass, extension: "ass").count, 60)
+    }
     func testDownloadsCountSavedKoreanSubtitlesFirst() {
         func saved(_ provider: String, translated: Bool = false) -> SavedSubtitle {
             SavedSubtitle(id: provider, episodeKey: "k", name: provider + ".ass", relativeFile: provider + ".ass", provider: provider, translated: translated, date: Date())

@@ -46,6 +46,50 @@ class SubtitleSyncTest {
         assertEquals(89.25, SubtitleSync.shiftAt(listOf(SyncSegment(0.0, -1.0), SyncSegment(90.0, 89.25)), 90.0))
     }
 
+    /** desktop tests/subtitle-sync.test.cjs (0.5.38): lines right up to an opening (60 s), none during it, then the rest. */
+    private fun maidCues(): List<SyncCue> {
+        var seed = 7L; fun random() = ((seed * 16807) % 2147483647).also { seed = it } / 2147483647.0
+        val cues = mutableListOf<SyncCue>(); var t = 2.0
+        while (t < 1300) { if (t < 60 || t > 170) cues += SyncCue(t, t + 1 + random() * 2); t += 2 + random() * 6 }
+        return cues
+    }
+    @Test fun twoPartsKeepTheHeadAndMoveTheRestAtTheLineThatFitsBest() {
+        // A TV-made subtitle: right up to the opening, then 10 s late from the first line after it (a sponsor card).
+        val cues = maidCues()
+        val speech = cues.map { if (it.start < 60) it else SyncCue(it.start - 10, it.end - 10) }
+        val parts = SubtitleSync.twoParts(cues, speech, 0.0, -10.0)
+        assertEquals(listOf(SyncSegment(cues[0].start, 0.0), SyncSegment(cues.first { it.start > 170 }.start, -10.0)), parts)
+        assertTrue(SubtitleSync.fitScore(cues, speech, SubtitleSync.mover(0.0, 1.0, parts)) > SubtitleSync.fitScore(cues, speech, SubtitleSync.mover(-10.0, 1.0, null)))
+        // Late all through: no line gives a better fit than the one shift.
+        assertNull(SubtitleSync.twoParts(cues, cues.map { SyncCue(it.start - 10, it.end - 10) }, 0.0, -10.0))
+    }
+    @Test fun alignedPartsFindAnyNumberOfPartsAndNoneWhereOneShiftFits() {
+        val cues = maidCues()
+        // Right up to the opening, 10 s late after it, 13.5 s late from 800 s (a second card in the middle).
+        fun late(s: Double) = if (s < 60) 0.0 else if (s < 800) 10.0 else 13.5
+        val found = SubtitleSync.alignedParts(cues, SubtitleSync.merged(cues.map { SyncCue(it.start - late(it.start), it.end - late(it.start)) }), penalties = listOf(6.0))[0]
+        assertEquals(listOf(0.0, -10.0, -13.5), found.map { it.shift })
+        assertEquals(cues.first { it.start > 170 }.start, found[1].from)
+        assertEquals(cues.first { it.start >= 800 }.start, found[2].from)
+        // Late 4 s all through: one part.
+        assertEquals(listOf(4.0), SubtitleSync.alignedParts(cues, SubtitleSync.merged(cues.map { SyncCue(it.start + 4, it.end + 4) }), penalties = listOf(6.0))[0].map { it.shift })
+    }
+    @Test fun startScoreCountsLinesStartingNearAReferenceStart() {
+        val lines = listOf(SyncCue(10.0, 12.0), SyncCue(20.0, 22.0), SyncCue(30.0, 31.0), SyncCue(40.0, 42.0)); val starts = listOf(10.2, 19.5, 30.25, 50.0)
+        assertEquals(0.5, SubtitleSync.startScore(lines, starts))
+        assertEquals(0.5, SubtitleSync.startScore(lines, starts) { time, _ -> time + 10 })
+        assertEquals(0.0, SubtitleSync.startScore(lines, starts) { time, _ -> time + 5 })
+        assertEquals(0.0, SubtitleSync.startScore(emptyList(), starts))
+    }
+    @Test fun aTvSubtitleWithASponsorCardIsSyncedInTwoPartsByTheSiteTrack() {
+        val cues = maidCues()
+        val track = cues.map { if (it.start < 60) it else SyncCue(it.start - 10.1, it.end - 10.1) }
+        val result = SubtitleSync.sync(cues, cues, track, byTrack = true, chapters = emptyList(), duration = 1300.0)
+        val segments = assertNotNull(result.segments, "${result.tried}")
+        assertEquals(2, segments.size)
+        assertTrue(abs(segments[0].shift) <= 0.02 && abs(segments[1].shift + 10.1) <= 0.02, "$segments")
+        assertEquals(-10.1, result.offset, 0.02)
+    }
     /** A fansub's ASS as files come (BOM, CRLF, styles, comments, layered signs, karaoke, a short opening style). */
     private fun fansubAss(): String {
         val head = "﻿[Script Info]\r\nScriptType: v4.00+\r\nPlayResX: 1920\r\n\r\n[V4+ Styles]\r\nFormat: Name, Fontname, Fontsize\r\n" +

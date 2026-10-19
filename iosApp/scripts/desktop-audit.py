@@ -38,6 +38,7 @@ mapping = {
  'electron/preload.cjs': [shared+'IosServices.kt',ios+'LibraryStore.swift'],
  'electron/device-sync.cjs': [ios+'DeviceSync.swift'],
  'electron/subtitle-store.cjs': [ios+'EpisodeSubtitleStore.swift'],
+ 'electron/anthropic-api.cjs': [shared+'CloudTranslator.kt',shared+'CloudModelRules.kt',shared+'CloudCooldown.kt'],
  'electron/subtitle-sync.cjs': [shared+'SubtitleSync.kt',ios+'SubtitleAutoSync.swift',ios+'NativeAudio.m',ios+'EpisodePlayerView.swift'],
  'electron/subtitle-translator.cjs': [shared+'CloudTranslator.kt',shared+'DesktopCloudPrompt.kt',ios+'TranslationCoordinator.swift',ios+'CloudSubtitleScheduler.swift'],
  'electron/updater.cjs': [ios+'DesktopUpdater.swift','.github/workflows/ipa.yml'],

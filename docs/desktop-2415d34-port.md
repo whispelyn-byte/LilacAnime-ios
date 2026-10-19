@@ -35,3 +35,8 @@ Validation passed on implementation commit `5e68315a325cbc304c37ba2fcf8fb838d22d
 - Actions: https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/39124293687
 
 The audio path (LilacSpeechLevels on a real stream) is compiled and linked but not exercised by CI; it needs a check on a device. No release tag was created; the CI artifact keeps 0.4.18/build 60.
+
+## Desktop 0.5.38 (7ac8751)
+
+- Claude (Anthropic API) as a translation API, called over HTTP from the shared module (the Anthropic SDKs are not available to Kotlin/Native or Swift): every model a key lists (paged), Claude Opus 5.5 picked; the instructions as a cached system prompt; structured JSON at low effort with the server-side fallback (`fallbacks: "default"`, beta `server-side-fallback-2026-07-01`) on the models that take it, then without effort, then plain text; a key out of credit is not retried in other shapes; a declined batch is an error; a rate-limited model hands over to its own family for five minutes. Batches of 200 lines / 12,000 characters, three at a time. The desktop streams; iOS sends one request (16,000 output tokens) within its 180 s timeout.
+- Subtitle sync: the desktop's alignedParts (dynamic programming over a site track's lines, penalties 3/6/12 s), twoParts (head right, rest moved: a TV sponsor card), startScore, keptSegments' 45 s rule against the audio only, and segments chosen only when every part gains 0.06 by the overlap and, against a track, by the starts.

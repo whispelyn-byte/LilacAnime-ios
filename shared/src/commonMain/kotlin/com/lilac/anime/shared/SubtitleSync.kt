@@ -5,6 +5,7 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.cos
+import kotlin.math.floor
 import kotlin.math.log10
 import kotlin.math.max
 import kotlin.math.min
@@ -38,6 +39,9 @@ object SubtitleSync {
     // over), a subtitle already right by under 0.003.
     private const val TRACK_MARGIN = 0.03; private const val TRACK_FLOOR = 0.6
     private const val AUDIO_MARGIN = 0.03; private const val AUDIO_FLOOR = 0.3
+    // Each part of segments must gain as much as a right shift does (0.06) on its own lines, by the overlap and by the
+    // starts (desktop 0.5.38, checked on 66 subtitles of 31 episodes).
+    private const val TRACK_SPLIT = 0.06; private const val AUDIO_SPLIT = 0.06
     // ffsubsync's framerate ratios (fix_framerate): film, PAL and their inverses.
     private val frameRates = listOf(24.0 / 23.976, 25.0 / 23.976, 25.0 / 24.0).flatMap { listOf(it, 1 / it) }
 
@@ -260,7 +264,9 @@ object SubtitleSync {
         fun linesOf(parts: List<SyncSegment>, i: Int) = cues.filter { it.start >= (if (i > 0) parts[i].from else Double.NEGATIVE_INFINITY) && (i + 1 >= parts.size || it.start < parts[i + 1].from) }
         fun broken(parts: List<SyncSegment>): Boolean = parts.indices.any { i ->
             val lines = linesOf(parts, i)
-            if (lines.size < 8 || lines.last().start - lines.first().start < 45) return@any true
+            // 45 s only against the audio: against a site track a short part is judged by its own fit (desktop 0.5.38,
+            // All-Works Maid 6's 26 s before the opening).
+            if (lines.size < 8 || (edges != null && lines.last().start - lines.first().start < 45)) return@any true
             if (i == 0) return@any false
             val before = linesOf(parts, i - 1)
             val endBefore = before.maxOf { it.end } + parts[i - 1].shift; val startHere = lines.first().start + parts[i].shift
@@ -275,6 +281,101 @@ object SubtitleSync {
             guard++
         }
         return if (parts.size > 1 && !broken(parts)) parts else null
+    }
+    /**
+     * desktop twoParts: two parts from two shifts already found — the lines before one line take shift [a], that line and
+     * the rest [b] — at the line where the fit is best, the lines staying in order. A TV-made subtitle has the sponsor card
+     * after the opening (提供, ~10 s) the web video has not: the part before the opening right, the rest late. null when
+     * no line gives a better fit than either shift alone.
+     */
+    fun twoParts(lines: List<SyncCue>, speech: List<SyncCue>, a: Double, b: Double): List<SyncSegment>? {
+        val cues = lines.sortedBy { it.start }
+        fun hits(shift: Double) = cues.map { cue -> fitScore(listOf(cue), speech) { time, _ -> time + shift } * (cue.end - cue.start) }
+        val before = hits(a); val after = hits(b)
+        val alone = max(before.sum(), after.sum())
+        var head = 0.0; var tail = after.sum(); var end = Double.NEGATIVE_INFINITY
+        var bestHit = 0.0; var bestLine = -1
+        for (k in 1 until cues.size) {
+            head += before[k - 1]; tail -= after[k - 1]; end = max(end, cues[k - 1].end)
+            // Only where the lines stay in order (as keptSegments asks): the first line moved by b not before the last by a.
+            if (cues[k].start + b < end + a - 1) continue
+            if (head + tail > (if (bestLine >= 0) bestHit else alone)) { bestHit = head + tail; bestLine = k }
+        }
+        return if (bestLine >= 0) listOf(SyncSegment(cues[0].start, a), SyncSegment(cues[bestLine].start, b)) else null
+    }
+    /**
+     * desktop startScore: the share of the lines whose start, moved, falls within 0.3 s of a start in the reference
+     * (sorted). A TV-made subtitle's lines start within 0.3 s of the site track's for 58–64%, a web one's for 70–90%, and a
+     * wrong shift puts few there.
+     */
+    fun startScore(lines: List<SyncCue>, starts: List<Double>, move: (Double, Double) -> Double = { time, _ -> time }): Double {
+        var hit = 0
+        for (line in lines) {
+            val time = move(line.start, line.start); var low = 0; var high = starts.size
+            while (low < high) { val mid = (low + high) ushr 1; if (starts[mid] < time - 0.3) low = mid + 1 else high = mid }
+            if (low < starts.size && starts[low] <= time + 0.3) hit++
+        }
+        return if (lines.isNotEmpty()) hit.toDouble() / lines.size else 0.0
+    }
+    /** The seconds of speech (merged, in order) within from..to. */
+    private fun speechHit(speech: List<SyncCue>, from: Double, to: Double): Double {
+        var low = 0; var high = speech.size; var hit = 0.0
+        while (low < high) { val mid = (low + high) ushr 1; if (speech[mid].end <= from) low = mid + 1 else high = mid }
+        var i = low
+        while (i < speech.size && speech[i].start < to) { hit += max(0.0, min(to, speech[i].end) - max(from, speech[i].start)); i++ }
+        return hit
+    }
+    /**
+     * desktop alignedParts: the shifts along a whole episode against a site track, found directly (dynamic programming over
+     * its lines): each line takes one of the shifts within ±[reach] (0.1 s apart); keeping the shift of the line before
+     * costs nothing, changing it costs `penalty` seconds of speech, and no change moves a line before the end of the lines
+     * before it. One result per penalty; each part's shift is then refined to 0.01 s on its own lines.
+     */
+    fun alignedParts(lines: List<SyncCue>, speech: List<SyncCue>, reach: Double = 300.0, penalties: List<Double> = listOf(3.0, 6.0, 12.0)): List<List<SyncSegment>> {
+        val cues = lines.sortedBy { it.start }.filter { it.end > it.start }
+        val n = cues.size; val step = 0.1
+        if (n < 2 || speech.isEmpty()) return emptyList()
+        val count = (2 * reach / step).roundToLong().toInt() + 1
+        fun shiftOf(j: Int) = ((j * step - reach) * 100).roundToLong() / 100.0
+        val hits = FloatArray(n * count)
+        for (i in 0 until n) for (j in 0 until count) hits[i * count + j] = speechHit(speech, cues[i].start + shiftOf(j), cues[i].end + shiftOf(j)).toFloat()
+        fun linesHit(from: Int, to: Int, shift: Double): Double { var hit = 0.0; for (i in from until to) hit += speechHit(speech, cues[i].start + shift, cues[i].end + shift); return hit }
+        return penalties.map { penalty ->
+            var prev = DoubleArray(count); var next = DoubleArray(count)
+            val switched = BooleanArray(n * count); val source = IntArray(n * count); val best = DoubleArray(count); val arg = IntArray(count)
+            for (j in 0 until count) prev[j] = hits[j].toDouble()
+            var end = cues[0].end
+            for (i in 1 until n) {
+                for (j in 0 until count) if (j == 0 || prev[j] > best[j - 1]) { best[j] = prev[j]; arg[j] = j } else { best[j] = best[j - 1]; arg[j] = arg[j - 1] }
+                // From shift a to b at this line: its start moved by b not before the end so far moved by a (1 s of overlap
+                // allowed), so a ≤ b + gap + 1: the best of the shifts up to that one.
+                val gap = cues[i].start - end
+                for (j in 0 until count) {
+                    val limit = min(count - 1, floor((shiftOf(j) + gap + 1 + reach) / step + 1e-6).toInt())
+                    var value = prev[j]
+                    if (limit >= 0 && best[limit] - penalty > value) { value = best[limit] - penalty; switched[i * count + j] = true; source[i * count + j] = arg[limit] }
+                    next[j] = value + hits[i * count + j]
+                }
+                end = max(end, cues[i].end)
+                val swap = prev; prev = next; next = swap
+            }
+            var j = 0; for (k in 1 until count) if (prev[k] > prev[j]) j = k
+            val taken = IntArray(n)
+            for (i in n - 1 downTo 0) { taken[i] = j; if (i > 0 && switched[i * count + j]) j = source[i * count + j] }
+            val starts = ArrayList<Int>()
+            for (i in 0 until n) if (i == 0 || taken[i] != taken[i - 1]) starts.add(i)
+            starts.indices.map { k ->
+                val index = starts[k]; val to = if (k + 1 < starts.size) starts[k + 1] else n
+                val first = shiftOf(taken[index])
+                var shift = first; var top = -1.0
+                for (d in -10..10) {
+                    val value = ((first + d / 100.0) * 100).roundToLong() / 100.0
+                    val hit = linesHit(index, to, value)
+                    if (hit > top) { top = hit; shift = value }
+                }
+                SyncSegment(cues[index].start, shift)
+            }
+        }
     }
 
     // MARK: Alignment (ffsubsync's FFTAligner)
@@ -422,13 +523,42 @@ object SubtitleSync {
                 if (kept != null && kept.size > 1) add("segments", global.first, 1.0, kept)
             }
             if (byTrack) align(signal, cues, min(150.0, length), true)?.let { add("frame-rate", it.first, it.second, null) }
+            // Against a site track, the shifts found directly along the episode (alignedParts), one candidate per penalty.
+            if (byTrack) for (parts in alignedParts(cues, speech, reach = min(300.0, length))) {
+                if (parts.size == 1) { add("aligned", parts[0].shift, 1.0, null); continue }
+                val kept = keptSegments(parts, cues, null) { fitScore(cues, speech, mover(0.0, 1.0, it)) }
+                if (kept != null && kept.size > 1) add("aligned", kept[0].shift, 1.0, kept)
+            }
+            // Two parts of the shifts found (no change among them), which a split may not find (All-Works Maid 5).
+            val shifts = candidates.filter { it.segments == null && it.scale == 1.0 }.map { it.offset }.distinct()
+            for (a in shifts) for (b in shifts) {
+                val parts = if (a != b) twoParts(cues, speech, a, b) else null
+                val kept = parts?.let { keptSegments(it, cues, if (byTrack) null else chapters) { 0.0 } }
+                if (kept != null && kept.size > 1) add("two-part", b, 1.0, kept)
+            }
         }
         val none = candidates[0]
         val ranked = candidates.drop(1).sortedByDescending { it.score }
-        // Segments only when they fit clearly better than the best single shift (which is the more precise).
-        val top = ranked.firstOrNull()
+        // Segments only when each part they move differently from the best single shift (which is the more precise) fits
+        // its own lines clearly better (desktop 0.5.38: a head of a few minutes right is a small part of the whole score).
+        // Against a site track a part must also put more of its lines' starts on the track's: in fast dialogue a wrong
+        // shift can cover as much speech as the right one, but its starts fall between the track's.
         val single = ranked.firstOrNull { it.segments == null }
-        val chosen = if (top?.segments != null && single != null && top.score - single.score < 0.02) single else top
+        val starts = if (byTrack) reference.map { it.start }.distinct().sorted() else null
+        fun moveOf(candidate: SyncCandidate) = mover(candidate.offset, candidate.scale, candidate.segments)
+        fun gain(candidate: SyncCandidate): Double {
+            val parts = candidate.segments ?: return 0.0
+            val singleMove = moveOf(single ?: return 0.0); val move = moveOf(candidate)
+            val gains = parts.indices.mapNotNull { i ->
+                val lines = cues.filter { it.start >= (if (i > 0) parts[i].from else Double.NEGATIVE_INFINITY) && (i + 1 >= parts.size || it.start < parts[i + 1].from) }
+                if (lines.isEmpty() || lines.all { abs(move(it.start, it.start) - singleMove(it.start, it.start)) <= 0.3 }) return@mapNotNull null
+                val overlap = fitScore(lines, speech, move) - fitScore(lines, speech, singleMove)
+                if (starts != null) min(overlap, startScore(lines, starts, move) - startScore(lines, starts, singleMove)) else overlap
+            }
+            return gains.minOrNull() ?: 0.0
+        }
+        val split = if (byTrack) TRACK_SPLIT else AUDIO_SPLIT
+        val chosen = ranked.firstOrNull { it.segments == null || single != null && gain(it) >= split }
         val floor = if (byTrack) TRACK_FLOOR else AUDIO_FLOOR; val margin = if (byTrack) TRACK_MARGIN else AUDIO_MARGIN
         fun round(value: Double) = (value * 1000).roundToInt() / 1000.0
         fun result(offset: Double, scale: Double, segments: List<SyncSegment>?, unchanged: Boolean, uncertain: Boolean = false) =

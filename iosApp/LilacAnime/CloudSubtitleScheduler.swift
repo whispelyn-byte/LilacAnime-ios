@@ -16,9 +16,10 @@ enum CloudSubtitleScheduler {
             var lastSeek = seekRevision()
             var first = true
             var missingAttempts: [String: Int] = [:]
-            let batchLines = provider == "gemini" ? 600 : provider == "openai" ? 150 : provider == "deepl" ? 50 : 100
-            let batchCharacters = provider == "gemini" ? 30000 : provider == "openai" ? 9000 : provider == "deepl" ? 20000 : 6000
-            let parallel = provider == "gemini" || provider == "deepl" ? 2 : 4
+            // Claude takes long batches, but a new key's per-minute output allowance is small (desktop CLOUDS.claude).
+            let batchLines = provider == "gemini" ? 600 : provider == "openai" ? 150 : provider == "deepl" ? 50 : provider == "claude" ? 200 : 100
+            let batchCharacters = provider == "gemini" ? 30000 : provider == "openai" ? 9000 : provider == "deepl" ? 20000 : provider == "claude" ? 12000 : 6000
+            let parallel = provider == "gemini" || provider == "deepl" ? 2 : provider == "claude" ? 3 : 4
             func pending(rush: Bool) -> [Int] {
                 let reserved = Set(active.values.flatMap { $0 }.map { lines[$0] })
                 var translated = cached()

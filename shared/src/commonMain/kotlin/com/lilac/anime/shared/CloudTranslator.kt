@@ -14,6 +14,11 @@ import kotlinx.coroutines.ensureActive
 import kotlin.time.TimeSource
 import kotlin.time.Duration.Companion.seconds
 
+// Fixed, so no other address takes the user's key. The models that take the server-side fallback (fallbacks: "default").
+private const val ANTHROPIC_API = "https://api.anthropic.com"
+private const val ANTHROPIC_VERSION = "2023-06-01"
+private const val CLAUDE_FALLBACK_BETA = "server-side-fallback-2026-07-01"
+private val CLAUDE_FALLBACK_MODELS = setOf("claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5")
 // rulesExtra / rulesCustom: 번역 프롬프트 (the user's rules after the app's, or in their place). DeepL takes no instruction.
 data class TranslationConfig(val provider: String, val key: String, val model: String = "", val region: String = "international", val terminology: String = "",
                              val rulesExtra: String = "", val rulesCustom: String = "") {
@@ -35,6 +40,7 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
             "openai" -> "https://api.openai.com/v1/models"
             "qwen" -> "https://" + (if (config.region == "china") "dashscope.aliyuncs.com" else "dashscope-intl.aliyuncs.com") + "/compatible-mode/v1/models"
             "deepl" -> "https://" + (if (config.key.endsWith(":fx", true)) "api-free.deepl.com" else "api.deepl.com") + "/v2/usage"
+            "claude" -> "$ANTHROPIC_API/v1/models"
             else -> error("지원하지 않는 번역 공급자입니다.")
         }
         val names = mutableListOf<String>(); val tokens = mutableSetOf<String>(); var token = ""
@@ -44,6 +50,9 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
                 if (config.provider == "gemini") {
                     header("x-goog-api-key", config.key); parameter("pageSize", "1000")
                     if (token.isNotEmpty()) parameter("pageToken", token)
+                } else if (config.provider == "claude") {
+                    anthropicHeaders(config.key).forEach { (name, value) -> header(name, value) }
+                    parameter("limit", "100"); if (token.isNotEmpty()) parameter("after_id", token)
                 } else header("Authorization", auth)
             }.bodyAsText())
             if (config.provider == "deepl") return listOf("DeepL")
@@ -53,7 +62,12 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
                 if (config.provider == "gemini" && row.optJSONArray("supportedGenerationMethods")?.toString()?.contains("generateContent") != true) continue
                 row.optString(if (config.provider == "gemini") "name" else "id").removePrefix("models/").takeIf(String::isNotBlank)?.let(names::add)
             }
-            token = if (config.provider == "gemini") root.optString("nextPageToken") else ""
+            token = when (config.provider) {
+                "gemini" -> root.optString("nextPageToken")
+                // The Models API pages newest first: has_more, then the next page after last_id.
+                "claude" -> if (root.optBoolean("has_more")) root.optString("last_id") else ""
+                else -> ""
+            }
         } while (token.isNotEmpty() && tokens.add(token))
         return CloudModelRules.sorted(config.provider, names).also {
             require(it.isNotEmpty()) { "이 키로 쓸 수 있는 번역 모델이 없습니다. API 키와 지역을 확인하세요." }
@@ -83,6 +97,7 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
                     "gemini" -> gemini(lines, config.copy(model = model))
                     "openai" -> openai(lines, config.copy(model = model))
                     "qwen" -> qwen(lines, config.copy(model = model))
+                    "claude" -> claude(lines, config.copy(model = model))
                     else -> error("지원하지 않는 번역 공급자입니다.")
                 }
                 if (result.size != lines.size) throw TranslationFormatException("번역 응답의 줄 수가 다릅니다.")
@@ -115,7 +130,7 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
         if (output.all { it.isNotBlank() }) cache[cacheKey] = output
         return output
     }
-    private suspend fun post(url: String, body: JSONObject, authorization: String? = null, apiKey: String? = null): JSONObject {
+    private suspend fun post(url: String, body: JSONObject, authorization: String? = null, apiKey: String? = null, headers: Map<String, String> = emptyMap()): JSONObject {
         for (attempt in 0..3) {
             currentCoroutineContext().ensureActive()
             try {
@@ -123,6 +138,7 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
                     contentType(ContentType.Application.Json)
                     authorization?.let { header("Authorization", it) }
                     apiKey?.let { header("x-goog-api-key", it) }
+                    headers.forEach { (name, value) -> header(name, value) }
                     setBody(body.toString())
                 }.bodyAsText())
             } catch (e: ResponseException) {
@@ -238,6 +254,53 @@ class CloudTranslator(private val client: HttpClient = HttpClient {
         val root = post("https://$host/v2/translate", body, "DeepL-Auth-Key " + config.key)
         val values = root.optJSONArray("translations") ?: error("DeepL 결과가 없습니다.")
         return (0 until values.length()).map { values.optJSONObject(it)?.optString("text").orEmpty().trim() }
+    }
+    private fun anthropicHeaders(key: String, beta: String? = null) =
+        mapOf("x-api-key" to key, "anthropic-version" to ANTHROPIC_VERSION) + (beta?.let { mapOf("anthropic-beta" to it) } ?: emptyMap())
+    // Claude (the Anthropic Messages API), as desktop anthropic-api.cjs asks it: the instructions as a cached system prompt
+    // (every batch of an episode sends the same one), the lines as JSON. Structured JSON at low effort first (subtitles
+    // need little thinking, and the newest models cannot turn it off), with the server-side fallback for a declined batch
+    // on the models that take it; then without effort (models before it); then plain text. A key out of credit is a 400
+    // like a request a model does not take, so it is not asked again in another shape.
+    private suspend fun claude(lines: List<String>, config: TranslationConfig): List<String> {
+        val model = config.model.ifBlank { CloudModelRules.CLAUDE_DEFAULT }
+        val shapeKey = "claude:" + model
+        for (shape in (workingShapes[shapeKey] ?: 0)..2) {
+            try {
+                val fallback = shape == 0 && model in CLAUDE_FALLBACK_MODELS
+                val body = JSONObject().put("model", model).put("max_tokens", 16000)
+                    .put("system", JSONArray().put(JSONObject().put("type", "text").put("text", instruction(config)).put("cache_control", JSONObject().put("type", "ephemeral"))))
+                    .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", CloudTranslationText.jsonInput(lines, true))))
+                if (shape < 2) {
+                    val output = JSONObject()
+                    if (shape == 0) output.put("effort", "low")
+                    body.put("output_config", output.put("format", JSONObject().put("type", "json_schema").put("schema", schema())))
+                }
+                if (fallback) body.put("fallbacks", "default")
+                val root = post("$ANTHROPIC_API/v1/messages", body, headers = anthropicHeaders(config.key, if (fallback) CLAUDE_FALLBACK_BETA else null))
+                when (root.optString("stop_reason")) {
+                    "refusal" -> {
+                        val category = root.optJSONObject("stop_details")?.optString("category").orEmpty()
+                        error("Claude가 이 부분의 번역을 거절했습니다" + (if (category.isNotEmpty()) " ($category)" else "") + ".")
+                    }
+                    "max_tokens" -> error("Claude의 답이 길이 제한에서 끊겼습니다.")
+                }
+                val content = root.optJSONArray("content")
+                val text = buildString {
+                    if (content != null) for (i in 0 until content.length()) {
+                        val block = content.optJSONObject(i) ?: continue
+                        if (block.optString("type") == "text") append(block.optString("text"))
+                    }
+                }
+                if (text.isEmpty()) continue
+                workingShapes[shapeKey] = shape
+                return CloudTranslationText.parseDesktop(text, lines)
+            } catch (error: ClientRequestException) {
+                if (error.response.status != HttpStatusCode.BadRequest || shape == 2 ||
+                    Regex("credit balance|billing", RegexOption.IGNORE_CASE).containsMatchIn(error.response.bodyAsText())) throw error
+            }
+        }
+        error("Claude 번역에 실패했습니다.")
     }
     private suspend fun qwen(lines: List<String>, config: TranslationConfig): List<String> {
         val host = if (config.region == "china") "dashscope.aliyuncs.com" else "dashscope-intl.aliyuncs.com"

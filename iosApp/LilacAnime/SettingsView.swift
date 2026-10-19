@@ -220,8 +220,8 @@ struct SettingsView: View {
     }
     private var translate: some View {
         SettingsPage(title: "자막 자동 번역", intro: "Re:Anime·Miruro 자막 트랙과 Jimaku 일본어 자막을 한국어로 번역합니다. 플레이어 설정의 번역 버튼으로 번역하고, 번역한 자막은 저장되어 다시 볼 때 바로 적용됩니다. 한쪽을 쓸 수 없으면 준비된 다른 쪽이 이어서 번역합니다.") {
-            SettingBlock(title: "번역 엔진", note: "Gemini · OpenAI · Qwen은 작품 정보와 등장인물 이름을 함께 보내 대사 흐름에 맞게 번역하고, DeepL은 줄마다 그대로 번역합니다. 로컬 AI는 인터넷 없이 이 기기에서 번역합니다.") {
-                SettingChoices(options: ["gemini", "openai", "deepl", "qwen", "local"].map { ($0, SubtitleLabels.engine($0)) }, selection: $store.preferences.translationProvider)
+            SettingBlock(title: "번역 엔진", note: "Gemini · OpenAI · Qwen · Claude는 작품 정보와 등장인물 이름을 함께 보내 대사 흐름에 맞게 번역하고, DeepL은 줄마다 그대로 번역합니다. 로컬 AI는 인터넷 없이 이 기기에서 번역합니다.") {
+                SettingChoices(options: ["gemini", "openai", "deepl", "qwen", "claude", "local"].map { ($0, SubtitleLabels.engine($0)) }, selection: $store.preferences.translationProvider)
             }
             if store.preferences.translationProvider != "local" { cloudBlocks }
             NavigationLink(value: Destination.localModels) {
@@ -258,7 +258,8 @@ struct SettingsView: View {
                 SettingChoices(options: [("international", "국제 (싱가포르)"), ("china", "중국 (베이징)")], selection: $draftQwenRegion)
             }
         }
-        SettingBlock(title: SubtitleLabels.engine(provider) + " API 키", note: apiStatus) {
+        SettingBlock(title: (provider == "claude" ? "Anthropic" : SubtitleLabels.engine(provider)) + " API 키",
+                     note: apiStatus ?? (provider == "claude" ? "console.anthropic.com에서 발급한 Anthropic API 키를 넣어 주세요. Claude 구독과 별개로 API 크레딧 충전이 필요합니다." : nil)) {
             HStack(spacing: 6) {
                 SecureField(SubtitleLabels.engine(provider) + " API 키", text: $apiKey).textInputAutocapitalization(.never).autocorrectionDisabled().settingField()
                 Button("저장") {
@@ -267,7 +268,7 @@ struct SettingsView: View {
             }
         }
         if provider != "deepl" {
-            SettingBlock(title: SubtitleLabels.engine(provider) + " 모델", note: "키를 저장하면 쓸 수 있는 모델을 불러와 알맞은 모델을 고릅니다. 비워 두면 기본 모델을 씁니다.") {
+            SettingBlock(title: SubtitleLabels.engine(provider) + " 모델", note: provider == "claude" ? "키를 저장하면 그 키로 쓸 수 있는 모든 모델을 불러와 Claude Opus 5.5(claude-opus-5-5)를 고릅니다. Haiku는 훨씬 싸고 빠르며, Opus는 번역이 가장 자연스럽습니다. Claude 구독(Pro·Max)과 별개로 API 크레딧을 충전해야 씁니다." : "키를 저장하면 쓸 수 있는 모델을 불러와 알맞은 모델을 고릅니다. 비워 두면 기본 모델을 씁니다.") {
                 if !apiModels.isEmpty {
                     Menu {
                         Button("자동") { store.preferences.translationModel = "" }

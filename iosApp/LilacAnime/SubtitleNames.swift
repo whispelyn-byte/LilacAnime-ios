@@ -131,7 +131,7 @@ enum SubtitleLabels {
          "provider": "제공", "download": "다운로드", "user": "내"][value] ?? value
     }
     static func engine(_ value: String) -> String {
-        ["gemini": "Gemini", "openai": "OpenAI", "deepl": "DeepL", "qwen": "Qwen", "local": "로컬 AI"][value] ?? "AI"
+        ["gemini": "Gemini", "openai": "OpenAI", "deepl": "DeepL", "qwen": "Qwen", "claude": "Claude", "local": "로컬 AI"][value] ?? "AI"
     }
     static func label(provider: String, translated: Bool, name: String, maker: String? = nil) -> String {
         if translated { return engine(provider) + " 번역" }

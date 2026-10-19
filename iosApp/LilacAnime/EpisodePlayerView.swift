@@ -781,7 +781,7 @@ final class EpisodePlayerModel: ObservableObject {
     }
     /// The configured translation API (the chosen one first), for the 번역 button beside 로컬 AI.
     func cloudProvider(_ library: LibraryStore) -> String? {
-        let clouds = ["gemini", "openai", "deepl", "qwen"], wanted = library.preferences.translationProvider
+        let clouds = ["gemini", "openai", "deepl", "qwen", "claude"], wanted = library.preferences.translationProvider
         return (clouds.contains(wanted) ? [wanted] + clouds.filter { $0 != wanted } : clouds).first { !SecureKeys.load($0).isEmpty }
     }
 

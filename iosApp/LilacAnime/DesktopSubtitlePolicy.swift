@@ -69,7 +69,7 @@ extension AppPreferences {
     func translationPreferences(automatic: Bool = false, localOnly: Bool = false, models: [URL]? = nil, hasKey: (String) -> Bool = { !SecureKeys.load($0).isEmpty }) -> AppPreferences? {
         if automatic && !autoTranslation { return nil }
         var result = self
-        let clouds = ["gemini", "openai", "deepl", "qwen"]
+        let clouds = ["gemini", "openai", "deepl", "qwen", "claude"]
         let wanted = translationProvider
         let files = models ?? (try? FileManager.default.contentsOfDirectory(at: LocalModelFiles.directory, includingPropertiesForKeys: nil))?.filter { $0.pathExtension.lowercased() == "gguf" } ?? []
         let installedFile = files.first(where: { $0.lastPathComponent == selectedGGUF }) ?? files.first(where: { $0.lastPathComponent == DesktopModelPreset.all.first(where: { $0.id == "gemma-4-e4b" })?.file }) ?? files.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }).first
@@ -90,6 +90,6 @@ extension AppPreferences {
 enum TranslationFallbackPolicy {
     static func cloudAfterLocal(localOnly: Bool, enabled: Bool, tried: Set<String>, hasKey: (String) -> Bool) -> String? {
         guard !localOnly && enabled else { return nil }
-        return ["gemini", "openai", "deepl", "qwen"].first { !tried.contains($0) && hasKey($0) }
+        return ["gemini", "openai", "deepl", "qwen", "claude"].first { !tried.contains($0) && hasKey($0) }
     }
 }

@@ -14,7 +14,7 @@ struct TranslationPromptSettings: View {
     @State private var confirmDefault = false
     static let limit = 4000
     var body: some View {
-        SettingBlock(title: "번역 프롬프트", note: message ?? "로컬 AI(Gemma·Aya 등)와 Gemini·OpenAI·Qwen 번역에 적용돼요. DeepL과 번역 전용 모델(TranslateGemma, Hy-MT, ja-ko-vn)은 지시를 받지 않아 적용되지 않아요. 바꾸면 이후 번역은 새 프롬프트로 다시 번역해요.") {
+        SettingBlock(title: "번역 프롬프트", note: message ?? "로컬 AI(Gemma·Aya 등)와 Gemini·OpenAI·Qwen·Claude 번역에 적용돼요. DeepL과 번역 전용 모델(TranslateGemma, Hy-MT, ja-ko-vn)은 지시를 받지 않아 적용되지 않아요. 바꾸면 이후 번역은 새 프롬프트로 다시 번역해요.") {
             Text("추가 지시사항: 앱의 기본 규칙 뒤에 붙고, 겹치면 이쪽을 먼저 따라요.").font(.system(size: 12.5)).foregroundStyle(LilacStyle.muted)
             editor($extra, placeholder: "예: 직역보다 자연스러운 의역을 우선해 주세요. 한 단어에 번역을 여러 개 쓰지 마세요.", height: 76)
                 .accessibilityIdentifier("settings-prompt-extra")

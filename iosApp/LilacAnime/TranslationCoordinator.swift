@@ -47,7 +47,8 @@ final class TranslationCoordinator: ObservableObject {
                     "subtitleOutput": "plain-vtt-1",
                     "provider": preferences.translationProvider, "model": preferences.translationModel,
                     "models": preferences.translationModels ?? [:], "cloudFallback": preferences.cloudFallback ?? true,
-                    "credentials": ["gemini", "openai", "qwen", "deepl"].map { SubtitleFiles.key(SecureKeys.load($0)) },
+                    // Claude's key only when set, so the translations kept before it came are still found.
+                    "credentials": (["gemini", "openai", "qwen", "deepl"] + (SecureKeys.load("claude").isEmpty ? [] : ["claude"])).map { SubtitleFiles.key(SecureKeys.load($0)) },
                     "region": preferences.qwenRegion, "local": preferences.selectedGGUF, "localInput": input.cacheIdentity,
                     "context": preferences.contextSize, "maxTokens": preferences.maxTokens,
                     "temperature": preferences.temperature, "topP": preferences.topP, "topK": preferences.topK,
@@ -193,7 +194,7 @@ final class TranslationCoordinator: ObservableObject {
                     } catch is CancellationError { throw CancellationError() }
                     catch {
                         if provider != "local", preferences.cloudFallback != false,
-                           let next = ["gemini", "openai", "deepl", "qwen"].first(where: { !triedProviders.contains($0) && !SecureKeys.load($0).isEmpty }) {
+                           let next = ["gemini", "openai", "deepl", "qwen", "claude"].first(where: { !triedProviders.contains($0) && !SecureKeys.load($0).isEmpty }) {
                             status = provider + " 번역 실패 · " + next + "로 이어서 번역합니다."
                             provider = next; triedProviders.insert(next)
                         } else if provider != "local", !triedProviders.contains("local"), preferences.translationFallback != false, !preferences.selectedGGUF.isEmpty {

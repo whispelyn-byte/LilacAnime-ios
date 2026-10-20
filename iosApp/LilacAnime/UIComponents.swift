@@ -175,20 +175,20 @@ struct HomeHero: View {
             }
     }
     @ViewBuilder private var backdrop: some View {
-        // .hero-backdrop: blur(42px) saturate(1.35) brightness(.62); light: brightness(1.15), opacity .55.
-        Group {
-            if scheme == .light {
-                AnimeArtwork(url: anime.poster, height: height).blur(radius: 30, opaque: true).saturation(1.2).brightness(0.1).opacity(0.55)
-            } else {
-                AnimeArtwork(url: anime.poster, height: height).blur(radius: 30, opaque: true).saturation(1.35).colorMultiply(Color(white: 0.62))
-            }
-        }.scaleEffect(1.15)
-        // .hero-shade: a lilac glow up right, the page colour coming in from the left and from the bottom.
-        RadialGradient(colors: [LilacStyle.accent.opacity(0.22), .clear], center: UnitPoint(x: 0.78, y: 0.38), startRadius: 0, endRadius: wide ? 460 : 300)
-        LinearGradient(stops: [.init(color: LilacStyle.background, location: 0), .init(color: LilacStyle.background.opacity(0.72), location: 0.3), .init(color: .clear, location: 0.62)],
+        // .hero-backdrop (desktop v0.5.45): the picture sharp, the wide one (TMDB backdrop, AniList banner) when there is
+        // one, else the poster.
+        if let banner = artworks.cached(anime, source: detailSource)?.banner, !banner.isEmpty, artReady.contains(anime.id) {
+            AnimeArtwork(url: banner, height: height, preloaded: artworks.image(banner))
+        } else {
+            AnimeArtwork(url: anime.poster, height: height, alignment: .posterFocus)
+        }
+        // .hero-shade: the page colour coming in from the left (the copy), the bottom and the top, without a tint.
+        LinearGradient(stops: [.init(color: LilacStyle.background, location: 0), .init(color: LilacStyle.background.opacity(0.8), location: 0.26),
+                               .init(color: LilacStyle.background.opacity(0.25), location: 0.55), .init(color: .clear, location: 0.75)],
                        startPoint: .leading, endPoint: .trailing)
-        LinearGradient(stops: [.init(color: LilacStyle.background, location: 0), .init(color: .clear, location: 0.4)], startPoint: .bottom, endPoint: .top)
-        LinearGradient(stops: [.init(color: LilacStyle.background.opacity(0.55), location: 0), .init(color: .clear, location: 0.24)], startPoint: .top, endPoint: .bottom)
+        LinearGradient(stops: [.init(color: LilacStyle.background, location: 0), .init(color: LilacStyle.background.opacity(0.4), location: 0.22), .init(color: .clear, location: 0.45)],
+                       startPoint: .bottom, endPoint: .top)
+        LinearGradient(stops: [.init(color: LilacStyle.background.opacity(0.6), location: 0), .init(color: .clear, location: 0.2)], startPoint: .top, endPoint: .bottom)
     }
     private var copy: some View {
         VStack(alignment: .leading, spacing: 0) {

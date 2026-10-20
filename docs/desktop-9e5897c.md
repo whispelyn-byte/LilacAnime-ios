@@ -1,6 +1,6 @@
-# Desktop 0.5.40–0.5.44 → iOS
+# Desktop 0.5.40–0.5.45 → iOS
 
-Reference: LilacAnime-desktop [fef5857](https://github.com/whispelyn-byte/LilacAnime-desktop/commit/fef5857) (v0.5.40) through [4179cce](https://github.com/whispelyn-byte/LilacAnime-desktop/commit/4179cce) (v0.5.44). The previous port was [0ac2590](desktop-0ac2590.md); v0.5.39 (14003f5) only bumps the version.
+Reference: LilacAnime-desktop [fef5857](https://github.com/whispelyn-byte/LilacAnime-desktop/commit/fef5857) (v0.5.40) through [9e5897c](https://github.com/whispelyn-byte/LilacAnime-desktop/commit/9e5897c) (v0.5.45). The previous port was [0ac2590](desktop-0ac2590.md); v0.5.39 (14003f5) only bumps the version.
 
 ## Community subtitles (v0.5.41–0.5.43)
 
@@ -30,6 +30,12 @@ A+A, B+B, C+A and 고화질 (HQ, the VL networks) on the single 2x pass, in the 
 
 Not ported: card hover prefetch (no pointer hover on iPhone), waiting for the Korean overview (iOS loads it with the title metadata), one-at-a-time title resolution (iOS already applies each title as found) and the weekly schedule arrow (iOS never had it).
 
+## Spotlight backdrop (v0.5.45)
+
+The home spotlight shows its picture sharp: the wide one (TMDB backdrop, AniList banner) once it is loaded, else the poster, no longer blurred. The shade keeps the copy on the left and the bottom readable, without the lilac glow.
+
 ## Validation
 
 `desktop-oracle.cjs` now loads every `community-matching.cjs` export and records link plans, link texts, seasons, picks, Korean TMDB queries and new file-name cases from the desktop source. New tests: `CommunityTiersTest`, `KoreanSpacingSearchTest`, Anime4K profile checks.
+
+CI for the 0.5.40–0.5.44 port: [GitHub Actions 39438904450](https://github.com/whispelyn-byte/LilacAnime-ios/actions/runs/39438904450), commit `ab7c28f`: **passed** (shared JVM, Kotlin/Native simulator, Swift unit and UI tests, device Release build and IPA).

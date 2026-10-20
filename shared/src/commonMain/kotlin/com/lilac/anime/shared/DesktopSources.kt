@@ -536,7 +536,7 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
         suspend fun boards(keyword: String) = coroutineScope { listOf("완결", "극장판").map { board -> async { safe { ohliBoard(board, 1, keyword).first } } }.awaitAll().flatten() }
         val airing = async { safe { ohliAiring() } }
         val listed = boards(query)
-        val searched = listed.ifEmpty { searchIgnoringSpaces(query, ::boards) }
+        val searched = listed.ifEmpty { searchIgnoringSpaces(query) { boards(it) } }
         val wanted = spaceKey(query)
         (airing.await().filter { spaceKey(it.title).contains(wanted) } + searched).distinctBy { it.id }
     }

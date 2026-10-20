@@ -43,7 +43,8 @@ object DesktopCommunity {
     private val sizeText = Regex("\\d+(?:\\.\\d+)?\\s*[KMG]B\\b", RegexOption.IGNORE_CASE)
     private val sizeValue = Regex("(\\d+(?:\\.\\d+)?)\\s*([KMG])B\\b", RegexOption.IGNORE_CASE)
     private val fileExtension = Regex("\\.(?:zip|7z|rar|ass|ssa|srt|vtt|smi)$", RegexOption.IGNORE_CASE)
-    private val bareRange = Regex("(?<![\\d.]|(?:^|[^a-z])[se])(\\d{1,3})\\s*[~∼〜～–—-]\\s*(\\d{1,3})(?![\\d.])", RegexOption.IGNORE_CASE)
+    private val bareRange = Regex("(?<![\\d.])(\\d{1,3})\\s*[~∼〜～–—-]\\s*(\\d{1,3})(?![\\d.])", RegexOption.IGNORE_CASE)
+    private val seMark = Regex("(?:^|[^a-z])[se]$", RegexOption.IGNORE_CASE)
     private val linkSeasonMark = Regex("(\\d+)\\s*기(?![가-힣])|(?:^|[^a-z0-9])s(\\d{1,2})(?![\\d.])(?!\\s*[~∼〜～–—-]\\s*\\d)|season\\s*(\\d+)", RegexOption.IGNORE_CASE)
     private val finalPost = Regex("完|終|끝|완결|전체|통합|\\b(?:end|fin|complete)\\b", RegexOption.IGNORE_CASE)
     // Some makers put every episode so far into each new post's archive ("무리무리 10화" → "무리무리.zip 0.17MB",
@@ -95,7 +96,9 @@ object DesktopCommunity {
         val text = normalizeDesktopTitle(label).replace(sizeText, " ").trim().replace(fileExtension, "")
         val marked = episodes(text)
         if (marked.any) return marked
-        val range = bareRange.find(text)
+        // Not a season or episode mark's number ("S2 03-04" reads 3~4, "E01-02" nothing): desktop's lookbehind
+        // (?<!(?:^|[^a-z])[se]), checked here as Kotlin/Native's regex has no start anchor inside a lookbehind.
+        val range = bareRange.findAll(text).firstOrNull { !seMark.containsMatchIn(text.substring(0, it.range.first)) }
         if (range != null && range.groupValues[1].toInt() < range.groupValues[2].toInt()) return episodes("${range.groupValues[1].toInt()}~${range.groupValues[2].toInt()}화")
         val file = DesktopCommunityFiles.parse(text).episode
         return if (file == null) episodes("") else episodes("${file}화")
@@ -163,16 +166,16 @@ object DesktopCommunity {
         val anchors = Ksoup.parse(post.html, post.url).select("a[href]").map { CommunityLink(it.absUrl("href"), it.text().trim()) }
             .filter { subtitleLink.containsMatchIn(it.href) }.distinctBy { it.href }
         val own = postEpisodes(post.title)
-        fun plan(number: Double) = plan(post.title, own, anchors, number, season)
+        fun planFor(number: Double) = plan(post.title, own, anchors, number, season)
         fun named(found: LinkPlan) = found.tiers.any { tier -> tier.any { linkEpisodes(it.label).any } }
         var number = episodeNumber
-        var found = plan(episodeNumber)
+        var found = planFor(episodeNumber)
         // Later seasons often continue the numbering (2기 = 13~24화) while the player counts from 1: a link named for the
         // continued number, when none is named for the episode itself.
         if (allowOffset && !own.any && !named(found)) for (offset in offsets) {
             val next = episodeNumber + offset
             if (next <= episodeNumber) continue
-            val other = plan(next)
+            val other = planFor(next)
             if (named(other)) { number = next; found = other; break }
         }
         if (found.tiers.isEmpty()) return CommunityMatch(post, emptyList(), number.toInt(), false, episodeNumber = number)

@@ -144,15 +144,34 @@ final class DesktopSubtitlePreparer {
         let downloads = assets.filter { $0.source != "post" }
         for asset in downloads where !postKeys.contains(asset.postURL) { postKeys.append(asset.postURL) }
         for key in postKeys {
-            var candidates: [URL] = [], fonts: [URL] = []
             let group = downloads.filter { $0.postURL == key }
-            guard CommunityAttachmentAttempt.claim(post: key, links: group.map(\.url), tried: &tried) else { continue }
-            for asset in group {
-                if Task.isCancelled { return nil }
-                if let url = URL(string: asset.url), let files = try? await SubtitleFiles.prepare(url) { candidates += files; fonts += SubtitleFiles.preparedFonts(url) }
+            guard CommunityAttachmentAttempt.claim(post: key, links: group.map(\.url), tried: &tried), let first = group.first else { continue }
+            // The links are tried a tier at a time (named for the episode, covering it, naming none) until one tier holds
+            // the episode, so a post's other bundles are not downloaded once its own link has the file; the fonts follow.
+            let subtitles = group.filter { !$0.font }
+            let tiers = Array(Set(subtitles.map(\.tier))).sorted()
+            var found: URL?, fonts: [URL] = []
+            for tier in tiers {
+                let links = subtitles.filter { $0.tier == tier }
+                var candidates: [URL] = []
+                for asset in links {
+                    if Task.isCancelled { return nil }
+                    if let url = URL(string: asset.url), let files = try? await SubtitleFiles.prepare(url, label: asset.label) { candidates += files; fonts += SubtitleFiles.preparedFonts(url) }
+                }
+                // Match the episode before preferring ASS and newer revisions; do not substitute another numbered file.
+                // Links not named for the episode alone ("통합", a range) never fall back to an arbitrary unnumbered file.
+                let planned = tier >= 0, exact = planned && links.allSatisfy(\.exact)
+                if let file = select(candidates, item: item, offsets: [], episode: first.matchedEpisode?.doubleValue ?? first.episode.map { Double($0.intValue) },
+                                     strict: !planned || exact ? first.strict : true, bundle: first.bundle, community: true, exact: exact, fileSeason: Int(first.fileSeason)) { found = file; break }
             }
-            for file in candidates { try? SubtitleFiles.associateFonts(SubtitleFiles.fonts(for: file) + fonts, with: file) }
-            if let first = group.first, let file = select(candidates, item: item, offsets: [], episode: first.matchedEpisode?.doubleValue ?? first.episode.map { Double($0.intValue) }, strict: first.strict, bundle: first.bundle, community: true) { return (file, provider) }
+            guard let found else { continue }
+            for asset in group where asset.font {
+                if Task.isCancelled { return nil }
+                // The subtitle plays with the fallback font when a font link fails.
+                if let url = URL(string: asset.url), (try? await SubtitleFiles.prepare(url, label: asset.label)) != nil { fonts += SubtitleFiles.preparedFonts(url) }
+            }
+            try? SubtitleFiles.associateFonts(SubtitleFiles.fonts(for: found) + fonts, with: found)
+            return (found, provider)
         }
         if provider == "anissia" {
             for asset in assets where asset.source == "post" {
@@ -211,9 +230,13 @@ final class DesktopSubtitlePreparer {
         }
         return []
     }
-    private func select(_ files: [URL], item: PlaybackItem, offsets: [Int], episode: Double? = nil, strict: Bool = false, bundle: Bool = false, community: Bool = false) -> URL? {
+    private func select(_ files: [URL], item: PlaybackItem, offsets: [Int], episode: Double? = nil, strict: Bool = false, bundle: Bool = false, community: Bool = false, exact: Bool = false, fileSeason: Int = 0) -> URL? {
         if community {
-            let index = DesktopCommunityFiles.shared.select(names: files.map(\.lastPathComponent), sizes: files.map { KotlinLong(value: Int64((try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)) }, episode: episode ?? Double(item.number), strict: strict, bundle: bundle, season: DesktopTitleRules.shared.season(title: item.anime.title))
+            // The season the search title marks; else the provider title's ("Overlord IV"), else none: a title marking no
+            // season may still be filed under a later one by its maker.
+            let titleSeason = Int(DesktopTitleRules.shared.season(title: item.anime.title))
+            let season = fileSeason > 0 ? fileSeason : titleSeason > 1 ? titleSeason : 0
+            let index = DesktopCommunityFiles.shared.pick(names: files.map(\.lastPathComponent), sizes: files.map { KotlinLong(value: Int64((try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)) }, episode: episode ?? Double(item.number), exact: exact, strict: strict, bundle: bundle, season: Int32(season))
             return index >= 0 && Int(index) < files.count ? files[Int(index)] : nil
         }
         let wanted = [episode.map(Int.init) ?? item.number] + offsets.map { item.number + $0 }

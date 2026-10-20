@@ -31,6 +31,9 @@ class IosServices internal constructor(private val worker: CoroutineDispatcher) 
     fun desktopMetadata(anime: Anime, credential: String, includeCast: Boolean, background: Boolean, completion: (DesktopMetadata?, String?) -> Unit) {
         scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { metadata.resolve(anime, credential, includeCast, background) } }
     }
+    fun artwork(anime: Anime, korean: String, credential: String, completion: (TitleArtwork?, String?) -> Unit) {
+        scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { metadata.artwork(anime, korean, credential) } }
+    }
     fun koreanTitle(titles: List<String>, credential: String, completion: (String?, String?) -> Unit) {
         scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { tmdb.desktopTitles(titles, credential, light = true).firstOrNull() } }
     }

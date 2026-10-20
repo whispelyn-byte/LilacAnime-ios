@@ -19,11 +19,11 @@ class TmdbTitleResolver(private val client: HttpClient = HttpClient {
     install(HttpTimeout) { requestTimeoutMillis = 20_000; connectTimeoutMillis = 20_000 }
 }, private val gate: TmdbRequestGate = TmdbRequestGate.shared) {
     // background: a catalog index lookup, which gives way to the requests made for the screen (see TmdbRequestGate).
-    private suspend fun request(path: String, credential: String, query: String? = null, language: String = "ko-KR", background: Boolean = false): JSONObject {
+    private suspend fun request(path: String, credential: String, query: String? = null, language: String = "ko-KR", background: Boolean = false, extra: Map<String, String> = emptyMap()): JSONObject {
         if (credential.isBlank()) throw TmdbFailure("auth")
-        return gate.shared(listOf(credential, path, language, query.orEmpty()).joinToString("\u0000"), background) { ticket -> send(path, credential, query, language, ticket) }
+        return gate.shared((listOf(credential, path, language, query.orEmpty()) + extra.map { it.key + "=" + it.value }).joinToString("\u0000"), background) { ticket -> send(path, credential, query, language, ticket, extra) }
     }
-    private suspend fun send(path: String, credential: String, query: String?, language: String, ticket: TmdbTicket): JSONObject {
+    private suspend fun send(path: String, credential: String, query: String?, language: String, ticket: TmdbTicket, extra: Map<String, String> = emptyMap()): JSONObject {
         for (attempt in 0..2) {
         gate.takeTurn(ticket)
         val failure = try {
@@ -31,6 +31,7 @@ class TmdbTitleResolver(private val client: HttpClient = HttpClient {
             timeout { requestTimeoutMillis = 20_000; connectTimeoutMillis = 20_000 }
             header("Accept", "application/json")
             parameter("language", language)
+            extra.forEach { (key, value) -> parameter(key, value) }
             if (credential.startsWith("Bearer ", true) || credential.contains('.')) {
                 header("Authorization", if (credential.startsWith("Bearer ", true)) credential else "Bearer " + credential)
             } else parameter("api_key", credential)
@@ -144,6 +145,27 @@ class TmdbTitleResolver(private val client: HttpClient = HttpClient {
             if (TitleCandidates.isKorean(text)) return text
         }
         return ""
+    }
+    /**
+     * main.cjs/animeArtwork's TMDB part: a backdrop without text for the detail page's header and up to three logos
+     * marked Korean ("ko"; no other language's logo is used, the title then stays text). The English and original titles
+     * first, then the Korean one (애니24, 링크애니 give only that on their lists; TMDB finds most works by it too).
+     */
+    suspend fun artwork(titles: List<String>, korean: String, credential: String, format: String): TitleArtwork? {
+        if (credential.isBlank()) return null
+        val queries = (DesktopTmdbRules.queries(titles) + DesktopArtwork.koreanTmdbQueries(korean)).distinct()
+        val kinds = if (Regex("movie|film|극장", RegexOption.IGNORE_CASE).containsMatchIn(format)) listOf("movie", "tv") else listOf("tv", "movie")
+        for (query in queries) for (kind in kinds) {
+            val pick = attempt { desktopPick(query, kind, credential) } ?: continue
+            val images = attempt { request("$kind/${pick.optInt("id")}/images", credential, extra = mapOf("include_image_language" to "ko,null")) } ?: continue
+            fun ranked(name: String) = rows(images, name).sortedWith(compareByDescending<JSONObject> { it.optDouble("vote_average", 0.0) }.thenByDescending { it.optInt("width") })
+            val backdrop = ranked("backdrops").firstOrNull { it.optString("iso_639_1").isBlank() }
+            // An SVG logo is asked for as PNG, which TMDB renders from it.
+            val logos = ranked("logos").filter { it.optString("iso_639_1") == "ko" }.take(3)
+                .map { DesktopArtwork.TMDB_IMAGE + "/w500" + it.optString("file_path").replace(Regex("\\.svg$", RegexOption.IGNORE_CASE), ".png") }
+            return TitleArtwork(backdrop?.let { DesktopArtwork.TMDB_IMAGE + "/w1280" + it.optString("file_path") }.orEmpty(), logos)
+        }
+        return TitleArtwork("", emptyList())
     }
     private suspend fun <T> attempt(block: suspend () -> T): T? = try { block() } catch (error: CancellationException) { throw error } catch (_: Exception) { null }
     private fun similarity(a: String, b: String): Double {

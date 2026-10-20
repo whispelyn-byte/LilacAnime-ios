@@ -6,7 +6,7 @@ object DesktopTmdbRules {
         for (title in titles) {
             val base = title.replace("…", "...").replace(Regex("[◎○●☆★]+"), " ")
                 .replace(Regex("\\s*(?:OVA|OAD|ONA|specials?|recap)\\s*\\d*\\s*$", RegexOption.IGNORE_CASE), "")
-                .replace(Regex("\\s*(?:season\\s*\\d+|\\d+(?:st|nd|rd|th)\\s*season|part\\s*\\d+|第\\d+期)\\s*$", RegexOption.IGNORE_CASE), "")
+                .replace(Regex("\\s*(?:season\\s*\\d+|\\d+(?:st|nd|rd|th)\\s*season|part\\s*\\d+|第?\\d+期|シーズン\\s*\\d+)\\s*$", RegexOption.IGNORE_CASE), "")
                 .replace(Regex("[:：]\\s*$"), "").trim()
             for (query in listOf(base, base.split(Regex("\\s*[:：]\\s+|\\s+-\\s+")).first()))
                 if (query.isNotBlank() && !Regex("[가-힣]").containsMatchIn(query) && query !in this) add(query)

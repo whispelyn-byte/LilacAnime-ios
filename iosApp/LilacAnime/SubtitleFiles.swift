@@ -9,7 +9,9 @@ enum SubtitleFiles {
     static let fontDirectory = root.appendingPathComponent("Fonts")
     static let translations = root.appendingPathComponent("Translations")
     static func key(_ text: String) -> String { SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined() }
-    static func prepare(_ url: URL, headers: [String: String] = [:], japanese: Bool = false, filename: String? = nil) async throws -> [URL] {
+    /// `label`: the link's text. When it is a subtitle file name and the download's own name is not (Tistory's
+    /// attachment URLs end in a generic "tfile.smi"), the file is named by it, so its episode number is kept.
+    static func prepare(_ url: URL, headers: [String: String] = [:], japanese: Bool = false, filename: String? = nil, label: String? = nil) async throws -> [URL] {
         let data: Data
         var name = filename ?? url.lastPathComponent
         if url.isFileURL {
@@ -33,6 +35,7 @@ enum SubtitleFiles {
             if http.mimeType == "text/html" { throw failure("자막 파일 대신 웹 페이지가 반환되었습니다. 원본 게시물에서 파일을 내려받아 가져오세요.") }
             data = body
             name = filename ?? SubtitleNames.downloadFilename(http.value(forHTTPHeaderField: "Content-Disposition"), fallback: name)
+            if filename == nil, let named = labelName(label), !isArchive(data), labelReplaces(name) { name = named }
         }
         name = SubtitleNames.readable(name)
         let folder = root.appendingPathComponent(key(url.absoluteString))
@@ -55,6 +58,22 @@ enum SubtitleFiles {
             return results
         }
         return [try normalize(file, japanese: japanese)]
+    }
+    private static let subtitleExtensions = ["ass", "ssa", "srt", "vtt", "smi"]
+    /// A link text that is a subtitle file name, its size ("0.02MB") left out.
+    static func labelName(_ label: String?) -> String? {
+        guard let label else { return nil }
+        let name = label.replacingOccurrences(of: #"\s*\d+(?:\.\d+)?\s*[KMG]B\s*$"#, with: "", options: [.regularExpression, .caseInsensitive]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return subtitleExtensions.contains(URL(fileURLWithPath: name).pathExtension.lowercased()) ? name : nil
+    }
+    /// A download name that says nothing of the file: no subtitle extension, or Tistory's "tfile.smi".
+    static func labelReplaces(_ name: String) -> Bool {
+        let ext = URL(fileURLWithPath: name).pathExtension.lowercased()
+        if ["ttf", "otf", "ttc"].contains(ext) { return false }
+        return !subtitleExtensions.contains(ext) || name.range(of: #"^t?file\."#, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+    private static func isArchive(_ data: Data) -> Bool {
+        data.starts(with: [0x50, 0x4b, 0x03, 0x04]) || data.starts(with: [0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c]) || data.starts(with: [0x52, 0x61, 0x72, 0x21])
     }
     static func isKorean(_ file: URL) async -> Bool {
         await Task.detached(priority: .userInitiated) { detectKorean(file) }.value

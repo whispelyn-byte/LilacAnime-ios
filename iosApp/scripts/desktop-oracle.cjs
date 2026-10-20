@@ -11,7 +11,7 @@ const audio = require(path.join(desktop, 'electron/oped-fingerprint.cjs'));
 const decode = require(path.join(desktop, 'electron/catalog-updates.cjs')).decodeData;
 const translator = fs.readFileSync(path.join(desktop,'electron/subtitle-translator.cjs'),'utf8');
 const main = fs.readFileSync(path.join(desktop,'electron/main.cjs'),'utf8');
-const pure = ['simpleTitle','titleKey','communitySeason','titleSeason','cleanKoreanTitle','withSeason','searchSeason','titleScore','hangulEditSimilarity','communityScore','communityEpisodes','communityPostEpisodes','communityPostTitle','communityTitle','communityLinks','tmdbQueries','siblingTitle','titleCompareKey'].map(name=>{
+const pure = ['simpleTitle','titleKey','communitySeason','titleSeason','cleanKoreanTitle','withSeason','searchSeason','titleScore','hangulEditSimilarity','communityScore','communityEpisodes','communityPostEpisodes','communityPostTitle','communityTitle','communitySeasons','communityLinks','tmdbQueries','koreanTmdbQueries','siblingTitle','titleCompareKey'].map(name=>{
   const start=main.indexOf('function '+name+'('),next=main.indexOf('\n}',start);
   if (start < 0 && name === 'communityEpisodes' && fs.existsSync(path.join(desktop,'electron/community-matching.cjs'))) return '';
   if (start < 0) throw new Error('Missing desktop function: '+name);
@@ -20,8 +20,9 @@ const pure = ['simpleTitle','titleKey','communitySeason','titleSeason','cleanKor
 }).join('\n');
 const helper = ['hasHangul','NOT_ANIME','hasSeasonMark','COMMUNITY_TRAILING_EPISODE'].map(name => main.split(/\r?\n/).find(line => line.startsWith('const '+name+'='))).join('\n');
 const context={cheerio:require(path.join(desktop,'node_modules/cheerio')),absoluteUrl:(u,b)=>new URL(u,b).href};
-if (fs.existsSync(path.join(desktop,'electron/community-matching.cjs'))) context.communityEpisodes=require(path.join(desktop,'electron/community-matching.cjs')).communityEpisodes;
-vm.runInNewContext(helper+pure+';globalThis.rules={titleKey,titleSeason,cleanKoreanTitle,withSeason,communityLinks,communityScore,tmdbQueries,siblingTitle,titleCompareKey}',context);
+// communityLinks plans its links with the module's helpers (planCommunityLinks, communityLinkEpisodes since v0.5.43).
+if (fs.existsSync(path.join(desktop,'electron/community-matching.cjs'))) Object.assign(context,require(path.join(desktop,'electron/community-matching.cjs')));
+vm.runInNewContext(helper+pure+';globalThis.rules={titleKey,titleSeason,cleanKoreanTitle,withSeason,communitySeason,communitySeasons,communityLinks,communityScore,tmdbQueries,koreanTmdbQueries,siblingTitle,titleCompareKey}',context);
 const winPngBody = main.slice(main.indexOf('async function winPngEntries(')).match(/executeJavaScript\(`([\s\S]*?)`,true\)/)[1];
 fs.writeFileSync(path.join(root,'iosApp/LilacAnime/Resources/winpng-reader.js'),vm.runInNewContext('`'+winPngBody+'`')+'\n');
 const systemBody = translator.match(/const system = \(context = \{\}, wrapped = false\) => \{[\s\S]*?\n  \};/)[0];
@@ -76,13 +77,45 @@ const result = {
     {names:['Show Part 2.ass','Show E02.srt'],episode:2,strict:true},
     {names:['[Show][01v2].ass','Show 01.srt'],episode:1,strict:true},
     {names:['Show_01_NCOP.ass','Show 01.srt'],episode:1},
-    {names:['Show_01_PV.ass','Show 01.srt'],episode:1}
+    {names:['Show_01_PV.ass','Show 01.srt'],episode:1},
+    // v0.5.41-43: release names, glued release groups, numbered sets and season-marked files.
+    {names:['[SubsPlease] Black Torch - 06 (1080p) [6D89AB2F].srt','[SubsPlease] Black Torch - 07 (1080p) [7D89AB2F].srt'],episode:7,strict:true},
+    {names:['[Ohys-Raws] Kikansha no Mahou wa Tokubetsu Desu - 01 (BS11 1280x720 x264 AAC).smi'],episode:1,strict:true},
+    {names:['Hotaru Yome 01_SubsPlease.srt','Hotaru Yome 02_SubsPlease.srt'],episode:2,strict:true},
+    {names:['약사의 혼잣말03.ass','약사의 혼잣말04.ass'],episode:3,strict:true},
+    {names:['꽃피우는 그대들에게2.smi'],episode:2,strict:true},
+    {names:[1,2,3,4,5,6,7,8,9].map(n=>`Yasei no Last Boss ga Arawareta - 0${n}SubsPlease.smi`).concat('Yasei no Last Boss ga Arawareta - 08SubsPlease.vtt'),episode:1},
+    {names:['ab01cd.smi','ab02cd.smi','ab03cd.smi'],episode:2},
+    {names:['ab01cd.smi','ab02cd.smi','ab03cd.smi'],episode:4},
+    {names:['Clevatess S2 - 01SubsPlease.smi','Clevatess - 01SubsPlease.smi'],episode:1,season:1},
+    {names:['Clevatess S2 - 01SubsPlease.smi','Clevatess - 01SubsPlease.smi'],episode:1,season:2},
+    {names:['Clevatess S2 - 01SubsPlease.smi','Clevatess - 01SubsPlease.smi'],episode:1},
+    {names:['Link.Click.S03E02.1080p.ass'],episode:2,strict:true,bundle:true},
+    {names:['[SubsPlease] Iseleve - OVA (1080p) [FEE28781].smi'],episode:1,strict:true},
+    {names:['Show - 2nd.ass','Show - 01.ass'],episode:1,strict:true}
   ].map(input=>{const files=input.names.map((name,i)=>({file:name,name,size:100+i}));return {input,expected:require(path.join(desktop,'electron/community-matching.cjs')).selectCommunityFile(files,input)?.name??null}}) : []),
+  // pickCommunityFile (v0.5.43): a link named for the episode alone gives its one episode whatever its number.
+  communityPick: (fs.existsSync(path.join(desktop,'electron/community-matching.cjs')) && require(path.join(desktop,'electron/community-matching.cjs')).pickCommunityFile ? [
+    {names:['[SubsPlease] Golden Kamuy - 62 (1080p) [851C234E].srt'],episode:13,exact:true},
+    {names:['[SubsPlease] Golden Kamuy - 62 (1080p) [851C234E].srt'],episode:13},
+    {names:['Show - 01.ass','Show - 02.ass'],episode:3,exact:true},
+    {names:['anissia_file0.smi'],episode:4,exact:true},
+    {names:['anissia_file0.smi'],episode:4,strict:true},
+    {names:['anissia_file0.smi','anissia_file1.smi'],episode:1,exact:true,strict:false},
+    {names:['Show - 03.ass','Show.ass'],episode:3,strict:false},
+    {names:['Show.zip.ass','Other.ass'],episode:2,strict:false,bundle:true}
+  ].map(input=>{const files=input.names.map((name,i)=>({file:name,name,size:100+i}));return {input,expected:require(path.join(desktop,'electron/community-matching.cjs')).pickCommunityFile(files,input)?.name??null}}) : []),
+  communityLinkEpisodes: (fs.existsSync(path.join(desktop,'electron/community-matching.cjs')) && require(path.join(desktop,'electron/community-matching.cjs')).communityLinkEpisodes ? [
+    '이세계 유유자적 농가 1-12 SubsPlease','Kami no Shizuku1-24.Zip 0.26MB','클레바테스 S2 03-04 SubsPlease','Kanata kara - 03Subsplease.smi','Hotaru Yome 01.zip 0.02MB',
+    'LasTame S2.zip 0.17MB','[CoNe] 애니 나소흑전기 - 회차 전체 통합.zip 7.29MB','자막 다운로드','BLACK TORCH','작품 1+5화','작품 1·5화','작품 1화~3화','작품 1화 - 3화','작품 2기 - 5화','13화 SRT','Golden Kamuy - 62.zip'
+  ].map(input=>{const found=require(path.join(desktop,'electron/community-matching.cjs')).communityLinkEpisodes(input);return {input,list:found.list,ranges:found.ranges}}) : []),
+  communitySeasons:['자판기 1기/2기/3기','작품 2기','클레바테스Ⅱ ~마수왕과 가짜 용사 전승~','시광대리인 Ⅱ -Link Click Ⅱ-','시광대리인 -Link Click- 영도편','Overlord IV','작품 3기 12화','작품'].map(input=>({input,season:context.rules.communitySeason(input)??null,seasons:context.rules.communitySeasons?[...context.rules.communitySeasons(input)]:[]})),
+  koreanTmdbQueries:context.rules.koreanTmdbQueries?['장송의 프리렌 2기','죠죠의 기묘한 모험 5부: 황금의 바람','귀멸의 칼날 (자막) 3','시광대리인 ~Link Click~','어떤 작품 시즌 2','Frieren','약사의 혼잣말 ORIGINAL'].map(input=>({input,expected:context.rules.koreanTmdbQueries(input)})):[],
   reanime: [
     {anime_id:'sample', title:{english:'Sample',native:'原題'},average_score:87,popularity:99,season:'SPRING',season_year:2025,status:'Not yet released',started_on:'2025-04-12',subbed:0,dubbed:0},
     {anime_id:'second', title:{romaji:'Second'},average_score:91,season:'FALL',season_year:2026,start_date:'2026-10-08',subbed:2,episodes:12}
   ].map(input=>({input,expected:vm.runInNewContext(main.slice(main.indexOf('function reanimeItems('),main.indexOf('\n}',main.indexOf('function reanimeItems('))+2)+';reanimeItems({data:[input]})[0]',{input,REANIME_WEB:'https://reanime.to'})})),
-  tmdbQueries:[['Kamisama Kiss◎ OVA'],['Ascendance of a Bookworm: Adopted Daughter of an Archduke Season 3'],['Anime 2nd Season','Anime 2nd Season','한글 제목'],['Rascal Does Not Dream of Santa Claus']].map(input=>({input,expected:context.rules.tmdbQueries(input)})),
+  tmdbQueries:[['Kamisama Kiss◎ OVA'],['Ascendance of a Bookworm: Adopted Daughter of an Archduke Season 3'],['Anime 2nd Season','Anime 2nd Season','한글 제목'],['Rascal Does Not Dream of Santa Claus'],['葬送のフリーレン 2期'],['葬送のフリーレン 第2期'],['薬屋のひとりごと シーズン 2']].map(input=>({input,expected:context.rules.tmdbQueries(input)})),
   tmdbSiblings:[['청춘 돼지는 바니걸 선배의 꿈을 꾸지 않는다','청춘 돼지는 산타클로스의 꿈을 꾸지 않는다'],['외톨이 THE ROCK!','봇치 더 록!'],['장송의 프리렌','장송의 프리렌']].map(input=>({input,expected:context.rules.siblingTitle(...input)})),
   seasonNames:[['오늘부터 신령님','Kamisama Kiss◎ OVA','OVA'],['진격의 거인','Attack on Titan Season 2','TV'],['작품','Anime','SPECIAL'],['작품 OVA','Anime OVA','OVA'],['한글 이름','한글 원제','TV']].map(input=>({input,expected:context.rules.withSeason(...input)})),
   titles:['Overlord IV','The Angel Next Door Spoils Me Rotten2','Kaiju No. 8','Mob Psycho 100','Part 2','무직전생3','무직전생 Ⅱ','카구야 님은 고백받고 싶어 (애니메이션 1기)','봇치 더 록! (애니메이션)','진격의 거인(비디오 게임 시리즈)','나 혼자만 레벨업 1화','Anime Ｓｅａｓｏｎ ２'].map(input=>({input,key:context.rules.titleKey(input),season:context.rules.titleSeason(input)??1,clean:context.rules.cleanKoreanTitle(input)})),
@@ -97,8 +130,24 @@ const result = {
     {title:'작품',html:'<a href="/1.ass">1화 ASS</a><a href="/1.srt">1화 SRT</a><a href="/2.ass">2화</a>',episode:1},
     {title:'작품 12.5화 자막',html:'<a href="/12.5.ass">자막</a>',episode:12.5},
     {title:'작품 12.5화 자막',html:'<a href="/12.5.ass">자막</a>',episode:5},
-    {title:'작품',html:'<a href="/12.5.ass">12.5화</a><a href="/12.ass">12화</a>',episode:12.5}
-  ].map(input=>{const post={title:input.title,html:input.html,url:'https://fixture.test/post'};return {input,expected:context.rules.communityLinks(post,input.episode)}}),
+    {title:'작품',html:'<a href="/12.5.ass">12.5화</a><a href="/12.ass">12화</a>',episode:12.5},
+    // v0.5.42-43: bundles written with + and ·, link tiers, bare ranges, last and cumulative posts, per-season links.
+    {title:'작품 1+5화',html:'<a href="/b.zip">자막</a>',episode:5},
+    {title:'작품 1화~3화',html:'<a href="/b.zip">자막</a>',episode:2},
+    {title:'작품',html:'<a href="/all.zip">1~12화</a><a href="/3.zip">3화</a><a href="/f.zip">폰트</a><a href="/d.zip">자막 다운로드</a><a href="/4.zip">4화</a>',episode:3},
+    {title:'작품 3화',html:'<a href="/d.zip">자막 다운로드</a>',episode:5},
+    {title:'카구야 님은 고백받고 싶어 12화 자막(完)',html:'<a href="/k.zip">카구야 님은 고백받고 싶어.zip</a>',episode:5},
+    {title:'타코피의 원죄 6화',html:'<a href="/t.zip">Takopii_no _Genzai_ 01~06.zip 0.06MB</a>',episode:3},
+    {title:'무리무리 10화',html:'<a href="/m.zip">무리무리.zip 0.17MB</a>',episode:3},
+    {title:'무리무리 10화',html:'<a href="/m.zip">무리무리.zip 0.02MB</a>',episode:3},
+    {title:'어떤 암부의 소녀공서 2화 자막',html:'<a href="/a.zip">어떤 암부의 소녀공서 2화 [이전 화 포함].zip 2.62MB</a>',episode:1},
+    {title:'골든 카무이 5기 13화 자막',html:'<a href="/g.zip">Golden Kamuy - 62.zip</a><a href="/13.srt">13화 SRT</a>',episode:13},
+    {title:'이세계 유유자적 농가',html:'<a href="/n.zip">이세계 유유자적 농가 1-12 SubsPlease</a><a href="/n.zip">중복</a>',episode:4},
+    {title:'클레바테스',html:'<a href="/s2.zip">클레바테스 S2 1-4 SubsPlease</a><a href="/s1.zip">클레바테스 1-12 SubsPlease</a><a href="/v2.zip">자판기 2기 1-12 SubsPlease</a>',episode:1,season:1},
+    {title:'클레바테스',html:'<a href="/s2.zip">클레바테스 S2 1-4 SubsPlease</a><a href="/s1.zip">클레바테스 1-12 SubsPlease</a><a href="/v2.zip">자판기 2기 1-12 SubsPlease</a>',episode:1,season:2},
+    {title:'작품',html:'<a href="/13.ass">13화</a><a href="/14.ass">14화</a>',episode:1,offsets:[12],allowOffset:true,season:2},
+    {title:'작품',html:'<a href="https://drive.google.com/drive/folders/abc">자막 폴더</a>',episode:2}
+  ].map(input=>{const post={title:input.title,html:input.html,url:'https://fixture.test/post'};return {input,expected:context.rules.communityLinks(post,input.episode,{offsets:input.offsets||[],allowOffset:Boolean(input.allowOffset),season:input.season??null})}}),
   subtitleTracks:trackSets.map(tracks=>({tracks,expected:(subtitleSource.track(tracks,'ja') || subtitleSource.track(tracks,'en'))?.label ?? null})),
   korean:korean.map(input=>({input,expected:vm.runInNewContext(koreanBody+';isKoreanTrack(track)',{track:input})})),
   saved:savedCases.map(c=>({...c,expected:vm.runInNewContext(savedBody,c)?.source ?? null})),

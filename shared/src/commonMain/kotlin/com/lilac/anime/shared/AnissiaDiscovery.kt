@@ -14,26 +14,53 @@ import kotlinx.coroutines.coroutineScope
 data class SubtitleMaker(val name: String, val website: String, val status: String)
 internal class AnissiaDiscovery(private val repository: SourceRepository, private val blogPosts: (suspend (String, Boolean) -> List<CommunityPost>)? = null) {
     suspend fun makers(title: String): List<SubtitleMaker> {
-        val rows = api("/anime/list/0", mapOf("q" to title)).optJSONObject("data")?.optJSONArray("content") ?: return emptyList()
-        val anime = (0 until rows.length()).mapNotNull(rows::optJSONObject)
-            .filter { DesktopTitleRules.season(it.optString("subject")) == DesktopTitleRules.season(title) }
-            .maxByOrNull { DesktopCommunity.score(title, it.optString("subject")) } ?: return emptyList()
-        if (DesktopCommunity.score(title, anime.optString("subject")) < 0.52) return emptyList()
+        val anime = anime(title) ?: return emptyList()
         val captions = api("/anime/caption/animeNo/" + anime.optInt("animeNo")).optJSONArray("data") ?: return emptyList()
         return (0 until captions.length()).mapNotNull(captions::optJSONObject).sortedByDescending { it.optString("updDt") }.mapNotNull { row ->
             val website = row.optString("website")
             if (!website.startsWith("https://")) null else SubtitleMaker(row.optString("name"), website, row.optString("status"))
         }.distinctBy { it.website }
     }
+    /** main.cjs/anissiaAnime: the Anissia entry for a Korean title, with the season required to match ("2기", "Season 3"). */
+    internal suspend fun anime(title: String): JSONObject? {
+        val season = DesktopCommunity.season(title) ?: DesktopTitleRules.season(title)
+        val wanted = DesktopCommunity.title(title)
+        // Subtitles (~…~, -Link Click-) and season marks go: Anissia keeps "Ⅱ" as typed, and the title read here has it
+        // as "II", which its search does not find. The season is checked on the results instead.
+        val bare = wanted.replace(Regex("[~〜～][^~〜～]*[~〜～]"), " ").replace(Regex("(?:^|\\s)-[^-]+-(?=\\s|$)"), " ").replace(Regex("(?<=[가-힣\\s])(?:II|III|IV|VI|V)(?=\\s|$)"), " ")
+            .replace(Regex("\\s*(?:\\d+\\s*기|season\\s*\\d+|시즌\\s*\\d+)\\s*$", RegexOption.IGNORE_CASE), "").replace(Regex("\\s+"), " ").trim()
+        // Anissia's search misses titles typed with their punctuation ("명탐정 프리큐어!").
+        val plain = bare.replace(Regex("[!?！？.,:;·'\"“”‘’♡♥☆★]+"), " ").replace(Regex("\\s+"), " ").trim()
+        val words = plain.split(' ')
+        val queries = listOf(bare, plain, words.take(2).joinToString(" "), words.first()).distinct().filter { it.length >= 2 }
+        val seen = linkedMapOf<Int, JSONObject>()
+        var best: Pair<JSONObject, Double>? = null
+        var lastError: Exception? = null
+        var answered = false
+        for (query in queries) for (page in 0 until 3) {
+            val result = try { api("/anime/list/$page", mapOf("q" to query)).optJSONObject("data")?.takeIf { it.optJSONArray("content") != null } ?: error("Anissia 검색 응답을 읽지 못했습니다.") }
+                catch (error: CancellationException) { throw error } catch (error: Exception) { lastError = error; break }
+            answered = true
+            val content = result.optJSONArray("content")!!
+            for (row in (0 until content.length()).mapNotNull(content::optJSONObject)) seen[row.optInt("animeNo")] = row
+            // Anissia also names a later season with a bare digit ("이세계 유유자적 농가 2").
+            best = seen.values.filter { DesktopCommunity.anissiaSeason(it.optString("subject")) == season }
+                .map { it to DesktopCommunity.score(wanted, it.optString("subject")) }.filter { it.second >= .52 }.maxByOrNull { it.second }
+            if ((best?.second ?: 0.0) >= .98) return best!!.first
+            if (result.optBoolean("last") || page + 1 >= result.optInt("totalPages", 1) || content.length() == 0) break
+        }
+        if (best == null && !answered) lastError?.let { throw it }
+        return best?.first
+    }
     suspend fun search(title: String, episode: Int, episodeKey: String, makerWebsite: String = "", offsets: List<Int> = emptyList(), fresh: Boolean = false): List<SubtitleAsset> {
-        val query = title.replace(Regex("[!?！？.,:;·'\"“”‘’♡♥☆★]"), " ").replace(Regex("\\s+"), " ").trim()
-        val root = api("/anime/list/0", mapOf("q" to query)).optJSONObject("data") ?: return emptyList()
-        val entries = root.optJSONArray("content") ?: return emptyList()
-        val anime = (0 until entries.length()).mapNotNull(entries::optJSONObject)
-            .filter { DesktopTitleRules.season(it.optString("subject")) == DesktopTitleRules.season(title) }
-            .maxByOrNull { DesktopCommunity.score(query, it.optString("subject")) } ?: return emptyList()
-        if (DesktopCommunity.score(query, anime.optString("subject")) < 0.52) return emptyList()
+        val anime = anime(title) ?: return emptyList()
         val captions = api("/anime/caption/animeNo/" + anime.optInt("animeNo")).optJSONArray("data") ?: return emptyList()
+        // The season asked for, from the title or Anissia's own ("이세계 유유자적 농가 2"): posts are ranked under either
+        // name, and the Anissia one may not show it the way a post title would.
+        val subjectTitle = anime.optString("subject")
+        val askedSeason = DesktopCommunity.season(title) ?: DesktopTitleRules.season(title).takeIf { it > 1 }
+            ?: DesktopCommunity.season(subjectTitle) ?: DesktopCommunity.bareDigitSeason(subjectTitle)
+        val downloads = CommunityAssets(repository)
         val output = mutableListOf<SubtitleAsset>()
         for (maker in (0 until captions.length()).mapNotNull(captions::optJSONObject).sortedByDescending { it.optString("updDt") }) {
             val website = maker.optString("website")
@@ -53,8 +80,8 @@ internal class AnissiaDiscovery(private val repository: SourceRepository, privat
                 val document = Ksoup.parse(linked)
                 val pageTitle = document.selectFirst("meta[property=og:title]")?.attr("content").orEmpty().ifBlank { document.selectFirst("title")?.text().orEmpty() }
                     .replace(Regex("\\s*[-|:]\\s*[^-|:]*$"), "").trim()
-                val linkedSeason = DesktopTitleRules.explicitSeason(pageTitle)
-                val wrongSeason = linkedSeason != null && linkedSeason != DesktopTitleRules.season(title)
+                val linkedTitle = DesktopCommunity.postTitle(pageTitle)
+                val wrongSeason = DesktopCommunity.season(linkedTitle) != null && (askedSeason ?: 1) !in DesktopCommunity.seasons(linkedTitle)
                 val posts = mutableListOf<KairanPost>()
                 val pages = mutableMapOf<String, String>()
                 if (!wrongSeason && linked.isNotBlank()) { posts += KairanPost("$subject $pageTitle", postUrl); pages[postUrl] = linked }
@@ -112,21 +139,23 @@ internal class AnissiaDiscovery(private val repository: SourceRepository, privat
                 }
                 val candidates = posts.distinctBy { it.url }.map { it.copy(title = AnissiaTitleRules.rename(it.title, nickname, subject)) }
                 val number = episodeKey.toDoubleOrNull()?.takeIf { it.isFinite() && it > 0 } ?: episode.toDouble()
+                val wantedSeason = askedSeason ?: 1
                 val likely = candidates.filter { post ->
                     val own = DesktopCommunity.episodes(post.title)
-                    val season = DesktopTitleRules.explicitSeason(post.title)
-                    ((season ?: 1) == DesktopTitleRules.season(subject) && own.has(number) ||
-                        season == null && offsets.any { own.has(number + it) }) &&
+                    // The season's own number (a post may keep several seasons: "1기/2기/3기"), or a continued one on
+                    // posts without a season ("15화" for 2기 3화).
+                    (wantedSeason in DesktopCommunity.seasons(DesktopCommunity.postTitle(post.title)) && own.has(number) ||
+                        wantedSeason > 1 && DesktopCommunity.season(DesktopCommunity.postTitle(post.title)) == null && offsets.any { own.has(number + it) }) &&
                         maxOf(DesktopCommunity.score(subject, post.title), DesktopCommunity.score(title, post.title)) >= .52
                 }.take(4)
                 // The likely posts are fetched together, not one after another.
                 coroutineScope { likely.filter { pages[it.url] == null }.map { post -> async { post.url to attempt { repository.getText(post.url) } } }.awaitAll() }
                     .forEach { (url, html) -> if (html != null) pages[url] = html }
                 val hydrated = candidates.mapNotNull { post -> pages[post.url]?.let { CommunityPost(post.title, post.url, it) } }
-                val direct = DesktopCommunity.rank(hydrated, subject, episode, offsets, number).ifEmpty { DesktopCommunity.rank(hydrated, title, episode, offsets, number) }.take(5)
+                val direct = DesktopCommunity.rank(hydrated, subject, episode, offsets, number, askedSeason).ifEmpty { DesktopCommunity.rank(hydrated, title, episode, offsets, number, askedSeason) }.take(5)
                 if (direct.isNotEmpty()) {
                     for (match in direct) {
-                        output += match.links.map { link -> SubtitleAsset("Anissia · " + maker.optString("name"), link, "anissia", match.score, match.episode, match.strict, match.bundle, match.post.url, match.episodeNumber) }
+                        output += downloads.assets(match, "Anissia · " + maker.optString("name"), "anissia", title)
                         output += SubtitleAsset("Anissia · " + maker.optString("name") + " 원본 게시물", match.post.url, "post", match.score, match.episode, match.strict, match.bundle, match.post.url, match.episodeNumber)
                     }
                     continue

@@ -477,6 +477,11 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
         val params = if (query.isBlank()) emptyMap() else mapOf("wd" to query)
         val html = text(base + if (query.isBlank()) path else "/view/" + suffix, params)
         val items = DesktopSourceParser.koreanList(html, source).map { if (query.isBlank() && filter.format.isNotBlank()) it.copy(format = filter.format) else it }
+        // A search that found nothing as spaced is tried again by pieces (one page of them).
+        if (query.isNotBlank() && page == 1 && items.isEmpty()) {
+            linkaniNext[query + filter.toString() + ":" + page] = false
+            return searchIgnoringSpaces(query) { piece -> DesktopSourceParser.koreanList(text("$base/view/", mapOf("wd" to piece)), source) }
+        }
         val next = Ksoup.parse(html).select("a[href]").firstOrNull { it.text().trim() == "→" }?.attr("href")
         linkaniNext[query + filter.toString() + ":" + page] = items.isNotEmpty() && (next == null || Regex("^(https?://|/)").containsMatchIn(next))
         return items
@@ -522,15 +527,32 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
         })).obj("comics")
         return comics.list("data").filterIsInstance<JsonObject>().map(DesktopSourceParser::ohliAnime) to comics.text("next_page_url").isBlank()
     }
-    /** The finished and movie boards search themselves; the airing board lists every airing show, matched here. */
+    /**
+     * The finished and movie boards search themselves (spaced as typed: searched again by pieces when nothing is found);
+     * the airing board lists every airing show, matched here.
+     */
     private suspend fun ohliSearch(query: String): List<Anime> = coroutineScope {
-        fun key(value: String) = value.lowercase().replace(Regex("\\s+"), "")
         suspend fun safe(block: suspend () -> List<Anime>) = try { block() } catch (error: CancellationException) { throw error } catch (_: Exception) { emptyList() }
+        suspend fun boards(keyword: String) = coroutineScope { listOf("완결", "극장판").map { board -> async { safe { ohliBoard(board, 1, keyword).first } } }.awaitAll().flatten() }
         val airing = async { safe { ohliAiring() } }
-        val finished = async { safe { ohliBoard("완결", 1, query).first } }
-        val movies = async { safe { ohliBoard("극장판", 1, query).first } }
-        val wanted = key(query)
-        (airing.await().filter { key(it.title).contains(wanted) } + finished.await() + movies.await()).distinctBy { it.id }
+        val listed = boards(query)
+        val searched = listed.ifEmpty { searchIgnoringSpaces(query, ::boards) }
+        val wanted = spaceKey(query)
+        (airing.await().filter { spaceKey(it.title).contains(wanted) } + searched).distinctBy { it.id }
+    }
+    private fun spaceKey(value: String) = normalizeDesktopTitle(value).lowercase().replace(Regex("\\s+"), "")
+    /**
+     * The Korean sites (애니24, 링크애니) find a keyword only as it is spaced: "스파이패밀리" finds nothing of "스파이 패밀리".
+     * A Korean query that found nothing is searched again by three pieces of it (its start, middle and end: three letters
+     * each, two for a short query), and of what they find, the titles holding the whole query, spaces aside, are kept.
+     */
+    internal suspend fun searchIgnoringSpaces(query: String, search: suspend (String) -> List<Anime>): List<Anime> = coroutineScope {
+        val wanted = spaceKey(query)
+        if (!TitleCandidates.isKorean(query) || wanted.length < 3) return@coroutineScope emptyList()
+        val size = if (wanted.length >= 5) 3 else 2
+        val pieces = listOf(0, (wanted.length - size) / 2, wanted.length - size).map { wanted.substring(it, it + size) }.distinct().filter { it != query.trim() }
+        pieces.map { piece -> async { try { search(piece) } catch (error: CancellationException) { throw error } catch (_: Exception) { emptyList() } } }.awaitAll()
+            .flatten().filter { spaceKey(it.title).contains(wanted) }.distinctBy { it.id }
     }
     /** A series by its page; one saved from www.ohli24.net is opened by its title, or found by a search for it. */
     private suspend fun ohliDetail(summary: Anime): SourceDetail {

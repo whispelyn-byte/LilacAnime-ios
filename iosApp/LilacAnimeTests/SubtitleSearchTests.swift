@@ -176,6 +176,6 @@ final class SubtitleSearchTests: XCTestCase {
         return PlaybackItem(anime: anime, episode: anime.anime.episodes[0])
     }
     private func asset() -> SubtitleAsset {
-        SubtitleAsset(name: "episode-01.ass", url: "https://jimaku.cc/entry/123/download/1", source: "jimaku", score: 1, episode: nil, strict: false, bundle: false, postURL: "", matchedEpisode: nil, size: 0)
+        SubtitleAsset(name: "episode-01.ass", url: "https://jimaku.cc/entry/123/download/1", source: "jimaku", score: 1, episode: nil, strict: false, bundle: false, postURL: "", matchedEpisode: nil, size: 0, tier: -1, exact: false, font: false, label: "", fileSeason: 0)
     }
 }

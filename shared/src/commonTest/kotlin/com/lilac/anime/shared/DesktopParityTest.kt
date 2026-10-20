@@ -65,7 +65,8 @@ class DesktopParityTest {
         for (test in desktopOracle.list("community").filterIsInstance<JsonObject>()) {
             val input = test.obj("input"); val expected = test.obj("expected")
             val number = input.text("episode").toDouble()
-            val result = DesktopCommunity.links(CommunityPost(input.text("title"), "https://fixture.test/post", input.text("html")), number.toInt(), episodeNumber = number)
+            val result = DesktopCommunity.links(CommunityPost(input.text("title"), "https://fixture.test/post", input.text("html")), number.toInt(),
+                input["offsets"]?.jsonArray?.map { it.jsonPrimitive.int }.orEmpty(), input["allowOffset"]?.jsonPrimitive?.booleanOrNull ?: false, number, input.number("season"))
             assertEquals(expected.list("links").map { it.jsonPrimitive.content }, result.links, input.toString())
             assertEquals(expected.text("episode").toDouble(), result.episodeNumber)
             assertEquals(expected["strict"]?.jsonPrimitive?.booleanOrNull ?: false, result.strict)

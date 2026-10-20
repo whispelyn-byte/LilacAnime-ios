@@ -479,7 +479,7 @@ final class EpisodePlayerModel: ObservableObject {
             do {
                 let japanese = provider == "jimaku" || asset?.source == "jimaku"
                 if japanese && !JimakuRules.shared.validDownload(url: url.absoluteString) { throw SubtitleFiles.failure("Jimaku 파일 주소가 아닙니다.") }
-                let files = try await SubtitleFiles.prepare(url, headers: headers, japanese: japanese, filename: japanese ? asset?.name : nil)
+                let files = try await SubtitleFiles.prepare(url, headers: headers, japanese: japanese, filename: japanese ? asset?.name : nil, label: asset?.label)
                 guard token == generation, request == subtitleRequest else { return }
                 subtitleFiles = files
                 if let first = preferredSubtitle(subtitleFiles, asset: asset) {
@@ -523,7 +523,11 @@ final class EpisodePlayerModel: ObservableObject {
     }
     private func preferredSubtitle(_ files: [URL], asset: SubtitleAsset? = nil) -> URL? {
         if let asset, ["kairan", "csora", "anissia"].contains(asset.source) {
-            let index = DesktopCommunityFiles.shared.select(names: files.map(\.lastPathComponent), sizes: files.map { KotlinLong(value: Int64((try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)) }, episode: asset.matchedEpisode?.doubleValue ?? Double(asset.episode?.intValue ?? item.number), strict: asset.strict, bundle: asset.bundle, season: DesktopTitleRules.shared.season(title: item.anime.title))
+            // As the automatic search picks it (DesktopSubtitlePreparer.apply): a link named for the episode alone gives
+            // the one episode it holds; other planned links never fall back to an unnumbered file.
+            let exact = asset.tier >= 0 && asset.exact, titleSeason = Int(DesktopTitleRules.shared.season(title: item.anime.title))
+            let season = asset.fileSeason > 0 ? Int(asset.fileSeason) : titleSeason > 1 ? titleSeason : 0
+            let index = DesktopCommunityFiles.shared.pick(names: files.map(\.lastPathComponent), sizes: files.map { KotlinLong(value: Int64((try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)) }, episode: asset.matchedEpisode?.doubleValue ?? Double(asset.episode?.intValue ?? item.number), exact: exact, strict: asset.tier < 0 || exact ? asset.strict : true, bundle: asset.bundle, season: Int32(season))
             return index >= 0 && Int(index) < files.count ? files[Int(index)] : nil
         }
         return files.first { SubtitleEpisodeMatcher.shared.matches(name: $0.lastPathComponent, episodeNumber: Int32(item.number), expectedSeason: nil) } ?? (files.count == 1 ? files.first : nil)

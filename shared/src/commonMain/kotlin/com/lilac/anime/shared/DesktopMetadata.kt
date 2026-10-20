@@ -147,6 +147,27 @@ class DesktopMetadataRepository(private val client: HttpClient = newSharedClient
             if (credential.isBlank() || !includeCast) "" else attempt { tmdb.desktopOverview(listOf(anime.english) + names, credential, anime.format) }.orEmpty(),
             (aliases.map { DesktopTitleRules.seasonal(it, anime.title, anime.format) } + names).distinct(), cast, anilist, mal, titleFailure, tmdbFailure?.code.orEmpty(), tmdbFailure?.retryAfterMs ?: 0)
     }
+    /**
+     * The detail page's header picture and Korean title logos (desktop animeArtwork): TMDB's (with the key from 설정 >
+     * 한국어 제목 검색) by the English and original titles and then [korean]; without a key or a TMDB backdrop, AniList's banner.
+     */
+    suspend fun artwork(anime: Anime, korean: String, credential: String): TitleArtwork {
+        val found = if (credential.isBlank()) null else attempt { tmdb.artwork(listOf(anime.english, anime.title, anime.romaji, anime.native), korean, credential, anime.format) }
+        val banner = found?.banner?.takeIf(String::isNotBlank) ?: attempt { anilistBanner(anime) }.orEmpty()
+        return TitleArtwork(banner, found?.logos.orEmpty())
+    }
+    /** AniList's banner (a wide picture most series have), by the AniList or MAL id when known, else by a non-Korean title. */
+    private suspend fun anilistBanner(anime: Anime): String {
+        val search = listOf(anime.english, anime.romaji, anime.native, anime.title).map(String::trim).firstOrNull { it.isNotEmpty() && !TitleCandidates.isKorean(it) }.orEmpty()
+        val malId = anime.malId?.takeIf { it > 0 }
+        if (anime.anilistId == null && malId == null && search.isEmpty()) return ""
+        val query = "query(" + "$" + "id:Int," + "$" + "mal:Int," + "$" + "search:String){Media(id:" + "$" + "id,idMal:" + "$" + "mal,search:" + "$" + "search,type:ANIME){bannerImage}}"
+        val variables = buildJsonObject { if (anime.anilistId != null) put("id", anime.anilistId) else if (malId != null) put("mal", malId) else put("search", search) }
+        val root = Json.parseToJsonElement(client.post("https://graphql.anilist.co") {
+            contentType(ContentType.Application.Json); setBody(buildJsonObject { put("query", query); put("variables", variables) }.toString())
+        }.bodyAsText()).jsonObject
+        return root.obj("data").obj("Media").text("bannerImage")
+    }
     private suspend fun <T> attempt(block: suspend () -> T): T? = try { block() } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
     fun close() = client.close()
 }

@@ -11,7 +11,13 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
-data class SubtitleAsset(val name: String, val url: String, val source: String, val score: Double = 0.0, val episode: Int? = null, val strict: Boolean = false, val bundle: Boolean = false, val postURL: String = "", val matchedEpisode: Double? = null, val size: Long = 0)
+/**
+ * A subtitle download. A community post's links carry their plan (DesktopCommunity.plan): [tier] (-1 for a download
+ * found without one), [exact] for a link named for the episode alone, [font] for a font link, [label] the link's text,
+ * [fileSeason] the season the files must match (0 when the title marks none).
+ */
+data class SubtitleAsset(val name: String, val url: String, val source: String, val score: Double = 0.0, val episode: Int? = null, val strict: Boolean = false, val bundle: Boolean = false, val postURL: String = "", val matchedEpisode: Double? = null, val size: Long = 0,
+    val tier: Int = -1, val exact: Boolean = false, val font: Boolean = false, val label: String = "", val fileSeason: Int = 0)
 @Serializable
 internal data class CommunityCache(val time: Long, val posts: List<CommunityPost>)
 internal expect fun readCommunityCache(name: String): String?
@@ -88,11 +94,8 @@ class SubtitleDiscovery(private val repository: SourceRepository = SourceReposit
         val number = episodeKey.toDoubleOrNull()?.takeIf { it.isFinite() && it > 0 } ?: episode.toDouble()
         var matches = DesktopCommunity.rank(communityPosts(provider, force = fresh), title, episode, offsets, number).take(5)
         if (matches.isEmpty()) matches = DesktopCommunity.rank(communityPosts(provider, force = true), title, episode, offsets, number).take(5)
-        return matches.flatMap { match -> match.links.map { link ->
-            val id = Regex("/file/d/([^/?]+)").find(link)?.groupValues?.get(1) ?: runCatching { Url(link).parameters["id"] }.getOrNull()
-            val url = if (id != null && (link.contains("drive.google.com") || link.contains("docs.google.com"))) "https://drive.usercontent.google.com/download?id=" + id.encodeURLParameter() + "&export=download&confirm=t" else link
-            SubtitleAsset(match.post.title, url, provider, match.score, match.episode, match.strict, match.bundle, match.post.url, match.episodeNumber)
-        } + SubtitleAsset("원본 자막 게시물", match.post.url, "post", match.score) }
+        val downloads = CommunityAssets(repository)
+        return matches.flatMap { match -> downloads.assets(match, match.post.title, provider, title) + SubtitleAsset("원본 자막 게시물", match.post.url, "post", match.score) }
     }
     private var jimakuEntries: Map<Int, String> = emptyMap()
     private var jimakuLoaded = kotlin.time.TimeSource.Monotonic.markNow() - kotlin.time.Duration.parse("7h")

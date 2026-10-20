@@ -85,11 +85,15 @@ struct AnimeArtwork: View {
     var width: CGFloat? = nil
     var height: CGFloat = 210
     var alignment: Alignment = .center
+    /// A picture already loaded (TitleArtworkStore), shown at once instead of being fetched again.
+    var preloaded: UIImage? = nil
     var body: some View {
         GeometryReader { geometry in
             ZStack {
                 LilacStyle.card2
-                if let file = URL(string: url), file.isFileURL, let data = try? Data(contentsOf: file), let image = UIImage(data: data) {
+                if let preloaded {
+                    Image(uiImage: preloaded).resizable().scaledToFill()
+                } else if let file = URL(string: url), file.isFileURL, let data = try? Data(contentsOf: file), let image = UIImage(data: data) {
                     Image(uiImage: image).resizable().scaledToFill()
                 } else {
                     AsyncImage(url: URL(string: url)) { image in image.resizable().scaledToFill() } placeholder: { Color.clear }
@@ -133,6 +137,9 @@ struct HomeHero: View {
     let source: String
     @EnvironmentObject private var library: LibraryStore
     @ObservedObject private var names = DesktopCatalog.shared
+    @ObservedObject private var artworks = TitleArtworkStore.shared
+    /// Picks whose logo is loaded this session (one kept on disk shows once its picture is loaded again).
+    @State private var artReady: Set<String> = []
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.colorScheme) private var scheme
     private var anime: Anime { picks[min(max(index, 0), picks.count - 1)] }
@@ -157,6 +164,15 @@ struct HomeHero: View {
                 index = (index + (value.translation.width < 0 ? 1 : picks.count - 1)) % picks.count
             })
             .task(id: saved.id) { if !UIShowcase.enabled { await names.enrich(anime, source: saved.source, cast: true) } }
+            // Every pick's artwork is asked ahead, so a pick switched to shows its logo at once.
+            .task(id: picks.map(\.id).joined(separator: "|")) {
+                guard !UIShowcase.enabled else { return }
+                for pick in picks {
+                    await artworks.artwork(pick, source: pick.source == "jikan" ? "jikan" : source)
+                    if Task.isCancelled { return }
+                    artReady.insert(pick.id)
+                }
+            }
     }
     @ViewBuilder private var backdrop: some View {
         // .hero-backdrop: blur(42px) saturate(1.35) brightness(.62); light: brightness(1.15), opacity .55.
@@ -185,8 +201,14 @@ struct HomeHero: View {
                     }.font(.system(size: 13, weight: .semibold)).foregroundStyle(ink.opacity(0.6))
                 }
             }.padding(.bottom, 14)
-            AnimeDisplayTitle(anime: anime).font(.system(size: wide ? 52 : 30, weight: .black)).foregroundStyle(ink)
-                .lineLimit(3).minimumScaleFactor(0.75).shadow(color: .black.opacity(scheme == .light ? 0 : 0.5), radius: 9, y: 2).padding(.bottom, 12)
+            // The spotlight's Korean title logo, with the text title kept small under it (it tells the season).
+            if let art = artworks.cached(anime, source: detailSource), art.logo(dark: scheme != .light) != nil, artReady.contains(anime.id) {
+                TitleLogo(art: art, maxWidth: wide ? 480 : 300, maxHeight: wide ? 170 : 96).padding(.bottom, 10)
+                AnimeDisplayTitle(anime: anime).font(.system(size: 18, weight: .bold)).foregroundStyle(ink).lineLimit(1).padding(.bottom, 10)
+            } else {
+                AnimeDisplayTitle(anime: anime).font(.system(size: wide ? 52 : 30, weight: .black)).foregroundStyle(ink)
+                    .lineLimit(3).minimumScaleFactor(0.75).shadow(color: .black.opacity(scheme == .light ? 0 : 0.5), radius: 9, y: 2).padding(.bottom, 12)
+            }
             meta.padding(.bottom, 12)
             if let overview = overview {
                 Text(overview).font(.system(size: 15)).lineSpacing(4).lineLimit(3).foregroundStyle(ink.opacity(0.9)).padding(.bottom, 20)

@@ -24,6 +24,16 @@
       "sha256": "67ea3ed26539e8de3b7d307688535d2ff17e8d147e11dda0247da7770dbecf41"
     },
     {
+      "name": "Anime4K_Restore_CNN_VL.glsl",
+      "upstreamPath": "glsl/Restore/Anime4K_Restore_CNN_VL.glsl",
+      "sha256": "35036722733305cd4d4e57660b883bbe2569ba2914033c254327107d7b77e35e"
+    },
+    {
+      "name": "Anime4K_Restore_CNN_Soft_S.glsl",
+      "upstreamPath": "glsl/Restore/Anime4K_Restore_CNN_Soft_S.glsl",
+      "sha256": "9f6867f2ef42786729522d86fe24147cb4ea145418e3974df70496acf52dc392"
+    },
+    {
       "name": "Anime4K_Restore_CNN_Soft_M.glsl",
       "upstreamPath": "glsl/Restore/Anime4K_Restore_CNN_Soft_M.glsl",
       "sha256": "a78a2c76898e08e09e442a9628c64208c26e8e15789649b8755223f009794c02"
@@ -37,6 +47,11 @@
       "name": "Anime4K_Upscale_CNN_x2_M.glsl",
       "upstreamPath": "glsl/Upscale/Anime4K_Upscale_CNN_x2_M.glsl",
       "sha256": "716e02098a68f0d648761f2b96b4dd139e1cb09b174bb369fca3aa34328fff7e"
+    },
+    {
+      "name": "Anime4K_Upscale_CNN_x2_VL.glsl",
+      "upstreamPath": "glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl",
+      "sha256": "5638fe31c37c151a3443fea3451a3ef91af073f4dbb9615f6c0d1e29db11493d"
     },
     {
       "name": "Anime4K_Upscale_Denoise_CNN_x2_M.glsl",

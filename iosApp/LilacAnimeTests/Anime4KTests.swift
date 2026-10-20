@@ -16,7 +16,7 @@ final class Anime4KTests: XCTestCase {
         XCTAssertTrue(try Anime4KMode.off.paths().isEmpty)
         for mode in Anime4KMode.allCases where mode != .off {
             let files = try mode.paths()
-            XCTAssertEqual(files.count, mode == .c ? 2 : 3)
+            XCTAssertEqual(files.count, mode == .c ? 2 : [.aa, .bb].contains(mode) ? 4 : 3)
             XCTAssertTrue(files.first?.hasSuffix("Anime4K_Clamp_Highlights.glsl") == true)
             for file in files {
                 let source = try String(contentsOfFile: file, encoding: .utf8)
@@ -28,6 +28,12 @@ final class Anime4KTests: XCTestCase {
         XCTAssertTrue(try Anime4KMode.light.paths().last?.hasSuffix("Anime4K_Upscale_CNN_x2_S.glsl") == true)
         XCTAssertTrue(try Anime4KMode.b.paths()[1].hasSuffix("Anime4K_Restore_CNN_Soft_M.glsl"))
         XCTAssertTrue(try Anime4KMode.c.paths().last?.hasSuffix("Anime4K_Upscale_Denoise_CNN_x2_M.glsl") == true)
+        // Desktop v0.5.40: the second restore runs after the single upscale; HQ uses the VL networks.
+        XCTAssertTrue(try Anime4KMode.aa.paths().last?.hasSuffix("Anime4K_Restore_CNN_Soft_S.glsl") == true)
+        XCTAssertTrue(try Anime4KMode.bb.paths()[1].hasSuffix("Anime4K_Restore_CNN_Soft_M.glsl"))
+        XCTAssertTrue(try Anime4KMode.ca.paths().last?.hasSuffix("Anime4K_Restore_CNN_S.glsl") == true)
+        XCTAssertEqual(try Anime4KMode.hq.paths().dropFirst().map { URL(fileURLWithPath: $0).lastPathComponent }, ["Anime4K_Restore_CNN_VL.glsl", "Anime4K_Upscale_CNN_x2_VL.glsl"])
+        XCTAssertEqual(Anime4KMode(saved: "hq"), .hq)
     }
     func testOnlyGPUShaderErrorsTriggerFallback() {
         XCTAssertTrue(Anime4KMode.shaderFailed(prefix: "vo/gpu-next/libplacebo", text: "Shader compilation failed"))

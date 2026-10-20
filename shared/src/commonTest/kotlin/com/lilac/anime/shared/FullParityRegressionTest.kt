@@ -29,7 +29,7 @@ class FullParityRegressionTest {
     }
     @Test fun communityArchiveSelectionMatchesDesktopForCrcSeasonsExtrasAndBundles() {
         val fixtures = desktopOracle.list("communityFiles").filterIsInstance<JsonObject>()
-        assertEquals(17, fixtures.size)
+        assertEquals(31, fixtures.size)
         for (fixture in fixtures) {
             val input = fixture.obj("input")
             val names = input.list("names").map { it.jsonPrimitive.content }

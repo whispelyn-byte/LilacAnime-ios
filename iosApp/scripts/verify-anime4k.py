@@ -7,7 +7,7 @@ folder = Path(__file__).resolve().parents[1] / "LilacAnime/Resources/Anime4K"
 manifest = json.loads((folder / "upstream.json").read_text(encoding="utf-8"))
 assert manifest["revision"] == "4029bf701ecaa15f163cdc49cffe5501c1acf410"
 assert manifest["version"] == "4.0.1"
-assert len(manifest["files"]) == 8
+assert len(manifest["files"]) == 11
 names = set()
 for entry in manifest["files"]:
     name = entry["name"]
@@ -20,4 +20,4 @@ for entry in manifest["files"]:
         assert b"MIT License" in data, name
 assert "LICENSE" in names
 assert {p.name for p in folder.glob("*.glsl")} == names - {"LICENSE"}
-print("Verified Anime4K 4.0.1: seven original shaders and the MIT license.")
+print("Verified Anime4K 4.0.1: ten original shaders and the MIT license.")

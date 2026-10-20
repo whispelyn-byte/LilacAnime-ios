@@ -283,6 +283,10 @@ struct DetailView: View {
     @ObservedObject private var names = DesktopCatalog.shared
     @State private var selectedTab = 0
     @State private var serverID: Int32 = 0
+    @ObservedObject private var artworks = TitleArtworkStore.shared
+    @State private var art: LoadedArtwork?
+    @State private var artReady = false
+    @Environment(\.colorScheme) private var scheme
     private var anime: Anime { model.anime ?? summary }
     private var server: EpisodeServer? { model.servers.first { $0.id == serverID } ?? model.servers.first { $0.name == library.preferences.preferredServer } ?? model.servers.first }
     @State private var page = 0
@@ -313,8 +317,14 @@ struct DetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 // ott.css #detailDialog: a tall still on top fading into the page, the poster and title coming up over it.
+                // The wide header picture (TMDB backdrop, AniList banner) when there is one; the page waits for it (at most
+                // 1.5 s) so it does not swap in over the poster.
                 ZStack {
-                    AnimeArtwork(url: anime.poster, height: heroHeight, alignment: .posterFocus)
+                    if let banner = art?.banner, !banner.isEmpty {
+                        AnimeArtwork(url: banner, height: heroHeight, preloaded: artworks.image(banner))
+                    } else if artReady {
+                        AnimeArtwork(url: anime.poster, height: heroHeight, alignment: .posterFocus)
+                    } else { LilacStyle.card2 }
                     LinearGradient(stops: [.init(color: LilacStyle.background, location: 0), .init(color: LilacStyle.background.opacity(0.55), location: 0.32), .init(color: .clear, location: 0.7)],
                                    startPoint: .bottom, endPoint: .top)
                 }.frame(height: heroHeight).clipped()
@@ -353,6 +363,7 @@ struct DetailView: View {
             .navigationTitle("").navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
             .task(id: model.anime?.id) { if !UIShowcase.enabled { await model.recordView() } }
+            .task(id: model.anime == nil ? "summary" : "detail") { await loadArtwork() }
             .task {
                 if UIShowcase.enabled {
                     model.anime = summary
@@ -361,14 +372,33 @@ struct DetailView: View {
                 newestFirst = UserDefaults.standard.bool(forKey: sortKey)
             }
     }
-    /// The poster beside the title, the original title and a line of facts (#detailDialog .detail-body).
+    /// The artwork asked for alongside the work's details (from its card first); when the card's titles do not find both
+    /// pictures, the details' (with the original title) are tried too. What is not ready after 1.5 s is filled in when it comes.
+    private func loadArtwork() async {
+        guard !UIShowcase.enabled else { artReady = true; return }
+        let deadline = Task { try? await Task.sleep(nanoseconds: 1_500_000_000); if !Task.isCancelled { artReady = true } }
+        defer { deadline.cancel() }
+        var found = await artworks.artwork(summary, source: source)
+        if !found.complete, let full = model.anime { found = await artworks.artwork(full, source: source) }
+        guard !Task.isCancelled else { return }
+        if found.complete || art?.complete != true { art = found }
+        artReady = true
+    }
+    /// The poster beside the title, the original title and a line of facts (#detailDialog .detail-body). Under the Korean
+    /// title logo the text title stays, small: the logo is the series', the title says which season it is.
     private var titleBlock: some View {
         HStack(alignment: .bottom, spacing: wide ? 30 : 16) {
             AnimeArtwork(url: anime.poster, width: wide ? 170 : 108, height: wide ? 255 : 162)
                 .clipShape(RoundedRectangle(cornerRadius: LilacStyle.radius)).shadow(color: .black.opacity(0.5), radius: 16, y: 8)
             VStack(alignment: .leading, spacing: 6) {
-                AnimeDisplayTitle(anime: anime, source: source).font(.system(size: wide ? 40 : 25, weight: .black)).foregroundStyle(LilacStyle.text)
-                    .lineLimit(3).minimumScaleFactor(0.7)
+                if let art, art.logo(dark: scheme != .light) != nil {
+                    TitleLogo(art: art, maxWidth: wide ? 440 : 230, maxHeight: wide ? 150 : 90).padding(.bottom, 4)
+                    AnimeDisplayTitle(anime: anime, source: source).font(.system(size: wide ? 16 : 14, weight: .bold)).foregroundStyle(LilacStyle.muted)
+                        .lineLimit(2)
+                } else {
+                    AnimeDisplayTitle(anime: anime, source: source).font(.system(size: wide ? 40 : 25, weight: .black)).foregroundStyle(LilacStyle.text)
+                        .lineLimit(3).minimumScaleFactor(0.7)
+                }
                 if !anime.native.isEmpty { Text(anime.native).font(.system(size: 14)).foregroundStyle(LilacStyle.muted).lineLimit(1) }
                 HStack(spacing: 8) {
                     if anime.score > 0 { Text("★ " + String(format: "%g", (anime.score * 100).rounded() / 100)).foregroundStyle(LilacStyle.score) }

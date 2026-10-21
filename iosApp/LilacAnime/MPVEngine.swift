@@ -161,6 +161,11 @@ final class MPVEngine: ObservableObject {
         error = nil; fileLoaded = false
         set("http-header-fields", stream.headers.map { $0.key + ": " + $0.value.replacingOccurrences(of: ",", with: "\\,") }.joined(separator: ","))
         set("referrer", stream.referer)
+        // A download is this app's own local HLS. FFmpeg refuses local files not named as media (an AES key's .key, a
+        // nameless part's .bin, a CDN's .png/.webp disguise) and, since FFmpeg 8, segments whose extension does not match
+        // their format: every segment was dropped and mpv ended with "no audio or video data played". NativeAudio reads
+        // the same files with these options. Online streams keep FFmpeg's checks.
+        set("demuxer-lavf-o", stream.url.isFileURL ? "allowed_extensions=ALL,allowed_segment_extensions=ALL,extension_picky=0" : "")
         command(["loadfile", stream.url.isFileURL ? stream.url.path : stream.url.absoluteString, "replace"])
         loadTimeout = Task { [weak self] in
             do { try await Task.sleep(nanoseconds: 30_000_000_000) } catch { return }

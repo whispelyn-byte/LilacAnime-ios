@@ -70,6 +70,9 @@ int LilacDecodeAudio(const char *source, const char *destination, bool (*cancell
     // Only downloaded local media and its local AES keys are readable.
     av_dict_set(&options, "protocol_whitelist", "file,crypto,data", 0);
     av_dict_set(&options, "allowed_extensions", "ALL", 0);
+    // FFmpeg 8 also refuses segments whose extension does not match their format (a CDN's .png disguise).
+    av_dict_set(&options, "allowed_segment_extensions", "ALL", 0);
+    av_dict_set(&options, "extension_picky", "0", 0);
     int status = avformat_open_input(&format, source, NULL, &options);
     av_dict_free(&options);
     if (status < 0) { fail(&state, "Cannot open downloaded audio", status); goto cleanup; }
@@ -288,6 +291,10 @@ int LilacSpeechLevels(const char *source, const char *headers, const char *desti
         av_dict_set(&options, "reconnect_delay_max", "5", 0);
         // A stream that stops sending for 90 s (the desktop's quiet watch) is taken as stuck.
         av_dict_set(&options, "rw_timeout", "90000000", 0);
+    } else {
+        // A downloaded episode: FFmpeg 8 also refuses segments whose extension does not match their format.
+        av_dict_set(&options, "allowed_segment_extensions", "ALL", 0);
+        av_dict_set(&options, "extension_picky", "0", 0);
     }
     int status = avformat_open_input(&format, source, NULL, &options);
     av_dict_free(&options);

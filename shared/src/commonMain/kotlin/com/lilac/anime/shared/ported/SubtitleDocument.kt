@@ -43,6 +43,8 @@ object SubtitleDocument {
         value = value.replace(Regex("(?s)\\{[^}]*\\}"), "")
         value = value.replace(Regex("(?is)<[^>]+>"), "")
         value = value.replace(Regex("\\\\[Nn]"), "\n").replace("\\h", " ")
+        // An SMI-made line of only &nbsp; clears the screen: it is not words to translate.
+        value = value.replace(Regex("(?i)&(?:amp;)?nbsp;?"), " ")
         return value.lines().map { it.trim() }.filter { it.isNotEmpty() }.joinToString("\n")
     }
 

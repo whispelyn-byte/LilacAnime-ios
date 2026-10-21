@@ -115,8 +115,20 @@ enum SubtitleFiles {
         let ext = SubtitleTools.shared.format(content: content, suggested: file.pathExtension)
         guard !ext.isEmpty else { throw failure("지원하는 자막 형식이 아닙니다.") }
         let output = file.deletingPathExtension().appendingPathExtension(ext)
-        try content.write(to: output, atomically: true, encoding: .utf8)
+        try playable(content).write(to: output, atomically: true, encoding: .utf8)
         return output
+    }
+    private static let nbsp = "&(?:amp;)?nbsp;?"
+    /// mpv's SRT and SAMI readers draw &nbsp; as text. SMI-made subtitles use a cue of only &nbsp; to clear the line,
+    /// and a translated VTT escaped it into &amp;nbsp;, so both become a non-breaking space.
+    static func playable(_ content: String) -> String {
+        content.replacingOccurrences(of: nbsp, with: "\u{00A0}", options: [.regularExpression, .caseInsensitive])
+    }
+    /// Subtitles saved before playable(_:) existed are fixed when they are put on.
+    static func repairEntities(_ file: URL) {
+        guard file.standardizedFileURL.path.hasPrefix(root.path + "/"), let content = try? text(file),
+              content.range(of: nbsp, options: [.regularExpression, .caseInsensitive]) != nil else { return }
+        try? playable(content).write(to: file, atomically: true, encoding: .utf8)
     }
     static func importFont(_ url: URL) throws -> String {
         let access = url.startAccessingSecurityScopedResource()

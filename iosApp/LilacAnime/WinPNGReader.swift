@@ -25,7 +25,7 @@ final class WinPNGReader: NSObject, WKNavigationDelegate {
         let folder = SubtitleFiles.root.appendingPathComponent(SubtitleFiles.key(url.absoluteString))
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let file = folder.appendingPathComponent("winpng-\(episode)." + ext)
-        try content.replacingOccurrences(of: "\u{feff}", with: "").write(to: file, atomically: true, encoding: .utf8)
+        try SubtitleFiles.playable(content.replacingOccurrences(of: "\u{feff}", with: "")).write(to: file, atomically: true, encoding: .utf8)
         return file
     }
     func read(_ url: URL, html: String? = nil) async throws -> [[String: String]] {

@@ -16,6 +16,11 @@ class TesterRegressionTest {
         assertEquals("작품 이야기", DisplayText.plain("&lt;script&gt;alert(1)&lt;/script&gt;작품 이야기"))
         assertEquals("A & B", DisplayText.plain("A &amp; B"))
     }
+    @Test fun smiClearingNbspIsNotSubtitleText() {
+        val srt = "1\n00:00:01,000 --> 00:00:02,000\n친구니까요!\n\n2\n00:00:02,000 --> 00:00:04,000\n&nbsp;\n\n3\n00:00:04,000 --> 00:00:05,000\nA&NBSP;B"
+        assertEquals(listOf("친구니까요!", "", "A B"), SubtitleTools.lines(srt, "srt"))
+        assertEquals(listOf(""), SubtitleTools.lines("WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n&amp;nbsp;", "vtt"))
+    }
     @Test fun missingIndexedLinesPreserveIdsWithoutShiftingDialogue() {
         assertEquals(listOf("", "둘", ""), CloudTranslationText.parseDesktop("""[{"i":1,"t":"둘"},{"i":99,"t":"잘못된 줄"}]""", listOf("one", "two", "three")))
     }

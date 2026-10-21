@@ -498,6 +498,7 @@ final class EpisodePlayerModel: ObservableObject {
         let saved = EpisodeSubtitleStore.shared.list(item).first { $0.file == url }
         selectedProvider = provider ?? saved?.provider ?? "user"
         if ["kairan", "csora", "anissia", "linkkf"].contains(selectedProvider) { koreanFound = true }
+        SubtitleFiles.repairEntities(url)
         sourceSubtitle = saved?.original ?? url; subtitle = url; engine.subtitle(url, translated: saved?.translated == true)
         EpisodeSubtitleStore.shared.save(url, item: item, provider: selectedProvider, translated: saved?.translated ?? false, original: saved?.original)
         if selectedProvider != "jimaku" { selectedJimakuURL = nil }
@@ -1516,6 +1517,8 @@ struct PlayerControls: View {
     let keyboardEnabled: Bool
     var toast: EpisodePlayerModel.Toast? = nil
     @GestureState private var holdingSpeed = false
+    @State private var holdActive = false
+    @State private var holdReleased = Date.distantPast
     @State private var dragging = false
     @State private var value = 0.0
     @State private var visible = true
@@ -1610,7 +1613,7 @@ struct PlayerControls: View {
             }
             .background(SpaceHoldKeyboard(enabled: keyboardEnabled && !locked,
                 began: engine.beginSpaceHold, ended: { engine.finishSpaceHold(toggle: true); touch() }, cancelled: { engine.finishSpaceHold() }).frame(width: 0, height: 0))
-            .onChange(of: holdingSpeed) { holding in if !holding { engine.finishSpaceHold() } }
+            .onChange(of: holdingSpeed) { holding in if !holding { endHold(); engine.finishSpaceHold() } }
             .onDisappear { engine.finishSpaceHold() }
             .task(id: interaction) {
                 guard !UIShowcase.enabled, !engine.paused, !locked, !dragging else { return }
@@ -1642,18 +1645,26 @@ struct PlayerControls: View {
         feedback = text
         Task { try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000)); if feedback == text { feedback = "" } }
     }
+    /// The touch that ends a 2배속 hold is not also a tap. Its release counted as the first tap, so the next tap became a
+    /// double tap that seeked ±10초 (or paused, in the middle) right after the boost.
+    private var tapAllowed: Bool { !holdActive && Date().timeIntervalSince(holdReleased) > 0.6 }
+    private func endHold() { if holdActive { holdActive = false; holdReleased = Date() } }
     private func tapZone(_ delta: Double) -> some View {
         Color.clear.contentShape(Rectangle()).onTapGesture(count: 2) {
-            guard !locked else { return }
+            guard !locked, tapAllowed else { return }
             if delta == 0 { engine.toggle() } else { engine.skip(delta); feedback = "\(delta > 0 ? "+" : "−")\(Int(abs(delta)))초" }
             touch()
             Task { try? await Task.sleep(nanoseconds: 700_000_000); feedback = "" }
-        }.onTapGesture { guard !locked else { return }; withAnimation(LilacMotion.animation(reduced: reduceMotion)) { visible.toggle() }; touch() }
+        }.onTapGesture { guard !locked, tapAllowed else { return }; withAnimation(LilacMotion.animation(reduced: reduceMotion)) { visible.toggle() }; touch() }
             .simultaneousGesture(LongPressGesture(minimumDuration: 0.4, maximumDistance: 24)
                 .sequenced(before: DragGesture(minimumDistance: 0))
                 .updating($holdingSpeed) { value, state, _ in if case .second(true, _) = value { state = true } }
-                .onChanged { value in if case .second(true, _) = value, !locked, keyboardEnabled { engine.boostTouchHold() } }
-                .onEnded { _ in engine.finishSpaceHold(); touch() })
+                .onChanged { value in
+                    guard case .second(true, _) = value else { return }
+                    holdActive = true
+                    if !locked, keyboardEnabled { engine.boostTouchHold() }
+                }
+                .onEnded { _ in endHold(); engine.finishSpaceHold(); touch() })
     }
     private func icon(_ name: String, size: CGFloat = 44) -> some View {
         Image(systemName: name).font(.system(size: 19)).frame(width: size, height: size)

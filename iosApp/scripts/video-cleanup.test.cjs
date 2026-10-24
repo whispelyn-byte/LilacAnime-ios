@@ -39,4 +39,6 @@ test('an mpv mask shader from the PC tool or the Android app is read', () => {
   assert.deepEqual([mask.width, mask.height, mask.origin, mask.extent], [2, 1, [0.75, 0.05], [0.2, 0.1]]);
   assert.deepEqual([...mask.rgba], [0, 0, 0, 0, 128, 128, 128, 128]);
   assert.throws(() => parseMaskShader('nothing'), /형식/);
+  assert.throws(() => parseMaskShader(text.replace('SIZE 2 1', 'SIZE 9999999999 9999999999')), /크기/);
+  assert.throws(() => parseMaskShader(text.replace('00000000', 'zz000000')), /픽셀/);
 });

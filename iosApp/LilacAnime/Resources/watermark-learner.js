@@ -96,10 +96,12 @@
     const head = text.slice(at), size = head.match(/\/\/!SIZE\s+(\d+)\s+(\d+)/);
     if (!size) throw new Error('마스크 크기(//!SIZE)를 찾지 못했습니다.');
     const width = Number(size[1]), height = Number(size[2]);
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 4096 || height > 4096 || width * height > 700000) throw new Error('마스크 크기가 너무 크거나 올바르지 않습니다.');
     // The texture body: everything after the //! header lines, white space removed.
     const lines = head.split(/\r?\n/); let i = 0; while (i < lines.length && lines[i].startsWith('//!')) i++;
     const hex = lines.slice(i).join('').replace(/\s+/g, '');
     if (hex.length < width * height * 8) throw new Error('마스크 데이터가 잘려 있습니다.');
+    if (!/^[0-9a-f]+$/i.test(hex.slice(0, width * height * 8))) throw new Error('마스크 픽셀 데이터가 올바르지 않습니다.');
     const rgba = new Uint8Array(width * height * 4);
     for (let k = 0; k < rgba.length; k++) rgba[k] = parseInt(hex.substr(k * 2, 2), 16);
     return { rgba, width, height, origin, extent };

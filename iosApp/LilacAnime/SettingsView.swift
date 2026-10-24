@@ -108,7 +108,7 @@ struct SettingsView: View {
     }
     private var general: some View {
         SettingsPage(title: "일반") {
-            SettingBlock(title: "작품 제목 표시", note: "번역된 제목은 TMDB, AniList, Wikidata에서 찾습니다. 찾지 못한 작품은 원래 제목으로 표시합니다.") {
+            SettingBlock(title: "작품 제목 표시", note: "한국어 제목은 Anissia, TMDB, AniList, Wikidata에서 찾습니다. 찾지 못한 작품은 원래 제목으로 표시합니다.") {
                 SettingChoices(options: [("original", "원래 제목"), ("ko", "한국어"), ("en", "영어")],
                                selection: Binding(get: { store.preferences.titleLanguage ?? "original" }, set: { store.preferences.titleLanguage = $0 }))
             }
@@ -196,7 +196,7 @@ struct SettingsView: View {
         }
     }
     private var titles: some View {
-        SettingsPage(title: "한국어 제목 검색", intro: "Re:Anime·Animenosub·Miruro 작품의 한국어 제목을 TMDB, AniList, Wikidata 순으로 찾아 한국어로 보여 주고 Kairan·Csora·Anissia 자막을 검색합니다. TMDB가 가장 많은 작품을 찾으며, API 키가 있어야 사용됩니다.") {
+        SettingsPage(title: "한국어 제목 검색", intro: "Re:Anime·Animenosub·Miruro의 일본어 원제를 Anissia 제목 사전과 맞춰 한국어로 보여 주고 자막을 검색합니다. TMDB·AniList·Wikidata도 함께 사용하며, TMDB만 별도 API 키가 필요합니다.") {
             SettingBlock(title: "TMDB API 키", note: tmdbStatus ?? "themoviedb.org 설정 > API에서 발급한 API 키(v3) 또는 읽기 액세스 토큰을 넣을 수 있습니다. 키는 Keychain에 저장하고, 빈 키를 저장하면 삭제됩니다.") {
                 HStack(spacing: 6) {
                     SecureField("TMDB API 키 또는 읽기 액세스 토큰", text: $tmdbKey).textInputAutocapitalization(.never).autocorrectionDisabled().settingField()

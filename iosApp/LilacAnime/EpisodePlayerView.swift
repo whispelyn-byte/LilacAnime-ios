@@ -296,7 +296,7 @@ final class EpisodePlayerModel: ObservableObject {
         let item = DownloadStore.shared.offline(item) ?? item
         resolutionTask?.cancel(); selectionTask?.cancel()
         if remember { previous.append(self.item) }
-        whisper.cancel(); nextWhisper.cancel(); whisperLive.cancel(); whisperStartTask?.cancel()
+        whisper.cancel(); nextWhisper.cancel(); whisperLive.cancel(); whisperStartTask?.cancel(); whisperStatus = ""
         save(library: library); engine.pause(); proxy?.stop(); proxy = nil; stopPrefetch(); automaticTask?.cancel(); translation.cancel(); cast.stop()
         cancelSubtitleBackground(); preparer.cancel(); cancelSync()
         generation = UUID(); titleLookup.cancel(); searchTitle = item.anime.title; self.item = item; active = nil; subtitle = nil; sourceSubtitle = nil; assets = []; subtitleFiles = []; chapters = []; selectedProvider = ""; koreanFound = false; skipEntered = nil
@@ -342,7 +342,7 @@ final class EpisodePlayerModel: ObservableObject {
             let selected = try await MiruroPlayback.choose(resolver.streams, preferRaw: preferRaw, preferred: current.label, excluded: miruroFailedServers)
             var playable = selected
             var replacement: HLSProxy?
-            if selected.manifestKey != nil || selected.hlsManifest != nil || (library.preferences.quality != "Auto" && selected.url.pathExtension.lowercased() == "m3u8") {
+            if selected.manifestKey != nil || selected.hlsManifest != nil || (selected.url.pathExtension.lowercased() == "m3u8" && !selected.url.isFileURL) {
                 let nextProxy = HLSProxy(); replacement = nextProxy
                 do { playable = try await nextProxy.start(selected, quality: library.preferences.quality) }
                 catch { nextProxy.stop(); throw error }
@@ -566,6 +566,7 @@ final class EpisodePlayerModel: ObservableObject {
     func startWhisper(library: LibraryStore, manual: Bool = true) {
         if whisper.running { if manual { whisper.cancel(); whisperLive.cancel(); whisperStatus = "음성 인식 중단" }; return }
         whisperStartTask?.cancel(); whisperLive.cancel(); nextWhisper.cancel()
+        whisperStatus = "Whisper 음성 준비 중"
         let token = generation
         if manual { automaticTask?.cancel(); translation.cancel(); selectedProvider = "whisper"; pressedSource = "whisper" }
         whisperStartTask = Task {
@@ -573,11 +574,12 @@ final class EpisodePlayerModel: ObservableObject {
                 if engine.duration > 0 { break }
                 do { try await Task.sleep(nanoseconds: 100_000_000) } catch { return }
             }
-            guard !Task.isCancelled, token == generation, let video = syncVideo else { return }
+            guard !Task.isCancelled, token == generation else { return }
+            guard let video = syncVideo else { whisperStatus = "영상 연결 후 음성 인식을 시작해 주세요."; return }
             whisper.start(video: video, key: item.anime.id + "#" + item.episodeID, model: library.preferences.whisperModel ?? "base",
                 position: { [weak self] in self?.engine.position ?? 0 }, receive: { [weak self, weak library] file, lines, complete in
                     guard let self, let library, token == self.generation else { return }
-                    self.whisperStatus = complete ? "Whisper 자막 저장 완료" : "Whisper \(lines.count)줄 인식 · 눌러서 중단"
+                    self.whisperStatus = complete ? (lines.isEmpty ? "인식된 대사가 없습니다." : "Whisper 자막 저장 완료") : "Whisper \(lines.count)줄 인식 · 눌러서 중단"
                     guard !lines.isEmpty else { return }
                     EpisodeSubtitleStore.shared.save(file, item: self.item, provider: "whisper", translated: false)
                     if self.subtitle == nil || self.selectedProvider == "whisper" {

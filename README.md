@@ -25,7 +25,7 @@
 - **시작하기**: [주요 기능](#주요-기능) · [설치](#설치) · [업데이트](#업데이트) · [처음 쓸 때](#처음-쓸-때)
 - **사용법**
   - [애니 보기](#애니-보기)
-  - [TMDB 키 넣기 (꼭 해 주세요)](#tmdb-키-넣기-꼭-해-주세요)
+  - [TMDB 키 넣기 (선택)](#tmdb-키-넣기-선택)
   - [자막 고르기 · 다시 번역](#자막-고르기--다시-번역)
   - [자막 크기 · 싱크 · 글꼴](#자막-크기--싱크--글꼴)
   - [번역 시작하기](#번역-시작하기)
@@ -46,6 +46,8 @@
 - **여러 사이트를 한 곳에서**: RE:Anime · Miruro · Animenosub · 애니24 · 링크애니 · Linkkf. 영어 제목 사이트도 한국어 제목으로 보여 주고 한국어로 검색합니다.
 - **한국어 자막 자동**: 사이트의 한국어 트랙, Kairan · Csora · Anissia 블로그 자막을 알아서 찾아 입힙니다.
 - **없으면 AI 번역**: Jimaku 일본어 자막이나 사이트의 일본어·영어 트랙을 번역 API(Gemini · OpenAI · DeepL · Qwen · Claude)나 기기 안의 로컬 AI(Gemma 4 · Aya · Hy-MT2)로 번역합니다. **보고 있는 장면부터 번역해 번역된 줄은 바로 한국어로** 바뀌고, 다음 화는 보는 동안 미리 번역해 둘 수 있습니다.
+- **음성으로 자막 만들기**: 자막이 없으면 설치한 Whisper 모델로 일본어 음성을 기기 안에서 인식합니다. 현재 위치부터 자막을 만들고, 자동 번역 설정에 따라 한국어로 바꿉니다. 모델은 **설정 > 자막 자동 번역 > Whisper**에서 받습니다.
+- **영상 정리 · 자막 줄 간격**: 플레이어에서 워터마크·영상 내장 자막 영역을 지정하고, 반투명 흰색 로고를 학습하거나 데스크탑 마스크를 가져올 수 있습니다. 자막 줄 간격도 조절합니다.
 - **한국어 제목 · 줄거리**: 영어 사이트의 작품도 한국어 제목으로 보여 주고, TMDB 키가 있으면 줄거리도 한국어로 보여 줍니다.
 - **자막과 함께 PiP · 스크린샷**: 작은 창(PiP)에서도 고른 자막이 그대로 나오고, 지금 장면을 원본 해상도로 사진 앱에 저장합니다.
 - **OP/ED 건너뛰기 · 이어보기 · 다음 화 자동 재생 · 외부 키보드 단축키 · AirPlay · Chromecast**
@@ -105,7 +107,7 @@ https://github.com/whispelyn-byte/LilacAnime-ios/releases/latest/download/source
 
 1. **설정 > 재생 > 영상 소스**에서 볼 사이트를 고릅니다. 처음엔 RE:Anime입니다.
 2. **설정 > 일반 > 작품 제목 표시**에서 한국어 / 영어 / 원래 제목을 고릅니다.
-3. **(강력 추천) 설정 > 한국어 제목 검색**에 TMDB API 키를 넣습니다. 한국어 자막을 훨씬 많이 찾고, 제목 · 줄거리도 한국어로 나옵니다. → [TMDB 키 넣기](#tmdb-키-넣기-꼭-해-주세요)
+3. **(선택) 설정 > 한국어 제목 검색**에 TMDB API 키를 넣습니다. Anissia 제목 사전은 키 없이 사용하며, TMDB는 추가 제목과 한국어 줄거리를 찾는 데 사용합니다. → [TMDB 키 넣기](#tmdb-키-넣기-선택)
 4. (선택) 자막 번역을 쓰려면 **설정 > 자막 자동 번역**에서 번역 API(Gemini · OpenAI · DeepL · Qwen · Claude) 키를 넣거나 로컬 AI 모델을 받습니다. → [번역 시작하기](#번역-시작하기)
 
 ## 사용법
@@ -128,9 +130,9 @@ https://github.com/whispelyn-byte/LilacAnime-ios/releases/latest/download/source
 
 재생을 누르면 가로 전체 화면으로 바뀝니다. 자막은 앱이 알아서 찾아 입힙니다. 보다가 나가도 홈의 **계속 시청하기**나 **시청기록**에서 누르면 멈춘 곳부터 이어집니다.
 
-### TMDB 키 넣기 (꼭 해 주세요)
+### TMDB 키 넣기 (선택)
 
-**한국어 자막을 찾는 데 가장 중요한 설정입니다.** RE:Anime · Miruro · Animenosub는 작품 제목이 영어라서, 한국어 자막(Kairan · Csora · Anissia)을 찾으려면 그 작품의 한국어 제목을 알아야 합니다. TMDB 키가 있으면 훨씬 많은 작품의 한국어 제목을 찾아 한국어 자막이 더 많이 붙고, 제목과 줄거리도 한국어로 나옵니다.
+RE:Anime · Miruro · Animenosub의 외국어 작품 제목을 한국어로 바꿔 한국어 자막을 검색합니다. Anissia의 일본어 원제·방영일·시즌 정보를 이용한 제목 사전은 키 없이 사용합니다. TMDB 키를 넣으면 사전에 없는 작품의 한국어 제목과 줄거리도 추가로 찾을 수 있습니다.
 
 키는 무료입니다. TMDB 신청 화면이 휴대폰에서는 잘 안 되니 PC 브라우저로 받는 것을 권합니다 (5분쯤).
 
@@ -148,7 +150,7 @@ https://github.com/whispelyn-byte/LilacAnime-ios/releases/latest/download/source
 2. **API Key 또는 Read Access Token** 칸에 붙여 넣고 **TMDB 키 저장**을 누릅니다.
 3. **TMDB 연결 테스트**로 키가 맞는지 확인할 수 있습니다.
 
-키는 이 기기의 Keychain에만 저장됩니다. 앱은 한국어 제목을 **TMDB → AniList → Wikidata** 순으로 찾고, 키가 없으면 AniList와 Wikidata로만 찾습니다. **설정 > 한국어 제목 검색 > 한국어 전체 카탈로그 · 인덱스**에서 소스 전체 작품의 한국어 제목을 미리 모을 수 있습니다 (처음엔 몇 분 걸리고, 그동안에도 앱은 그대로 쓸 수 있습니다).
+키는 이 기기의 Keychain에만 저장됩니다. 앱은 **Anissia에서 맞는 제목을 찾으면 우선 사용**하고, TMDB · AniList · Wikidata 결과를 함께 활용합니다. Anissia · AniList · Wikidata에는 별도 API 키가 필요하지 않습니다. **설정 > 한국어 제목 검색 > 한국어 전체 카탈로그 · 인덱스**에서 소스 전체 작품의 한국어 제목을 미리 모을 수 있습니다 (처음엔 몇 분 걸리고, 그동안에도 앱은 그대로 쓸 수 있습니다).
 
 ### 자막 고르기 · 다시 번역
 
@@ -290,7 +292,7 @@ https://github.com/whispelyn-byte/LilacAnime-ios/releases/latest/download/source
 - 플레이어 설정 > 재생 > **영상 서버 · 화질**에서 다른 서버나 낮은 화질을 골라 봅니다. **웹 플레이어 열기**로 사이트 화면에서 재생할 수도 있습니다.
 
 **한국어 자막을 못 찾아요**
-- **설정 > 한국어 제목 검색**에 TMDB 키를 넣으면 훨씬 많이 찾습니다 → [TMDB 키 넣기](#tmdb-키-넣기-꼭-해-주세요)
+- **설정 > 한국어 제목 검색**에 TMDB 키를 넣으면 훨씬 많이 찾습니다 → [TMDB 키 넣기](#tmdb-키-넣기-선택)
 - 플레이어 설정 > 자막 > **한국어 자막 다시 찾기**를 눌러 봅니다. **자막 직접 검색 · 다시 번역**에서 검색 제목을 바꿔 찾을 수도 있습니다. 그래도 없으면 번역 자막이 대신 나옵니다 ([번역 시작하기](#번역-시작하기)).
 
 **번역이 안 돼요**
@@ -320,7 +322,7 @@ API 키는 이 기기에만 저장되고, 각 키는 그 서비스 요청에만 
 
 ## 개발
 
-현재 버전은 **0.4.12**입니다. 바뀐 점은 [릴리즈 노트](docs/release-notes.md)에 있습니다.
+릴리즈 버전은 `iosApp/version.txt`에서 확인합니다. 배포된 변경은 [릴리즈 노트](docs/release-notes.md), 데스크탑 0.5.51까지의 추가 반영은 [이식 내역](docs/desktop-0.5.51-port.md)에 있습니다.
 
 공통 코드(Kotlin Multiplatform) 테스트는 JDK 17로 실행합니다.
 
@@ -354,6 +356,7 @@ GitHub Actions가 공통 테스트, KMP iOS 테스트, 네이티브 iOS 테스�
 - 데스크탑 앱: [whispelyn-byte/LilacAnime-desktop](https://github.com/whispelyn-byte/LilacAnime-desktop)
 - 재생: [mpv](https://github.com/mpv-player/mpv) · [MPVKit](https://github.com/mpvkit/MPVKit)
 - 자막: Kairan · Csora · Anissia · [Jimaku](https://jimaku.cc)
+- 음성 인식: [WhisperKit](https://github.com/argmaxinc/argmax-oss-swift) ([MIT 라이선스](iosApp/LilacAnime/Resources/WhisperKit-LICENSE.txt))
 - 로컬 AI: [llama.cpp](https://github.com/ggml-org/llama.cpp) · [nlohmann/json](https://github.com/nlohmann/json)
 - 압축 자막: [libarchive](https://github.com/libarchive/libarchive)
 - OP/ED 구간: [AniSkip](https://aniskip.com)

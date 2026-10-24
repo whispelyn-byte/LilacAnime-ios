@@ -54,7 +54,7 @@ bool inRect(vec2 p,vec4 r){return p.x>=r.x&&p.x<=r.x+r.z&&p.y>=r.y&&p.y<=r.y+r.w
 bool inBand(vec2 p){for(int i=0;i<4;i++){if(i>=uRectCount)break;if(inRect(p,uRects[i]))return true;}return false;}
 float lum(vec3 c){return dot(c,vec3(0.299,0.587,0.114));}
 
- 
+
 vec4 hook() {
   vec2 p = HOOKED_pos; vec4 c = HOOKED_tex( p);
   if (!inBand(p) || LilacWide_tex( p).r < 0.5) { return  vec4(c.rgb, 1.0); }

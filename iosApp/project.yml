@@ -4,6 +4,9 @@ options:
   deploymentTarget:
     iOS: "16.0"
 packages:
+  WhisperKit:
+    url: https://github.com/argmaxinc/argmax-oss-swift.git
+    exactVersion: 0.18.0
   MPVKit:
     url: https://github.com/mpvkit/MPVKit.git
     exactVersion: 1.0.0
@@ -30,7 +33,9 @@ targets:
     platform: iOS
     sources:
       - path: LilacAnime
-        excludes: [Info.plist, Resources/Anime4K]
+        excludes: [Info.plist, Resources/Anime4K, Resources/subtitle-cleanup.glsl]
+      - path: LilacAnime/Resources/subtitle-cleanup.glsl
+        buildPhase: resources
       - path: LilacAnime/Resources/Anime4K
         type: folder
         buildPhase: resources
@@ -53,6 +58,8 @@ targets:
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
     dependencies:
+      - package: WhisperKit
+        product: WhisperKit
       - package: MPVKit
         product: MPVKit
       - package: libarchive

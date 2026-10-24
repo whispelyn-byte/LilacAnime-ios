@@ -1,4 +1,5 @@
 package com.lilac.anime.shared
+import io.ktor.util.decodeBase64Bytes
 
 import com.fleeksoft.ksoup.Ksoup
 import io.ktor.client.HttpClient
@@ -406,6 +407,24 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
         var failure: Exception? = null
         for (origin in listOf("https://www.miruro.to", "https://www.miruro.tv", "https://www.miruro.cx", "https://www.miruro.bz")) {
             try {
+                if (MiruroTransportRegistry.transport != null) {
+                    val address = io.ktor.http.URLBuilder("$origin/api/v1/$path").apply {
+                        params.forEach { (key, value) -> if (value.isNotEmpty()) parameters.append(key, value) }
+                    }.buildString()
+                    val native = MiruroTransportRegistry.fetch(address)
+                    if (native != null) {
+                        val packet = Json.parseToJsonElement(native).jsonObject
+                        val status = packet.number("status") ?: 0
+                        if (status !in 200..299) {
+                            if (status in 400..499 && status !in listOf(403,408,429)) throw MiruroQueryFailure("Miruro HTTP $status")
+                            error("Miruro HTTP $status")
+                        }
+                        val body = packet.text("body").decodeBase64Bytes()
+                        require(body.size <= 8 * 1024 * 1024) { "Miruro 응답이 너무 큽니다." }
+                        val key = "miruro/catalog".encodeToByteArray()
+                        return@withContext Json.parseToJsonElement(inflateCatalogGzip(ByteArray(body.size) { body[it] xor key[it % key.size] }).decodeToString()).jsonObject
+                    }
+                }
                 val result = withTimeoutOrNull(8000) {
                     val response = client.get("$origin/api/v1/$path") {
                         expectSuccess = false
@@ -428,7 +447,7 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
                 failure = IllegalStateException("Miruro 응답 시간 초과")
             } catch (error: CancellationException) { throw error }
             catch (error: MiruroQueryFailure) { throw error }
-            catch (error: Exception) { failure = error }
+            catch (error: Exception) { if (error.message?.startsWith("MIRURO_STOP:") == true) throw error; failure = error }
         }
         throw failure ?: IllegalStateException("Miruro 연결 실패")
     }

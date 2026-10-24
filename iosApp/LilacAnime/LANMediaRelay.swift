@@ -43,6 +43,7 @@ final class LANMediaRelay {
     private let queue = DispatchQueue(label: "Lilac.CastRelay")
     private let token = UUID().uuidString + UUID().uuidString
     private var listener: NWListener?
+    private var encrypted: Set<URL> = []
     private var resources: [String: Resource] = [:]
     private var connections: [UUID: NWConnection] = [:]
     private var tasks: [UUID: Task<Void, Never>] = [:]
@@ -171,6 +172,9 @@ final class LANMediaRelay {
                         } else {
                             try await self.sendFile(connection, url: url, range: range, head: method == "HEAD")
                         }
+                    } else if self.queue.sync(execute: { self.encrypted.contains(url) }) {
+                        let (data, _) = try await HLSData.fetch(url, stream: stream)
+                        try await self.sendBytes(connection, data: data, type: "application/octet-stream", range: range, head: method == "HEAD")
                     } else if url.pathExtension.lowercased() == "m3u8" || (url == stream.url && (stream.manifestKey != nil || stream.hlsManifest != nil)) {
                         let (data, _) = try await HLSData.fetch(url, stream: stream)
                         try await self.sendManifest(connection, data: data, base: url, stream: stream, head: method == "HEAD")
@@ -199,6 +203,7 @@ final class LANMediaRelay {
     private func sendManifest(_ connection: NWConnection, data: Data, base: URL, stream: ResolvedStream, head: Bool) async throws {
         let text = try HLSData.manifest(data, key: stream.manifestKey)
         let rewritten = try queue.sync {
+            encrypted.subtract(HLSData.references(text, base: base)); encrypted.formUnion(HLSData.encryptedSegments(text, base: base))
             var mapped: [URL: String] = [:]
             for url in HLSData.references(text, base: base) { mapped[url] = try register(url).absoluteString }
             return HLSData.rewrite(text, base: base) { mapped[$0] ?? "" }

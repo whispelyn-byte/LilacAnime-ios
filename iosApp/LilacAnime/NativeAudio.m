@@ -361,3 +361,83 @@ cleanup:
     }
     return 0;
 }
+
+
+// Bounded audio extraction for Whisper. Cancellation interrupts network I/O as well as decoding.
+#import <Foundation/Foundation.h>
+typedef struct { bool (*cancelled)(void *); void *opaque; double deadline; } WhisperRead;
+static int whisperInterrupted(void *opaque) {
+    WhisperRead *state = opaque;
+    return (state->cancelled && state->cancelled(state->opaque)) || [NSDate timeIntervalSinceReferenceDate] > state->deadline;
+}
+int LilacWhisperAudio(const char *source, const char *headers, const char *destination, double start, double seconds,
+                      bool (*cancelled)(void *), void *opaque, char **error) {
+    AVFormatContext *format = avformat_alloc_context(); AVCodecContext *codec = NULL;
+    AVFrame *frame = NULL; AVPacket *packet = NULL; SwrContext *swr = NULL; FILE *file = NULL;
+    AVDictionary *options = NULL; int status = 0, written = 0;
+    const int limit = (int)(fmin(60, fmax(0, seconds)) * 16000);
+    WhisperRead state = {cancelled, opaque, [NSDate timeIntervalSinceReferenceDate] + 90};
+    if (error) *error = NULL;
+    if (!format || limit <= 0) { status = AVERROR(EINVAL); goto done; }
+    format->interrupt_callback.callback = whisperInterrupted; format->interrupt_callback.opaque = &state;
+    av_dict_set(&options, "protocol_whitelist", "file,http,https,tcp,tls,crypto,data", 0);
+    av_dict_set(&options, "allowed_extensions", "ALL", 0);
+    av_dict_set(&options, "allowed_segment_extensions", "ALL", 0);
+    av_dict_set(&options, "extension_picky", "0", 0);
+    av_dict_set(&options, "rw_timeout", "15000000", 0);
+    if (headers && headers[0] && strncmp(source, "http", 4) == 0 && strncmp(source, "http://127.0.0.1", 16) != 0) av_dict_set(&options, "headers", headers, 0);
+    status = avformat_open_input(&format, source, NULL, &options); av_dict_free(&options);
+    if (status < 0) goto done;
+    status = avformat_find_stream_info(format, NULL); if (status < 0) goto done;
+    const AVCodec *decoder = NULL;
+    int stream = av_find_best_stream(format, AVMEDIA_TYPE_AUDIO, -1, -1, &decoder, 0);
+    if (stream < 0) { status = stream; goto done; }
+    codec = avcodec_alloc_context3(decoder); if (!codec) { status = AVERROR(ENOMEM); goto done; }
+    status = avcodec_parameters_to_context(codec, format->streams[stream]->codecpar); if (status < 0) goto done;
+    status = avcodec_open2(codec, decoder, NULL); if (status < 0) goto done;
+    AVChannelLayout mono = AV_CHANNEL_LAYOUT_MONO;
+    status = swr_alloc_set_opts2(&swr, &mono, AV_SAMPLE_FMT_FLT, 16000, &codec->ch_layout, codec->sample_fmt, codec->sample_rate, 0, NULL);
+    if (status < 0 || (status = swr_init(swr)) < 0) goto done;
+    double origin = format->start_time == AV_NOPTS_VALUE ? 0 : (double)format->start_time / AV_TIME_BASE;
+    if (start > 0) {
+        status = av_seek_frame(format, -1, (int64_t)((start + origin) * AV_TIME_BASE), AVSEEK_FLAG_BACKWARD);
+        if (status < 0) goto done;
+        avcodec_flush_buffers(codec);
+    }
+    frame = av_frame_alloc(); packet = av_packet_alloc(); file = fopen(destination, "wb");
+    if (!frame || !packet || !file) { status = AVERROR(ENOMEM); goto done; }
+    double cursor = start;
+    bool drained = false;
+    while (written < limit && !drained) {
+        if (whisperInterrupted(&state)) { status = AVERROR_EXIT; goto done; }
+        status = av_read_frame(format, packet);
+        if (status < 0 && status != AVERROR_EOF) goto done;
+        if (status == AVERROR_EOF) { drained = true; avcodec_send_packet(codec, NULL); }
+        else if (packet->stream_index != stream) { av_packet_unref(packet); continue; }
+        else {
+            status = avcodec_send_packet(codec, packet); av_packet_unref(packet);
+            if (status < 0) goto done;
+        }
+        while ((status = avcodec_receive_frame(codec, frame)) >= 0) {
+            const int capacity = (int)av_rescale_rnd(swr_get_delay(swr, codec->sample_rate) + frame->nb_samples, 16000, codec->sample_rate, AV_ROUND_UP);
+            float *samples = calloc((size_t)capacity, sizeof(float)); if (!samples) { status = AVERROR(ENOMEM); goto done; }
+            uint8_t *output = (uint8_t *)samples;
+            const int count = swr_convert(swr, &output, capacity, (const uint8_t **)frame->extended_data, frame->nb_samples);
+            double time = frame->best_effort_timestamp == AV_NOPTS_VALUE ? cursor : frame->best_effort_timestamp * av_q2d(format->streams[stream]->time_base) - origin;
+            int skip = (int)fmax(0, ceil((start - time) * 16000)); skip = skip > count ? count : skip;
+            int take = count - skip; if (take > limit - written) take = limit - written;
+            if (count < 0) { free(samples); status = count; goto done; }
+            if (take > 0 && fwrite(samples + skip, sizeof(float), (size_t)take, file) != (size_t)take) { free(samples); status = AVERROR(EIO); goto done; }
+            written += take; cursor = time + (double)count / 16000; free(samples); av_frame_unref(frame);
+            if (written >= limit) break;
+        }
+        if (status < 0 && status != AVERROR(EAGAIN) && status != AVERROR_EOF) goto done;
+    }
+    status = written ? 0 : AVERROR_EOF;
+done:
+    if (file) fclose(file);
+    av_dict_free(&options); av_packet_free(&packet); av_frame_free(&frame); swr_free(&swr);
+    avcodec_free_context(&codec); avformat_close_input(&format);
+    if (status < 0) { remove(destination); if (error) { char message[AV_ERROR_MAX_STRING_SIZE]; av_strerror(status, message, sizeof(message)); *error = strdup(message); } return -1; }
+    return 0;
+}

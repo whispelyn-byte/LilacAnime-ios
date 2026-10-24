@@ -7,6 +7,7 @@ struct DownloadPart: Codable {
     var url: URL
     var name: String
     var done = false
+    var encrypted: Bool? = nil
 }
 struct DownloadSubtitleTrack: Codable, Equatable {
     var file: String
@@ -412,7 +413,8 @@ final class DownloadStore: ObservableObject {
               let target = BackgroundDownloadDelegate.destination(description) else { try? FileManager.default.removeItem(at: staged); return }
         guard entries[index].status == "다운로드 중" else { try? FileManager.default.removeItem(at: staged); return }
         let decode: ((Data) throws -> Data)?
-        if entries[index].stream.hlsManifest != nil && entries[index].parts?[partIndex].url.pathExtension.lowercased() == "html" { decode = HLSData.validatedFragment }
+        if entries[index].parts?[partIndex].encrypted == true { decode = nil }
+        else if entries[index].stream.hlsManifest != nil && entries[index].parts?[partIndex].url.pathExtension.lowercased() == "html" { decode = HLSData.validatedFragment }
         else if (entries[index].stream.manifestKey != nil && (fields[1].hasSuffix(".ts") || mime.hasPrefix("image/"))) || fields[1].hasSuffix(".ts") { decode = HLSData.transportStream }
         else { decode = nil }
         // A part is megabytes: reading and decoding it on the main thread, part after part, stalled the video being watched.

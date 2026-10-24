@@ -106,6 +106,7 @@ actor HLSPlanBuilder {
                 }
             }
         }
+        let encrypted = HLSData.encryptedSegments(text, base: url)
         let resources = HLSData.references(text, base: url)
         guard files.count + resources.count <= 10000 else { throw SubtitleFiles.failure("재생목록 조각이 너무 많습니다.") }
         for (index, resource) in resources.enumerated() {
@@ -116,7 +117,7 @@ actor HLSPlanBuilder {
                 // Keep the first name so a later playlist cannot orphan the first one's reference.
                 let file = files[resource] ?? filename(resource, namespace: DownloadIdentity.resource(url) + "#" + String(index) + "#"); files[resource] = file
                 identity.append(DownloadIdentity.resource(resource))
-                parts[resource] = DownloadPart(url: resource, name: file)
+                parts[resource] = DownloadPart(url: resource, name: file, encrypted: encrypted.contains(resource))
             }
         }
         let rewritten = HLSData.rewrite(text, base: url) { files[$0] ?? "" }

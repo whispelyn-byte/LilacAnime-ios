@@ -1,4 +1,5 @@
 import SwiftUI
+import LilacShared
 @main
 struct LilacAnimeApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -9,6 +10,7 @@ struct LilacAnimeApp: App {
     @StateObject private var updater = DesktopUpdater.shared
     @Environment(\.scenePhase) private var scenePhase
     @State private var restored = false
+    init() { MiruroTransportRegistry.shared.transport = MiruroBrowser.shared }
     var body: some Scene {
         WindowGroup {
             Group {

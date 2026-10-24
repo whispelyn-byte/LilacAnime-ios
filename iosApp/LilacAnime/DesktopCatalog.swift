@@ -12,7 +12,7 @@ struct CatalogName: Codable {
     var titleLookupRevision: Int? = nil
     var castPrepared: Bool? = nil
     func isFresh(credential: String, cast: Bool, bulk: Bool = false, now: Date = Date()) -> Bool {
-        self.credential == credential && (!korean.isEmpty || titleLookupRevision == 1) &&
+        self.credential == credential && (!korean.isEmpty || titleLookupRevision == 2) &&
             now.timeIntervalSince(updated) < (bulk ? 30 : 7) * 86400 && (!cast || castPrepared == true || !self.cast.isEmpty)
     }
 }
@@ -117,7 +117,7 @@ final class DesktopCatalog: ObservableObject {
             names[key] = CatalogName(korean: result.korean.isEmpty ? (old?.korean ?? "") : result.korean, english: result.english, overview: result.overview.isEmpty ? (old?.overview ?? "") : result.overview, aliases: result.aliases,
                 cast: result.characters.isEmpty ? (old?.cast ?? []) : result.characters.map { CastCharacter(name: $0.name, native: $0.native, first: $0.first, last: $0.last, gender: $0.gender) },
                 anilist: Int(result.anilistId), mal: Int(result.malId), updated: Date(), credential: credential,
-                titleLookupRevision: 1, castPrepared: cast || old?.castPrepared == true)
+                titleLookupRevision: 2, castPrepared: cast || old?.castPrepared == true)
             saveNames()
             return true
         }

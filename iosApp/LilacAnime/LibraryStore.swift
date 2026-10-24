@@ -87,6 +87,10 @@ struct AppPreferences: Codable, Equatable {
     var speed = 1.0
     var seekSeconds = 10.0
     var subtitleSize = 100.0
+    var subtitleLineHeight: Double? = nil
+    var whisperAuto: Bool? = true
+    var whisperModel: String? = "base"
+    var videoCleanup: VideoCleanupSettings? = nil
     var subtitleFont = ""
     var subtitleColor = "#FFFFFF"
     var outlineColor = "#000000"

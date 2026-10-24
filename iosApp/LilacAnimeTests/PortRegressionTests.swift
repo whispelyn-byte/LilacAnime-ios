@@ -24,6 +24,8 @@ final class PortRegressionTests: XCTestCase {
         }).build()
         XCTAssertEqual(parts.count, 3)
         let key = try XCTUnwrap(parts.first { $0.url.path == "/shared.key" })
+        XCTAssertNotEqual(key.encrypted, true)
+        XCTAssertTrue(parts.filter { $0.url.pathExtension == "ts" }.allSatisfy { $0.encrypted == true })
         let rootText = try String(contentsOf: folder.appendingPathComponent(root), encoding: .utf8)
         for child in HLSData.references(rootText, base: folder.appendingPathComponent(root)) {
             let text = try String(contentsOf: child, encoding: .utf8)

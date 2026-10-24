@@ -7,6 +7,8 @@ final class CatalogRetryTests: XCTestCase {
         let date = Date(timeIntervalSince1970: 1000)
         var record = CatalogName(korean: "", english: "Title", overview: "", aliases: [], cast: [], anilist: 1, mal: 1, updated: date, credential: "key")
         XCTAssertFalse(record.isFresh(credential: "key", cast: false, now: date))
+        record.titleLookupRevision = 1
+        XCTAssertFalse(record.isFresh(credential: "key", cast: false, now: date), "Anissia must retry a title missed before the new dictionary was added")
         record.korean = "기존 제목"
         XCTAssertTrue(record.isFresh(credential: "key", cast: false, now: date))
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(record)) as? [String: Any])
@@ -16,7 +18,7 @@ final class CatalogRetryTests: XCTestCase {
     }
     func testTitleCacheUsesSevenDaysForDisplayAndThirtyDaysForBulk() {
         let date = Date(timeIntervalSince1970: 1000)
-        let record = CatalogName(korean: "", english: "Title", overview: "", aliases: [], cast: [], anilist: 1, mal: 1, updated: date, credential: "key", titleLookupRevision: 1, castPrepared: true)
+        let record = CatalogName(korean: "", english: "Title", overview: "", aliases: [], cast: [], anilist: 1, mal: 1, updated: date, credential: "key", titleLookupRevision: 2, castPrepared: true)
         XCTAssertTrue(record.isFresh(credential: "key", cast: true, now: date.addingTimeInterval(7 * 86400 - 1)))
         XCTAssertFalse(record.isFresh(credential: "key", cast: false, now: date.addingTimeInterval(7 * 86400)))
         XCTAssertTrue(record.isFresh(credential: "key", cast: true, bulk: true, now: date.addingTimeInterval(30 * 86400 - 1)))

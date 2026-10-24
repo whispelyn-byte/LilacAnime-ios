@@ -81,7 +81,7 @@ final class MiruroBrowser: NSObject, MiruroBrowserTransport {
             guard Date() < deadline else { pages[origin] = nil; page.stopLoading(); throw SubtitleFiles.failure("Miruro 페이지 연결 시간이 초과되었습니다.") }
             try await Task.sleep(nanoseconds: 150_000_000)
         }
-        let result = try await page.callAsyncJavaScript("""
+        let script = """
             if (location.origin !== origin) throw new Error('Miruro 페이지 주소가 변경되었습니다.');
             const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 15000);
             try {
@@ -91,7 +91,13 @@ final class MiruroBrowser: NSObject, MiruroBrowserTransport {
                 let text = ''; for (let i=0;i<bytes.length;i+=32768) text += String.fromCharCode(...bytes.subarray(i,i+32768));
                 return {status:r.status, type:r.headers.get('content-type')||'', mitigated:r.headers.get('cf-mitigated')||'', body:btoa(text)};
             } finally { clearTimeout(timer); }
-            """, arguments: ["address": url.absoluteString, "origin": origin], in: nil, contentWorld: .page)
+            """
+        let result = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Any?, Error>) in
+            LilacCallAsyncJavaScriptWithArguments(page, script, ["address": url.absoluteString, "origin": origin]) { value, error in
+                if let error { continuation.resume(throwing: error) }
+                else { continuation.resume(returning: value) }
+            }
+        }
         guard let packet = result as? [String: Any] else { throw SubtitleFiles.failure("Miruro 응답 오류") }
         return packet
     }

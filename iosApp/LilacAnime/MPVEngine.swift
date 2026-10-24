@@ -112,6 +112,7 @@ final class MPVEngine: ObservableObject {
         configureAnime4K()
         if configuredSpeed != settings.speed { configuredSpeed = settings.speed; setSpeed(settings.speed) }
         configure("sub-scale", (settings.subtitleSize / 100).description)
+        configure("sub-line-spacing", SubtitleLineSpacing.points(settings.subtitleLineHeight).description)
         configure("sub-delay", settings.subtitleOffset.description)
         configure("sub-font", SubtitleAppearance.font(settings.subtitleFont))
         configure("sub-color", settings.subtitleColor); configure("sub-border-color", settings.outlineColor)
@@ -128,21 +129,22 @@ final class MPVEngine: ObservableObject {
         configure("sub-fonts-dir", SubtitleFiles.fontDirectory.path)
     }
     private var assOverride: String { SubtitleAppearance.assOverride(extension: pendingSubtitle?.pathExtension, translated: translatedSubtitle, effects: preferences.assEffects, keepStyle: preferences.vttStyle != false) }
+    private var configuredCleanup: VideoCleanupSettings?
     private func configureAnime4K() {
         guard handle != nil else { return }
         let mode = Anime4KMode(saved: preferences.anime4k)
-        guard configuredAnime4K != mode else { return }
-        configuredAnime4K = mode; anime4kError = nil
+        guard configuredAnime4K != mode || configuredCleanup != preferences.videoCleanup else { return }
+        configuredAnime4K = mode; configuredCleanup = preferences.videoCleanup; anime4kError = nil
         anime4kReply &+= 1
         do {
-            let paths = try mode.paths()
+            let paths = try VideoCleanup.paths(preferences.videoCleanup) + mode.paths()
             let result = set("glsl-shaders", paths.joined(separator: ":"), replyID: anime4kReply)
             if result < 0 { failAnime4K() }
         } catch { failAnime4K() }
     }
     private func failAnime4K() {
-        guard let mode = configuredAnime4K, mode != .off, anime4kError == nil else { return }
-        anime4kError = "Anime4K를 적용하지 못해 원본 영상으로 돌아왔습니다. 다른 모드를 선택해 다시 시도할 수 있어요."
+        guard configuredAnime4K != nil, anime4kError == nil else { return }
+        anime4kError = "영상 보정을 적용하지 못해 원본 영상으로 돌아왔습니다. 다른 모드를 선택해 다시 시도할 수 있어요."
         // Leave the saved choice intact, but do not retry on every subtitle/settings update.
         set("glsl-shaders", "")
     }

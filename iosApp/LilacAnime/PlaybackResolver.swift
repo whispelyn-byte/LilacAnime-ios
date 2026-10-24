@@ -311,6 +311,10 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
                     guard let raw = track["url"], let url = URL(string: raw), !resolver.subtitles.contains(where: { $0.url == url }) else { continue }
                     resolver.subtitles.append(RemoteSubtitle(label: track["label"] ?? track["language"] ?? "자막", url: url, language: track["language"] ?? "und", headers: selected.headers))
                 }
+                let readable: Bool
+                do { readable = try await HLSData.readable(selected) }
+                catch { try Task.checkCancellation(); readable = true }
+                guard readable else { throw SubtitleFiles.failure("RE:Anime 서버의 영상을 읽을 수 없습니다. 다른 서버를 시도합니다.") }
                 selected.subtitles = resolver.subtitles
                 resolver.webView.pauseAllMediaPlayback(completionHandler: nil)
                 resolver.streams = [selected]

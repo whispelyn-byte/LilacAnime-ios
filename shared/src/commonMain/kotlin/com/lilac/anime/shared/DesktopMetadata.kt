@@ -100,9 +100,10 @@ class DesktopMetadataRepository(private val client: HttpClient = newSharedClient
             if (prequels.size > 128) prequels.remove(prequels.keys.first())
         }
     }
+    private val anissiaTitles = AnissiaTitleCatalog(client)
     private val tmdb = TmdbTitleResolver(client, tmdbGate)
     private suspend fun media(anime: Anime, includeCast: Boolean): JsonObject {
-        val query = "query(" + "$" + "id:Int," + "$" + "search:String){Page(perPage:5){media(id:" + "$" + "id,search:" + "$" + "search,type:ANIME,sort:SEARCH_MATCH){id idMal format synonyms title{native romaji english}" + (if (includeCast) " characters(perPage:25,sort:[ROLE,RELEVANCE]){nodes{name{full native first last} gender}}" else "") + "}}}"
+        val query = "query(" + "$" + "id:Int," + "$" + "search:String){Page(perPage:5){media(id:" + "$" + "id,search:" + "$" + "search,type:ANIME,sort:SEARCH_MATCH){id idMal format startDate{year month day} synonyms title{native romaji english}" + (if (includeCast) " characters(perPage:25,sort:[ROLE,RELEVANCE]){nodes{name{full native first last} gender}}" else "") + "}}}"
         val variables = buildJsonObject { if (anime.anilistId != null) put("id", anime.anilistId) else put("search", anime.native.ifBlank { anime.romaji.ifBlank { anime.title } }) }
         val root = Json.parseToJsonElement(client.post("https://graphql.anilist.co") {
             contentType(ContentType.Application.Json); setBody(buildJsonObject { put("query", query); put("variables", variables) }.toString())
@@ -135,6 +136,19 @@ class DesktopMetadataRepository(private val client: HttpClient = newSharedClient
             catch (error: Exception) { titleFailure = error.message ?: "TMDB 요청 실패"; tmdbFailure = error as? TmdbFailure }
         }
         val media = if (includeCast || aliases.isEmpty() || anime.english.isBlank()) attempt { media(anime, includeCast) } ?: JsonObject(emptyMap()) else JsonObject(emptyMap())
+        if (names.none { TitleCandidates.isKorean(it) }) {
+            val native = anime.native.ifBlank { media.obj("title").text("native") }
+            val date = media.obj("startDate")
+            val start = anime.airedDate.ifBlank {
+                if (date.number("year") != null) "${date.number("year")}-${(date.number("month") ?: 1).toString().padStart(2, '0')}-${(date.number("day") ?: 1).toString().padStart(2, '0')}" else ""
+            }
+            val korean = attempt { anissiaTitles.title(native, anime.title, start, anime.format.ifBlank { media.text("format") }) }.orEmpty()
+            if (korean.isNotEmpty()) {
+                aliases.add(0, korean)
+                val withoutYear = korean.replace(Regex("\\s*\\((?:19|20)\\d{2}\\)\\s*"), " ").trim()
+                if (withoutYear != korean) aliases.add(1, withoutYear)
+            }
+        }
         if (aliases.isEmpty()) aliases += media.list("synonyms").mapNotNull { (it as? JsonPrimitive)?.content }.filter { TitleCandidates.isKorean(it) }
         val anilist = anime.anilistId ?: media.number("id") ?: 0
         val mal = anime.malId ?: media.number("idMal") ?: 0

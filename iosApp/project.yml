@@ -4,6 +4,9 @@ options:
   deploymentTarget:
     iOS: "16.0"
 packages:
+  WhisperKit:
+    url: https://github.com/argmaxinc/argmax-oss-swift.git
+    exactVersion: 0.18.0
   MPVKit:
     url: https://github.com/mpvkit/MPVKit.git
     exactVersion: 1.0.0
@@ -53,6 +56,8 @@ targets:
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
     dependencies:
+      - package: WhisperKit
+        product: WhisperKit
       - package: MPVKit
         product: MPVKit
       - package: libarchive

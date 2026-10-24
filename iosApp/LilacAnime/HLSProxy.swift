@@ -64,6 +64,33 @@ enum HLSData {
         data.append(contentsOf: chunk)
         return (data, http)
     }
+    /// AES-128 segments must reach the HLS decoder byte-for-byte, even if named .png or .ts.
+    static func encryptedSegments(_ text: String, base: URL) -> Set<URL> {
+        var encrypted = false, result: Set<URL> = []
+        for raw in text.components(separatedBy: .newlines) {
+            let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if line.hasPrefix("#EXT-X-KEY:") { encrypted = line.range(of: #"(?:^|,)METHOD=AES-128(?:,|$)"#, options: .regularExpression, range: line.index(line.startIndex, offsetBy: 11)..<line.endIndex) != nil }
+            else if encrypted, !line.isEmpty, !line.hasPrefix("#"), let url = URL(string: line, relativeTo: base)?.absoluteURL { result.insert(url) }
+        }
+        return result
+    }
+    static func readable(_ stream: ResolvedStream) async throws -> Bool {
+        var url = stream.url
+        for _ in 0..<5 {
+            let (data, response) = try await fetch(url, stream: stream, timeout: 6)
+            url = response.url ?? url
+            let text = try manifest(data, key: stream.manifestKey)
+            guard let entry = text.components(separatedBy: .newlines).map({ $0.trimmingCharacters(in: .whitespacesAndNewlines) }).first(where: { !$0.isEmpty && !$0.hasPrefix("#") }),
+                  let target = URL(string: entry, relativeTo: url)?.absoluteURL else { return true }
+            if text.contains("#EXTINF") {
+                if encryptedSegments(text, base: url).contains(target) { return true }
+                let (bytes, _) = try await fetch(target, stream: stream, range: "bytes=0-4095", timeout: 6)
+                return isMedia(transportStream(bytes))
+            }
+            url = target
+        }
+        return true
+    }
     static func manifest(_ data: Data, key: String?) throws -> String {
         if let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), text.hasPrefix("#EXTM3U") { return text }
         guard let key, let bytes = Data(base64Encoded: key), !bytes.isEmpty,
@@ -251,6 +278,7 @@ final class HLSProxy {
         var proxied = stream; proxied.url = url; proxied.headers = [:]; proxied.manifestKey = nil; proxied.hlsManifest = nil
         return proxied
     }
+    private var encrypted: Set<URL> = []
     private func register(_ url: URL) -> URL {
         let key = SubtitleFiles.key(url.absoluteString)
         routes[key] = url
@@ -285,17 +313,21 @@ final class HLSProxy {
         let range = lines.first { $0.lowercased().hasPrefix("range:") }.map { String($0.dropFirst(6)).trimmingCharacters(in: .whitespaces) }
         Task {
             do {
-                let segment = ["png", "webp", "html"].contains(url.pathExtension.lowercased())
+                let aes = self.queue.sync { self.encrypted.contains(url) }
+                let segment = !aes && ["png", "webp", "html"].contains(url.pathExtension.lowercased())
                 let (data, response) = segment ? try await media.load(url, stream: stream) : try await HLSData.fetch(url, stream: stream, range: stream.manifestKey == nil ? range : nil)
                 var body = data
                 var contentType = response.mimeType ?? "application/octet-stream"
                 if url.pathExtension.lowercased() == "m3u8" || contentType.contains("mpegurl") || (url == stream.url && stream.hlsManifest != nil) {
                     let text = HLSData.selectVariant(try HLSData.manifest(data, key: stream.manifestKey), quality: self.quality)
-                    await media.order(HLSData.references(text, base: url).filter { ["png", "webp", "html"].contains($0.pathExtension.lowercased()) })
+                    let encrypted = HLSData.encryptedSegments(text, base: url)
+                    let references = HLSData.references(text, base: url)
+                    self.queue.sync { self.encrypted.subtract(references); self.encrypted.formUnion(encrypted) }
+                    await media.order(references.filter { !encrypted.contains($0) && ["png", "webp", "html"].contains($0.pathExtension.lowercased()) })
                     body = Data(self.queue.sync { HLSData.rewrite(text, base: url) { self.register($0).absoluteString } }.utf8)
                     contentType = "application/vnd.apple.mpegurl"
                 } else if segment { contentType = body.first == 71 ? "video/mp2t" : "video/mp4" }
-                else if stream.manifestKey != nil && (url.pathExtension == "ts" || contentType.hasPrefix("image/")) { body = try HLSData.validatedFragment(data); contentType = "video/mp2t" }
+                else if !aes && stream.manifestKey != nil && (url.pathExtension == "ts" || contentType.hasPrefix("image/")) { body = try HLSData.validatedFragment(data); contentType = "video/mp2t" }
                 var headers = ["Content-Type": contentType, "Accept-Ranges": "bytes"]
                 if !segment, let value = response.value(forHTTPHeaderField: "Content-Range") { headers["Content-Range"] = value }
                 var status = segment ? 200 : response.statusCode

@@ -66,6 +66,13 @@ internal class AnissiaDiscovery(private val repository: SourceRepository, privat
             val website = maker.optString("website")
             if (!website.startsWith("https://") || makerWebsite.isNotBlank() && website != makerWebsite) continue
             try {
+                if (CommunityAssets.folderId(website) != null) {
+                    val number = episodeKey.toDoubleOrNull()?.takeIf { it.isFinite() && it > 0 } ?: episode.toDouble()
+                    val match = CommunityMatch(CommunityPost(subjectTitle, website, ""), listOf(website), episode, false,
+                        bundle = true, episodeNumber = number, fileSeason = askedSeason)
+                    output += downloads.assets(match, "Anissia · " + maker.optString("name"), "anissia", subjectTitle)
+                    continue
+                }
                 val address = Url(website)
                 if (address.host in listOf("kairan03.blogspot.com", "csora556.blogspot.com")) continue
                 val origin = address.protocol.name + "://" + address.host

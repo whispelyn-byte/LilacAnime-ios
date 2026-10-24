@@ -162,6 +162,7 @@ struct SettingsView: View {
                 SettingChoices(options: [("auto", "자동"), ("kairan", "Kairan"), ("csora", "Csora"), ("anissia", "Anissia"), ("jimaku", "Jimaku"), ("manual", "직접 선택")],
                                selection: Binding(get: { store.preferences.subtitleProvider ?? "auto" }, set: { store.preferences.subtitleProvider = $0 }))
             }
+            SubtitleLineSpacingControl(value: $store.preferences.subtitleLineHeight)
             SettingBlock(title: "기본 자막 크기 (\(Int(store.preferences.subtitleSize))%)") {
                 Slider(value: $store.preferences.subtitleSize, in: 50...300, step: 10).tint(LilacStyle.accent).accessibilityLabel("기본 자막 크기")
             }
@@ -223,6 +224,7 @@ struct SettingsView: View {
             SettingBlock(title: "번역 엔진", note: "Gemini · OpenAI · Qwen · Claude는 작품 정보와 등장인물 이름을 함께 보내 대사 흐름에 맞게 번역하고, DeepL은 줄마다 그대로 번역합니다. 로컬 AI는 인터넷 없이 이 기기에서 번역합니다.") {
                 SettingChoices(options: ["gemini", "openai", "deepl", "qwen", "claude", "local"].map { ($0, SubtitleLabels.engine($0)) }, selection: $store.preferences.translationProvider)
             }
+            WhisperSettingsView()
             if store.preferences.translationProvider != "local" { cloudBlocks }
             NavigationLink(value: Destination.localModels) {
                 SettingLinkLabel(title: "로컬 AI 모델 (llama.cpp)", detail: store.preferences.selectedGGUF.isEmpty ? "모델을 받거나 GGUF 파일을 가져옵니다." : "사용 중: " + store.preferences.selectedGGUF)

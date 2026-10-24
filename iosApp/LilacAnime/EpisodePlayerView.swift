@@ -63,6 +63,12 @@ final class EpisodePlayerModel: ObservableObject {
     let resolver = PlaybackResolver()
     let translation = TranslationCoordinator()
     let pretranslation = TranslationCoordinator()
+    let whisper = WhisperSubtitles()
+    private let whisperLive = WhisperLiveTranslation()
+    private let nextWhisper = WhisperSubtitles()
+    private var whisperStartTask: Task<Void, Never>?
+    @Published private(set) var whisperStatus = ""
+
     private let preparer: DesktopSubtitlePreparer
     let jimaku: DesktopJimakuCatalog
     private let nextResolver = PlaybackResolver()
@@ -290,6 +296,7 @@ final class EpisodePlayerModel: ObservableObject {
         let item = DownloadStore.shared.offline(item) ?? item
         resolutionTask?.cancel(); selectionTask?.cancel()
         if remember { previous.append(self.item) }
+        whisper.cancel(); nextWhisper.cancel(); whisperLive.cancel(); whisperStartTask?.cancel()
         save(library: library); engine.pause(); proxy?.stop(); proxy = nil; stopPrefetch(); automaticTask?.cancel(); translation.cancel(); cast.stop()
         cancelSubtitleBackground(); preparer.cancel(); cancelSync()
         generation = UUID(); titleLookup.cancel(); searchTitle = item.anime.title; self.item = item; active = nil; subtitle = nil; sourceSubtitle = nil; assets = []; subtitleFiles = []; chapters = []; selectedProvider = ""; koreanFound = false; skipEntered = nil
@@ -545,11 +552,47 @@ final class EpisodePlayerModel: ObservableObject {
                     guard token == generation, request == subtitleRequest, subtitle == nil, !Task.isCancelled else { return }
                     subtitleFiles = [prepared.0]
                     selectSubtitle(prepared.0, library: library, provider: prepared.1, automatic: true)
+                } else if token == generation, request == subtitleRequest, subtitle == nil, !Task.isCancelled,
+                          library.preferences.whisperAuto != false, WhisperModels.shared.folder(library.preferences.whisperModel ?? "base") != nil {
+                    startWhisper(library: library, manual: false)
                 }
             } catch is CancellationError { }
             catch { if token == generation { self.error = error.localizedDescription } }
         }
     }
+    func startWhisper(library: LibraryStore, manual: Bool = true) {
+        if whisper.running { if manual { whisper.cancel(); whisperLive.cancel(); whisperStatus = "음성 인식 중단" }; return }
+        whisperStartTask?.cancel(); whisperLive.cancel(); nextWhisper.cancel()
+        let token = generation
+        if manual { automaticTask?.cancel(); translation.cancel(); selectedProvider = "whisper"; pressedSource = "whisper" }
+        whisperStartTask = Task {
+            for _ in 0..<100 {
+                if engine.duration > 0 { break }
+                do { try await Task.sleep(nanoseconds: 100_000_000) } catch { return }
+            }
+            guard !Task.isCancelled, token == generation, let video = syncVideo else { return }
+            whisper.start(video: video, key: item.anime.id + "#" + item.episodeID, model: library.preferences.whisperModel ?? "base",
+                position: { [weak self] in self?.engine.position ?? 0 }, receive: { [weak self, weak library] file, lines, complete in
+                    guard let self, let library, token == self.generation else { return }
+                    self.whisperStatus = complete ? "Whisper 자막 저장 완료" : "Whisper \(lines.count)줄 인식 · 눌러서 중단"
+                    guard !lines.isEmpty else { return }
+                    EpisodeSubtitleStore.shared.save(file, item: self.item, provider: "whisper", translated: false)
+                    if self.subtitle == nil || self.selectedProvider == "whisper" {
+                        self.selectedProvider = "whisper"; self.sourceSubtitle = file; self.subtitle = file
+                        self.engine.subtitle(file, translated: false)
+                    }
+                    if let preferences = library.preferences.translationPreferences(automatic: true) {
+                        self.whisperLive.update(lines, complete: complete, original: file, preferences: preferences, anime: self.item.anime) { [weak self] output in
+                            guard let self, token == self.generation else { return }
+                            EpisodeSubtitleStore.shared.save(output, item: self.item, provider: "whisper", translated: true, original: file)
+                            if self.selectedProvider == "whisper" { self.subtitle = output; self.engine.subtitle(output, translated: true) }
+                        }
+                    }
+                    if complete { self.prefetchNext(library: library, token: token) }
+                }, failed: { [weak self] message in self?.whisperStatus = message; if manual { self?.notify(message) } })
+        }
+    }
+
     func translate(library: LibraryStore, fresh: Bool = false, provider: String? = nil, manual: Bool = true) {
         if manual { subtitleRequest = UUID(); automaticTask?.cancel(); cancelSubtitleBackground() }
         stopPrefetch()
@@ -823,7 +866,7 @@ final class EpisodePlayerModel: ObservableObject {
     /// Each subtitle put on is synced once, as soon as the episode's length is known, or right after a sync still running.
     /// A translation is timed as the file it was made from, so it is not run again when that file was.
     func checkSubtitleSync(_ url: URL, library: LibraryStore) {
-        guard library.preferences.subtitleSyncCheck != false, !SubtitleAutoSync.isSynced(url), !syncChecked.contains(url) else { return }
+        guard selectedProvider != "whisper", library.preferences.subtitleSyncCheck != false, !SubtitleAutoSync.isSynced(url), !syncChecked.contains(url) else { return }
         if let original = EpisodeSubtitleStore.shared.list(item).first(where: { $0.file == url })?.original, syncChecked.contains(original) { return }
         let token = generation
         Task {
@@ -999,7 +1042,12 @@ final class EpisodePlayerModel: ObservableObject {
             prefetchStatus = "다음 화 자막 준비 중"
             do {
                 try Task.checkCancellation()
-                guard token == generation, let prepared = try await preparer.prepare(next, tracks: tracks, preferences: preferences, prefersAI: false, stream: streams.first) else { prefetchStatus = nil; return }
+                guard token == generation else { return }
+                guard let prepared = try await preparer.prepare(next, tracks: tracks, preferences: preferences, prefersAI: false, stream: streams.first) else {
+                    if library.preferences.whisperAuto != false, let stream = streams.first { await prepareWhisper(next, stream: stream, preferences: preferences, token: token) }
+                    else { prefetchStatus = nil }
+                    return
+                }
                 if EpisodeSubtitleStore.shared.list(next).contains(where: { $0.file == prepared.0 && $0.translated }) { prefetchStatus = "다음 화 번역 자막 저장 완료"; return }
                 EpisodeSubtitleStore.shared.save(prepared.0, item: next, provider: prepared.1, translated: false)
                 if await SubtitleFiles.isKorean(prepared.0) { prefetchStatus = "다음 화 한국어 자막 저장 완료"; return }
@@ -1028,6 +1076,40 @@ final class EpisodePlayerModel: ObservableObject {
     /// it ("… · 자동 싱크"). Only by a site track (seconds, nothing downloaded) and after the player's own syncs, so the
     /// episode playing never waits behind it; without a track the episode is synced when it opens. Left as it is (and
     /// not kept) when the sync finds nothing better.
+    private func prepareWhisper(_ next: PlaybackItem, stream: ResolvedStream, preferences: AppPreferences, token: UUID) async {
+        guard WhisperModels.shared.folder(preferences.whisperModel ?? "base") != nil,
+              !DesktopSubtitlePolicy.burnedKorean(source: next.anime.source, stream: stream) else { return }
+        while whisper.running || translation.running {
+            do { try await Task.sleep(nanoseconds: 500_000_000) } catch { return }
+        }
+        guard token == generation, !Task.isCancelled else { return }
+        let relay = HLSProxy()
+        defer { relay.stop(); nextWhisper.cancel() }
+        do {
+            let playable = stream.url.isFileURL ? stream : try await relay.start(stream, quality: preferences.quality)
+            let duration = try await AVURLAsset(url: playable.url).load(.duration).seconds
+            guard duration.isFinite, duration > 0, token == generation, !Task.isCancelled else { return }
+            prefetchStatus = "다음 화 Whisper 음성 인식 중"
+            var finished: URL?
+            nextWhisper.start(video: SubtitleAutoSync.Video(url: playable.url, headers: playable.headers, duration: duration),
+                key: next.anime.id + "#" + next.episodeID, model: preferences.whisperModel ?? "base", position: { 0 },
+                receive: { file, lines, complete in
+                    guard token == self.generation, !lines.isEmpty else { return }
+                    EpisodeSubtitleStore.shared.save(file, item: next, provider: "whisper", translated: false)
+                    if complete { finished = file }
+                }, failed: { message in if token == self.generation { self.prefetchStatus = message } })
+            while nextWhisper.running && !Task.isCancelled { try await Task.sleep(nanoseconds: 250_000_000) }
+            guard token == generation, !Task.isCancelled, let file = finished else { return }
+            prefetchStatus = "다음 화 Whisper 자막 번역 중"
+            pretranslation.translate(file, preferences: preferences, anime: next.anime, background: true) { output in
+                guard token == self.generation else { return }
+                EpisodeSubtitleStore.shared.save(output, item: next, provider: "whisper", translated: true, original: file)
+            }
+            while pretranslation.running && !Task.isCancelled { try await Task.sleep(nanoseconds: 250_000_000) }
+            if token == generation { prefetchStatus = "다음 화 Whisper 자막 준비 완료" }
+        } catch { if token == generation && !Task.isCancelled { prefetchStatus = error.localizedDescription } }
+    }
+
     private func syncPrepared(_ file: URL, item next: PlaybackItem, provider: String, translated: Bool, original: URL?, tracks: [RemoteSubtitle]) async {
         var references: [URL] = []
         for track in SubtitleAutoSync.referenceTracks(tracks) {
@@ -1051,6 +1133,7 @@ final class EpisodePlayerModel: ObservableObject {
         pictureInPicture.stop()
         subtitleClassification?.cancel()
         resolutionTask?.cancel(); selectionTask?.cancel()
+        whisper.cancel(); nextWhisper.cancel(); whisperLive.cancel(); whisperStartTask?.cancel()
         save(library: library); stopPrefetch(); automaticTask?.cancel(); cancelSubtitleBackground(); preparer.cancel(); cancelSync(); generation = UUID(); miruroRecoveryTask?.cancel(); miruroRecoveryTask = nil; engine.shutdown(); resolver.cancel(); translation.shutdown(); service.cancel(); titleLookup.cancel(); proxy?.stop(); proxy = nil; cast.stop()
     }
 }
@@ -1252,6 +1335,7 @@ struct EpisodePlayerView: View {
             PSNote("맞춤은 원본 비율을 지키고, 채움은 가장자리를 잘라 화면을 채우고, 늘림은 화면 전체로 늘립니다.")
         }
         Group {
+            VideoCleanupControls(settings: $library.preferences.videoCleanup, engine: model.engine)
             PSGroup("Anime4K 영상 보정")
             PlayerChoiceGrid(options: Anime4KMode.allCases.map { ($0.rawValue, $0.title) }, selection: Binding(get: {
                 Anime4KMode(saved: library.preferences.anime4k).rawValue
@@ -1336,6 +1420,7 @@ struct EpisodePlayerView: View {
         Group {
             PSSwitch(title: "자막 표시", detail: "끄면 자막을 숨깁니다", isOn: Binding(get: { model.engine.subtitlesVisible }, set: { _ in model.engine.toggleSubtitleVisibility() }))
                 .padding(.top, 6)
+            Button(model.whisperStatus.isEmpty ? "Whisper 음성 자막 만들기" : model.whisperStatus) { model.startWhisper(library: library) }
             Text(subtitleStateText).font(.system(size: 12)).foregroundStyle(.white.opacity(0.66)).fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 2).accessibilityIdentifier("player-subtitle-state")
             if model.translatable { translateRow }
@@ -1433,6 +1518,7 @@ struct EpisodePlayerView: View {
     /// The desktop's 자막 모양 tab (data-ps-pane="style"), with its ranges.
     @ViewBuilder private var styleSettings: some View {
         Group {
+            SubtitleLineSpacingControl(value: $library.preferences.subtitleLineHeight)
             PSLabel(title: "자막 크기", value: "\(Int(library.preferences.subtitleSize))%")
             Slider(value: $library.preferences.subtitleSize, in: 50...180, step: 5).accessibilityLabel("자막 크기")
             PSLabel(title: "자막 높이", value: "\(Int(library.preferences.subtitlePadding))%")

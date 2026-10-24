@@ -13,6 +13,7 @@ def git(*args):
 shared = 'shared/src/commonMain/kotlin/com/lilac/anime/shared/'
 ios = 'iosApp/LilacAnime/'
 mapping = {
+ 'electron/popup-policy.cjs': [ios+'WebPopupPolicy.swift','iosApp/LilacAnimeTests/WebPopupPolicyTests.swift'],
  'electron/miruro-session.cjs': [ios+'MiruroBrowser.swift',shared+'MiruroTransport.kt'],
  'electron/miruro-browser.cjs': [ios+'MiruroBrowser.swift',shared+'DesktopSources.kt'],
  'electron/whisper.cjs': [ios+'WhisperSubtitles.swift',ios+'NativeAudio.m'],

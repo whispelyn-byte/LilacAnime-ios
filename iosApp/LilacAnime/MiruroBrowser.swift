@@ -67,7 +67,7 @@ final class MiruroBrowser: NSObject, MiruroBrowserTransport {
     @MainActor private func page(_ origin: String) async throws -> WKWebView {
         if let page = pages[origin] { return page }
         let config = WKWebViewConfiguration(); config.websiteDataStore = .default()
-        let page = WKWebView(frame: CGRect(x: 0, y: 0, width: 960, height: 640), configuration: config)
+        let page = ProviderWebView.make(frame: CGRect(x: 0, y: 0, width: 960, height: 640), configuration: config)
         page.load(URLRequest(url: URL(string: origin + "/")!))
         pages[origin] = page
         return page
@@ -105,7 +105,7 @@ final class MiruroBrowser: NSObject, MiruroBrowserTransport {
         let origin = Self.origin(url)
         let controller = MiruroVerificationController(origin: origin)
         let config = WKWebViewConfiguration(); config.websiteDataStore = .default()
-        let web = WKWebView(frame: .zero, configuration: config)
+        let web = ProviderWebView.make(configuration: config)
         controller.web = web; web.navigationDelegate = controller
         let nav = UINavigationController(rootViewController: controller)
         guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first(where: { $0.activationState == .foregroundActive }),

@@ -30,7 +30,7 @@ import WebKit
         let child = try await web.evaluateJavaScript("frames[0].open('about:blank') === null")
         XCTAssertEqual(main as? Bool, true)
         XCTAssertEqual(child as? Bool, true)
-        _ = try await web.evaluateJavaScript("document.getElementById('blank').click(); frames[0].document.getElementById('blank').click();")
+        _ = try await web.evaluateJavaScript("document.getElementById('blank').click(); frames[0].document.getElementById('blank').click(); true")
         for _ in 0..<100 {
             if PagePopupBlocker.shared.blockedWindows >= before + 4 { break }
             try await Task.sleep(nanoseconds: 50_000_000)

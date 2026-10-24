@@ -26,6 +26,9 @@ final class DesktopLatestPortTests: XCTestCase {
         let output = WhisperSubtitleFile.vtt([WhisperLine(start: 31, end: 32, text: "<声>&"), WhisperLine(start: 1, end: 2, text: "先")])
         XCTAssertTrue(output.contains("&lt;声&gt;&amp;"))
         XCTAssertLessThan(output.range(of: "00:00:01.000")!.lowerBound, output.range(of: "00:00:31.000")!.lowerBound)
+        // Binary floating-point must not turn 1001 ms into 1000 and lose the live translation's cue key.
+        let precise = WhisperSubtitleFile.vtt([WhisperLine(start: 1.001, end: 2.001, text: "声")])
+        XCTAssertTrue(precise.contains("00:00:01.001 --> 00:00:02.001"))
     }
     func testMiruroChallengeIsDifferentFromAnUnsolvableBlock() {
         func packet(_ html: String) -> [String: Any] { ["status": 403, "type": "text/html", "body": Data(html.utf8).base64EncodedString()] }

@@ -22,7 +22,7 @@ enum WhisperSubtitleFile {
     }
     static func vtt(_ lines: [WhisperLine]) -> String {
         func stamp(_ value: Double) -> String {
-            let ms = Int(max(0, value) * 1000)
+            let ms = Int((max(0, value) * 1000).rounded())
             return String(format: "%02d:%02d:%02d.%03d", ms / 3_600_000, ms / 60_000 % 60, ms / 1000 % 60, ms % 1000)
         }
         return "WEBVTT\n\n" + lines.sorted { $0.start < $1.start }.map {

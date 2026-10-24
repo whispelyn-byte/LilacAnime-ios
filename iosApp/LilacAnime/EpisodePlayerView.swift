@@ -500,6 +500,7 @@ final class EpisodePlayerModel: ObservableObject {
     }
     func selectSubtitle(_ url: URL, library: LibraryStore, translate: Bool = true, provider: String? = nil, automatic: Bool = false) {
         subtitleClassification?.cancel()
+        whisper.cancel(); whisperLive.cancel(); whisperStartTask?.cancel(); whisperStatus = ""
         subtitleRequest = UUID(); translation.cancel()
         stopPrefetch(); cancelSubtitleBackground()
         let saved = EpisodeSubtitleStore.shared.list(item).first { $0.file == url }
@@ -568,7 +569,10 @@ final class EpisodePlayerModel: ObservableObject {
         whisperStartTask?.cancel(); whisperLive.cancel(); nextWhisper.cancel()
         whisperStatus = "Whisper 음성 준비 중"
         let token = generation
-        if manual { automaticTask?.cancel(); translation.cancel(); selectedProvider = "whisper"; pressedSource = "whisper" }
+        if manual {
+            subtitleRequest = UUID(); subtitleClassification?.cancel(); automaticTask?.cancel(); cancelSubtitleBackground(); cancelSync()
+            translation.cancel(); selectedProvider = "whisper"; pressedSource = "whisper"
+        }
         whisperStartTask = Task {
             for _ in 0..<100 {
                 if engine.duration > 0 { break }
@@ -1038,7 +1042,7 @@ final class EpisodePlayerModel: ObservableObject {
                     await syncPrepared(found.0, item: next, provider: found.1, translated: false, original: nil, tracks: tracks)
                 }
             }
-            guard !korean, !Task.isCancelled, token == generation else { return }
+            guard !korean, wantsSubtitle || translating != nil, !Task.isCancelled, token == generation else { return }
             let preferences = translating ?? library.preferences
             // The episode playing translates first.
             while !Task.isCancelled && token == generation && (translation.running || whisper.running) {

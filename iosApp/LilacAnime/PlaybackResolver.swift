@@ -498,7 +498,8 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
       const emit = (u, kind='video', label='', language='', referer=location.href) => {
         try {
           const url = new URL(u, location.href).href;
-          if (/runative|magsrv|juneworewyjyna|pxltag/i.test(url)) return;
+          const address = new URL(url);
+          if (/runative|magsrv|juneworewyjyna|pxltag/i.test(url) || /(?:^|[./_-])ad(?:s|server|vert\\w*)?(?=[./_-]|$)/i.test(address.hostname + address.pathname)) return;
           if (seen.has(url)) return;
           if (kind === 'video' && !/\\.(m3u8|mp4|mkv|webm)(?:[?#]|$)/i.test(url)) return;
           seen.add(url);

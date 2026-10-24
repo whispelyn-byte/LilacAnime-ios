@@ -315,7 +315,7 @@ final class EpisodePlayerModel: ObservableObject {
             do {
                 proxy?.stop(); proxy = nil
                 var playable = stream
-                if stream.manifestKey != nil || stream.hlsManifest != nil || (library.preferences.quality != "Auto" && stream.url.pathExtension.lowercased() == "m3u8" && !stream.url.isFileURL) {
+                if stream.manifestKey != nil || stream.hlsManifest != nil || (stream.url.pathExtension.lowercased() == "m3u8" && !stream.url.isFileURL) {
                     let proxy = HLSProxy(); self.proxy = proxy; playable = try await proxy.start(stream, quality: library.preferences.quality)
                 }
                 guard token == generation, playing == playRequest else { return }
@@ -524,6 +524,9 @@ final class EpisodePlayerModel: ObservableObject {
         let korean = await isKoreanSubtitle(url)
         guard !Task.isCancelled, token == generation, request == subtitleRequest, subtitle == url else { return }
         if !automatic && saved?.translated != true && korean { library.preferAI(false, animeID: item.anime.id) }
+        if selectedProvider == "whisper", let sourceSubtitle, !WhisperSubtitleFile.complete(sourceSubtitle, duration: engine.duration) {
+            startWhisper(library: library, manual: false); return
+        }
         if translate && selectedProvider != "user" && saved?.translated != true && library.preferences.translationPreferences(automatic: true) != nil && !korean { self.translate(library: library, manual: false) }
         if automatic && saved?.translated != true && !korean && !["kairan", "csora", "anissia", "user"].contains(selectedProvider) { offerKorean(library: library) }
         prefetchNext(library: library, token: generation)
@@ -983,7 +986,7 @@ final class EpisodePlayerModel: ObservableObject {
     }
 
     private func stopPrefetch() {
-        prefetchTask?.cancel(); prefetchTask = nil; pretranslation.cancel(); nextResolver.cancel(); prefetchStatus = nil
+        nextWhisper.cancel(); prefetchTask?.cancel(); prefetchTask = nil; pretranslation.cancel(); nextResolver.cancel(); prefetchStatus = nil
     }
     /// 다음 화 미리 준비 (desktop prepareNext, 설정 > 재생): while an episode plays, the next one is made ready in the
     /// background, each part as 설정 says: its stream (영상: found now, used when the episode opens if it still answers),
@@ -1033,9 +1036,10 @@ final class EpisodePlayerModel: ObservableObject {
                     await syncPrepared(found.0, item: next, provider: found.1, translated: false, original: nil, tracks: tracks)
                 }
             }
-            guard !korean, let preferences = translating, !Task.isCancelled, token == generation else { return }
+            guard !korean, !Task.isCancelled, token == generation else { return }
+            let preferences = translating ?? library.preferences
             // The episode playing translates first.
-            while !Task.isCancelled && token == generation && (translation.running || subtitle == nil) {
+            while !Task.isCancelled && token == generation && (translation.running || whisper.running) {
                 do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
             }
             guard !Task.isCancelled, token == generation else { return }
@@ -1044,13 +1048,14 @@ final class EpisodePlayerModel: ObservableObject {
                 try Task.checkCancellation()
                 guard token == generation else { return }
                 guard let prepared = try await preparer.prepare(next, tracks: tracks, preferences: preferences, prefersAI: false, stream: streams.first) else {
-                    if library.preferences.whisperAuto != false, let stream = streams.first { await prepareWhisper(next, stream: stream, preferences: preferences, token: token) }
+                    if library.preferences.whisperAuto != false, let stream = streams.first { await prepareWhisper(next, stream: stream, preferences: preferences, translate: translating != nil, token: token) }
                     else { prefetchStatus = nil }
                     return
                 }
                 if EpisodeSubtitleStore.shared.list(next).contains(where: { $0.file == prepared.0 && $0.translated }) { prefetchStatus = "다음 화 번역 자막 저장 완료"; return }
                 EpisodeSubtitleStore.shared.save(prepared.0, item: next, provider: prepared.1, translated: false)
                 if await SubtitleFiles.isKorean(prepared.0) { prefetchStatus = "다음 화 한국어 자막 저장 완료"; return }
+                guard translating != nil else { prefetchStatus = "다음 화 원본 자막 저장 완료"; return }
                 prefetchStatus = "다음 화 미리 번역 중"
                 var translated: URL?
                 pretranslation.translate(prepared.0, preferences: preferences, anime: next.anime, background: true) { output in
@@ -1076,7 +1081,7 @@ final class EpisodePlayerModel: ObservableObject {
     /// it ("… · 자동 싱크"). Only by a site track (seconds, nothing downloaded) and after the player's own syncs, so the
     /// episode playing never waits behind it; without a track the episode is synced when it opens. Left as it is (and
     /// not kept) when the sync finds nothing better.
-    private func prepareWhisper(_ next: PlaybackItem, stream: ResolvedStream, preferences: AppPreferences, token: UUID) async {
+    private func prepareWhisper(_ next: PlaybackItem, stream: ResolvedStream, preferences: AppPreferences, translate: Bool, token: UUID) async {
         guard WhisperModels.shared.folder(preferences.whisperModel ?? "base") != nil,
               !DesktopSubtitlePolicy.burnedKorean(source: next.anime.source, stream: stream) else { return }
         while whisper.running || translation.running {
@@ -1100,6 +1105,7 @@ final class EpisodePlayerModel: ObservableObject {
                 }, failed: { message in if token == self.generation { self.prefetchStatus = message } })
             while nextWhisper.running && !Task.isCancelled { try await Task.sleep(nanoseconds: 250_000_000) }
             guard token == generation, !Task.isCancelled, let file = finished else { return }
+            guard translate else { prefetchStatus = "다음 화 Whisper 자막 저장 완료"; return }
             prefetchStatus = "다음 화 Whisper 자막 번역 중"
             pretranslation.translate(file, preferences: preferences, anime: next.anime, background: true) { output in
                 guard token == self.generation else { return }

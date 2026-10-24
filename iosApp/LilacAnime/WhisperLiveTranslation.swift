@@ -6,7 +6,7 @@ import LilacShared
     private let translator = TranslationCoordinator()
     private var task: Task<Void, Never>?
     private var lines: [WhisperLine] = []
-    private var translated: [Double: String] = [:]
+    private var translated: [Int: String] = [:]
     private var sent: Set<Double> = []
     private var finished = false
     private var generation = UUID()
@@ -15,6 +15,11 @@ import LilacShared
     func update(_ lines: [WhisperLine], complete: Bool, original: URL, preferences: AppPreferences, anime: SavedAnime,
                 receive: @escaping (URL) -> Void) {
         self.lines = lines; finished = complete
+        if !translated.isEmpty {
+            let all = lines.map { WhisperLine(start: $0.start, end: $0.end, text: translated[Int(($0.start * 1000).rounded())] ?? $0.text) }
+            let result = original.deletingPathExtension().appendingPathExtension("ko.vtt")
+            if (try? Data(WhisperSubtitleFile.vtt(all).utf8).write(to: result, options: .atomic)) != nil { receive(result) }
+        }
         guard task == nil, failures < 2 else { return }
         let token = generation
         task = Task {
@@ -31,8 +36,8 @@ import LilacShared
                 translator.translate(input, preferences: preferences, anime: anime) { [weak self] output in
                     guard let self, token == self.generation,
                           let content = try? SubtitleFiles.text(output) else { return }
-                    for cue in SubtitleTools.shared.cues(content: content, extension: "vtt") { self.translated[cue.startSeconds] = cue.text }
-                    let all = self.lines.map { WhisperLine(start: $0.start, end: $0.end, text: self.translated[$0.start] ?? $0.text) }
+                    for cue in SubtitleTools.shared.cues(content: content, extension: "vtt") { self.translated[Int((cue.startSeconds * 1000).rounded())] = cue.text }
+                    let all = self.lines.map { WhisperLine(start: $0.start, end: $0.end, text: self.translated[Int(($0.start * 1000).rounded())] ?? $0.text) }
                     let result = original.deletingPathExtension().appendingPathExtension("ko.vtt")
                     if (try? Data(WhisperSubtitleFile.vtt(all).utf8).write(to: result, options: .atomic)) != nil { receive(result) }
                     if !output.lastPathComponent.hasPrefix("working-") { succeeded = true }

@@ -6,7 +6,8 @@ import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.datetime.*
+import kotlin.time.Clock
+import kotlin.time.Instant
 import kotlinx.serialization.json.*
 
 /** Anissia's Japanese/Korean title pairs, including season and remake dates. */
@@ -21,7 +22,7 @@ internal object AnissiaCatalogRules {
     }
     fun key(text: String) = season.replace(normalizeDesktopTitle(text).lowercase(), "")
         .replace(Regex("(?:^|\\s)(?:ii|iii|iv|v)\\s*$"), "").filter { it.isLetterOrDigit() }
-    private fun day(text: String): Long? = runCatching { LocalDate.parse(text.take(10)).toEpochDays().toLong() }.getOrNull()
+    private fun day(text: String): Long? = runCatching { Instant.parse(text.take(10) + "T00:00:00Z").toEpochMilliseconds() / 86_400_000 }.getOrNull()
     fun match(items: List<JsonObject>, native: String, title: String, start: String, format: String): String {
         val wanted = key(native); if (wanted.length < 2) return ""
         val movie = format.equals("MOVIE", true) || "劇場版" in native

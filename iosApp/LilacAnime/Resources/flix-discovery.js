@@ -10,6 +10,8 @@
   const emit = url => {
     try {
       url = new URL(url,location.href).href;
+      const address = new URL(url);
+      if (/(?:^|[./_-])ad(?:s|server|vert\w*)?(?=[./_-]|$)/i.test(address.hostname + address.pathname)) return;
       if (seen.has(url) || !/\.(m3u8|mp4|webm)(?:\?|$)/i.test(url) || /runative|magsrv|juneworewyjyna|pxltag/i.test(url)) return;
       seen.add(url); post({url,kind:'video',referer:location.href,pk:key()});
     } catch (_) {}

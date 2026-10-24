@@ -37,3 +37,9 @@ const blocked=page(true);
 assert.equal(blocked.messages[0].kind,'flixError');
 assert.equal(blocked.counts.plays,0);assert.equal(blocked.window.__lilacFlixDiscovery.stopped,true);
 console.log('Flix discovery: late keys, separate tracks, play button, embedded subtitles, blocked page and stopped hidden playback passed.');
+
+const adFixture=page();
+adFixture.media.push('https://cdn.test/content.m3u8?token=a87cad42', 'https://cdn.test/ads/video.m3u8');
+adFixture.window.__lilacFlixDiscovery.scan();
+assert.ok(adFixture.messages.some(m=>m.url==='https://cdn.test/content.m3u8?token=a87cad42'));
+assert.ok(!adFixture.messages.some(m=>m.url==='https://cdn.test/ads/video.m3u8'));

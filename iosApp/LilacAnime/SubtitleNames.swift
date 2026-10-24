@@ -127,7 +127,7 @@ enum SiteTrackOrder {
 /// by where they came from, not by file name; the user's own files keep their name.
 enum SubtitleLabels {
     static func provider(_ value: String) -> String {
-        ["linkkf": "Linkkf", "reanime": "사이트", "kairan": "Kairan", "csora": "Csora", "anissia": "Anissia", "jimaku": "Jimaku",
+        ["whisper": "Whisper", "linkkf": "Linkkf", "reanime": "사이트", "kairan": "Kairan", "csora": "Csora", "anissia": "Anissia", "jimaku": "Jimaku",
          "provider": "제공", "download": "다운로드", "user": "내"][value] ?? value
     }
     static func engine(_ value: String) -> String {

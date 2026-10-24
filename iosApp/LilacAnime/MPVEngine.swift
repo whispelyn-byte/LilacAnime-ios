@@ -223,10 +223,11 @@ final class MPVEngine: ObservableObject {
     func clearViewerSeek() { viewerSeek = nil }
     func skip(_ delta: Double) { seekByViewer(position + delta) }
     func subtitle(_ file: URL, translated: Bool = false) {
+        let reload = pendingSubtitle == file
         pendingSubtitle = file; translatedSubtitle = translated
         configure("sub-ass-override", assOverride)
         configure("embeddedfonts", translated ? "no" : "yes")
-        if fileLoaded { command(["sub-add", file.path, "select"]) }
+        if fileLoaded { command(["sub-add", file.path, "select"]); if reload { command(["sub-reload"]) } }
     }
     func reloadSubtitle() { command(["sub-reload"]) }
     func selectTrack(_ track: MediaTrack) { set(track.type == "audio" ? "aid" : "sid", track.id.description) }

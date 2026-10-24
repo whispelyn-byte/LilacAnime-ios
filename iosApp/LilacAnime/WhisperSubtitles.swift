@@ -15,6 +15,11 @@ enum WhisperSubtitleFile {
         let current = min(count - 1, max(0, Int(max(0, position.isFinite ? position : 0) / 30)))
         return (Array(current..<count) + Array(0..<current)).first { !completed.contains($0) }
     }
+    static func complete(_ file: URL, duration: Double) -> Bool {
+        guard let data = try? Data(contentsOf: file.deletingPathExtension().appendingPathExtension("json")),
+              let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let chunks = value["chunks"] as? [Int] else { return false }
+        return nextChunk(duration: duration, position: 0, completed: Set(chunks)) == nil
+    }
     static func vtt(_ lines: [WhisperLine]) -> String {
         func stamp(_ value: Double) -> String {
             let ms = Int(max(0, value) * 1000)
@@ -30,7 +35,7 @@ enum WhisperSubtitleFile {
 @MainActor final class WhisperModels: ObservableObject {
     static let shared = WhisperModels()
     static let variants = ["tiny", "base", "small", "large-v3-v20240930_626MB"]
-    nonisolated static let root = SubtitleFiles.root.appendingPathComponent("WhisperModels", isDirectory: true)
+    nonisolated static let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("WhisperModels", isDirectory: true)
     @Published private(set) var downloading: String?
     @Published private(set) var progress = 0.0
     @Published private(set) var installed: [String: String] = UserDefaults.standard.dictionary(forKey: "whisper-model-folders") as? [String: String] ?? [:]
@@ -135,7 +140,7 @@ private actor WhisperRuntime {
                     let samples = try await Self.audio(video, start: start, length: length, cancellation: cancellation)
                     var lines = try await WhisperRuntime.shared.recognize(samples, folder: folder)
                     try Task.checkCancellation(); guard token == generation else { return }
-                    lines = lines.filter { $0.start < length }.map { WhisperLine(start: start + max(0, $0.start), end: start + min(length, $0.end), text: $0.text) }
+                    lines = lines.filter { $0.start < length }.map { WhisperLine(start: floor((start + max(0, $0.start)) * 1000) / 1000, end: floor((start + min(length, $0.end)) * 1000) / 1000, text: $0.text) }
                     saved.lines += lines; saved.chunks.insert(chunk)
                     let snapshot = saved
                     try await Task.detached(priority: .utility) {

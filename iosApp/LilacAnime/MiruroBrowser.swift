@@ -46,7 +46,12 @@ final class MiruroBrowser: NSObject, MiruroBrowserTransport {
             }
         }
     }
-    func cancel(id: String) { Task { @MainActor in jobs[id]?.cancel() } }
+    func cancel(id: String) {
+        Task { @MainActor in
+            jobs[id]?.cancel(); jobs[id] = nil
+            if jobs.isEmpty { verification.values.forEach { $0.cancel() }; verification.removeAll() }
+        }
+    }
     static func stopped(_ text: String) -> NSError { SubtitleFiles.failure("MIRURO_STOP: " + text) }
     static func blockedError() -> NSError { stopped("Miruro가 현재 접속을 차단했습니다. 인증으로 해제할 수 없는 화면입니다. 다른 소스를 선택하거나 잠시 후 다시 시도해 주세요.") }
     static func text(_ result: [String: Any]) -> String {

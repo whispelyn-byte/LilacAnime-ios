@@ -65,6 +65,10 @@ enum HLSData {
         return (data, http)
     }
     /// AES-128 segments must reach the HLS decoder byte-for-byte, even if named .png or .ts.
+    static func mediaSegments(_ text: String, base: URL) -> Set<URL> {
+        guard text.contains("#EXTINF") else { return [] }
+        return Set(text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty && !$0.hasPrefix("#") }.compactMap { URL(string: $0, relativeTo: base)?.absoluteURL })
+    }
     static func encryptedSegments(_ text: String, base: URL) -> Set<URL> {
         var encrypted = false, result: Set<URL> = []
         for raw in text.components(separatedBy: .newlines) {
@@ -279,6 +283,7 @@ final class HLSProxy {
         return proxied
     }
     private var encrypted: Set<URL> = []
+    private var mediaRoutes: Set<URL> = []
     private func register(_ url: URL) -> URL {
         let key = SubtitleFiles.key(url.absoluteString)
         routes[key] = url
@@ -314,7 +319,7 @@ final class HLSProxy {
         Task {
             do {
                 let aes = self.queue.sync { self.encrypted.contains(url) }
-                let segment = !aes && ["png", "webp", "html"].contains(url.pathExtension.lowercased())
+                let segment = !aes && self.queue.sync { self.mediaRoutes.contains(url) }
                 let (data, response) = segment ? try await media.load(url, stream: stream) : try await HLSData.fetch(url, stream: stream, range: stream.manifestKey == nil ? range : nil)
                 var body = data
                 var contentType = response.mimeType ?? "application/octet-stream"
@@ -322,7 +327,7 @@ final class HLSProxy {
                     let text = HLSData.selectVariant(try HLSData.manifest(data, key: stream.manifestKey), quality: self.quality)
                     let encrypted = HLSData.encryptedSegments(text, base: url)
                     let references = HLSData.references(text, base: url)
-                    self.queue.sync { self.encrypted.subtract(references); self.encrypted.formUnion(encrypted) }
+                    self.queue.sync { self.encrypted.subtract(references); self.encrypted.formUnion(encrypted); self.mediaRoutes.formUnion(HLSData.mediaSegments(text, base: url)) }
                     await media.order(references.filter { !encrypted.contains($0) && ["png", "webp", "html"].contains($0.pathExtension.lowercased()) })
                     body = Data(self.queue.sync { HLSData.rewrite(text, base: url) { self.register($0).absoluteString } }.utf8)
                     contentType = "application/vnd.apple.mpegurl"

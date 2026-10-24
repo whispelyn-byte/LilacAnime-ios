@@ -29,7 +29,7 @@ struct WatermarkMask: Codable {
 }
 
 enum VideoCleanup {
-    static let root = SubtitleFiles.root.appendingPathComponent("VideoCleanup", isDirectory: true)
+    static let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("VideoCleanup", isDirectory: true)
     static let maskFile = root.appendingPathComponent("watermark.json")
     static func store(_ mask: WatermarkMask) throws {
         guard mask.valid else { throw SubtitleFiles.failure("워터마크 마스크 형식이 올바르지 않습니다.") }
@@ -67,20 +67,13 @@ enum VideoCleanup {
         } else {
             for r in water { script += "if(inside(p,vec4(\(r.x),\(r.y),\(r.width),\(r.height))))c.rgb=fillRegion(p,vec4(\(r.x),\(r.y),\(r.width),\(r.height)));\n" }
         }
-        // Restrict text detection to the chosen rectangles; retain non-text pixels and fill contrasting strokes.
-        for r in subs {
-            script += """
-            if(inside(p,vec4(\(r.x),\(r.y),\(r.width),\(r.height)))){
-                vec2 px=2.0/HOOKED_size;float low=1.0,high=0.0;vec3 sum=vec3(0.0);float weight=0.0;
-                for(int yy=-2;yy<=2;yy++)for(int xx=-2;xx<=2;xx++){float v=lum(HOOKED_tex(p+vec2(xx,yy)*px).rgb);low=min(low,v);high=max(high,v);}
-                if(high-low>0.35&&(high>0.75||low<0.2)){
-                    for(int d=3;d<=10;d++){vec3 u=HOOKED_tex(p+vec2(0,d)*px).rgb,v=HOOKED_tex(p-vec2(0,d)*px).rgb;sum+=u+v;weight+=2.0;}
-                    c.rgb=sum/max(weight,1.0);
-                }
-            }
-            """
-        }
         script += "return c;}\n"
+        if !subs.isEmpty {
+            guard let url = Bundle.main.url(forResource: "subtitle-cleanup", withExtension: "glsl") else { throw SubtitleFiles.failure("영상 자막 정리 셰이더가 없습니다.") }
+            let rects = subs.map { "vec4(\($0.x),\($0.y),\($0.width),\($0.height))" }
+            let constants = "const int uRectCount=\(rects.count); const vec4 uRects[4]=vec4[4](" + (rects + Array(repeating: "vec4(0.0)", count: 4 - rects.count)).joined(separator: ",") + ");\n"
+            script += try String(contentsOf: url).replacingOccurrences(of: "// REGION_CONSTANTS", with: constants)
+        }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let file = root.appendingPathComponent(SubtitleFiles.key(script) + ".glsl")
         if !FileManager.default.fileExists(atPath: file.path) { try Data(script.utf8).write(to: file, options: .atomic) }

@@ -43,4 +43,15 @@ final class DesktopLatestPortTests: XCTestCase {
         XCTAssertEqual(SubtitleLineSpacing.points(nil), 0)
         XCTAssertEqual(SubtitleLineSpacing.points(150), 18)
     }
+    func testBundledSubtitleCleanupResolvesAllThreePasses() throws {
+        var settings = VideoCleanupSettings()
+        settings.subtitles = true
+        settings.subtitleRegions = [CleanupRegion(x: 0.1, y: 0.75, width: 0.8, height: 0.2)]
+        let path = try XCTUnwrap(VideoCleanup.paths(settings).first)
+        let source = try String(contentsOfFile: path, encoding: .utf8)
+        XCTAssertTrue(source.contains("//!SAVE LilacText"))
+        XCTAssertTrue(source.contains("//!SAVE LilacWide"))
+        XCTAssertTrue(source.contains("//!DESC Lilac subtitle fill"))
+        XCTAssertFalse(source.contains("// REGION_CONSTANTS"))
+    }
 }

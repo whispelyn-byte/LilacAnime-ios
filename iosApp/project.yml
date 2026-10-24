@@ -33,7 +33,9 @@ targets:
     platform: iOS
     sources:
       - path: LilacAnime
-        excludes: [Info.plist, Resources/Anime4K]
+        excludes: [Info.plist, Resources/Anime4K, Resources/subtitle-cleanup.glsl]
+      - path: LilacAnime/Resources/subtitle-cleanup.glsl
+        buildPhase: resources
       - path: LilacAnime/Resources/Anime4K
         type: folder
         buildPhase: resources

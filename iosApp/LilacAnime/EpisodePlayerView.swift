@@ -1623,6 +1623,7 @@ struct PlayerControls: View {
     @State private var locked = false
     @State private var interaction = UUID()
     @State private var feedback = ""
+    @State private var seekHint: PlayerSeekHint?
     @State private var takingScreenshot = false
     private var windowInsets: UIEdgeInsets { UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first(where: \.isKeyWindow)?.safeAreaInsets ?? .zero }
     var body: some View {
@@ -1680,6 +1681,21 @@ struct PlayerControls: View {
                     VStack { Spacer(); HStack { Spacer(); control("lock.open.fill", label: "잠금 해제") { locked = false; visible = true } }.padding(18) }
                 }
                 if !feedback.isEmpty { Text(feedback).font(.headline).multilineTextAlignment(.center).padding(14).background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 22)).padding(.horizontal, 24).allowsHitTesting(false) }
+                if let hint = seekHint, !locked {
+                    VStack(spacing: 2) {
+                        if let seconds = hint.seconds {
+                            Text("\(seconds > 0 ? "+" : "−")\(Int(abs(seconds)))초")
+                                .font(.system(size: 18, weight: .bold))
+                        }
+                        Text(clock(hint.target)).font(.system(size: 12)).monospacedDigit().foregroundStyle(.white.opacity(0.8))
+                    }
+                    .padding(.horizontal, 18).padding(.vertical, 10)
+                    .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 16))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity,
+                           alignment: hint.seconds.map { $0 < 0 ? .leading : .trailing } ?? .center)
+                    .padding(.horizontal, geometry.size.width * 0.12)
+                    .allowsHitTesting(false).accessibilityIdentifier("keyboard-seek-hint")
+                }
                 if engine.buffering { ProgressView().tint(.white).allowsHitTesting(false) }
                 if engine.speedBoosted { VStack { Text("2배속").font(.headline).padding(.horizontal, 18).padding(.vertical, 8).background(.black.opacity(0.75), in: Capsule()).accessibilityIdentifier("speed-boost"); Spacer() }.padding(.top, 72).allowsHitTesting(false) }
                 if let chapter, !locked, library.preferences.showSkipButton ?? true {
@@ -1689,8 +1705,8 @@ struct PlayerControls: View {
         }.foregroundStyle(.white).buttonStyle(.plain)
             .background {
                 Group {
-                    Button("") { engine.skip(-seek) }.keyboardShortcut(.leftArrow, modifiers: [])
-                    Button("") { engine.skip(seek) }.keyboardShortcut(.rightArrow, modifiers: [])
+                    Button("") { keyboardSeek(-seek) }.keyboardShortcut(.leftArrow, modifiers: [])
+                    Button("") { keyboardSeek(seek) }.keyboardShortcut(.rightArrow, modifiers: [])
                     Button("") { engine.setVolume(engine.volume + 5) }.keyboardShortcut(.upArrow, modifiers: [])
                     Button("") { engine.setVolume(engine.volume - 5) }.keyboardShortcut(.downArrow, modifiers: [])
                     Button("") { engine.toggleMute() }.keyboardShortcut("m", modifiers: [])
@@ -1705,12 +1721,17 @@ struct PlayerControls: View {
                         Button("") { changeSpeed(0.25) }.keyboardShortcut("]", modifiers: [])
                         Button("") { if canNext { next() } }.keyboardShortcut(.pageDown, modifiers: [])
                         Button("") { if canPrevious { previous() } }.keyboardShortcut(.pageUp, modifiers: [])
-                        ForEach(0..<10) { digit in Button("") { engine.seekByViewer(engine.duration * Double(digit) / 10) }.keyboardShortcut(KeyEquivalent(Character(String(digit))), modifiers: []) }
+                        ForEach(0..<10) { digit in Button("") { keyboardJump(digit) }.keyboardShortcut(KeyEquivalent(Character(String(digit))), modifiers: []) }
                     }
                 }.disabled(locked || !keyboardEnabled).frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
             }
             .background(SpaceHoldKeyboard(enabled: keyboardEnabled && !locked,
                 began: engine.beginSpaceHold, ended: { engine.finishSpaceHold(toggle: true); touch() }, cancelled: { engine.finishSpaceHold() }).frame(width: 0, height: 0))
+            .task(id: seekHint?.id) {
+                guard let hint = seekHint else { return }
+                do { try await Task.sleep(nanoseconds: 800_000_000) } catch { return }
+                if seekHint?.id == hint.id { seekHint = nil }
+            }
             .onChange(of: holdingSpeed) { holding in if !holding { endHold(); engine.finishSpaceHold() } }
             .onDisappear { engine.finishSpaceHold() }
             .task(id: interaction) {
@@ -1720,6 +1741,14 @@ struct PlayerControls: View {
             }
             .onChange(of: engine.paused) { paused in if paused { visible = true }; touch() }
             .onChange(of: toast) { note in if let note { flash(note.text, seconds: 2.2) } }
+    }
+    private func keyboardSeek(_ seconds: Double) {
+        guard let hint = PlayerSeekHint.relative(seconds, position: engine.position, duration: engine.duration, previous: seekHint) else { return }
+        engine.seekByViewer(hint.target); seekHint = hint
+    }
+    private func keyboardJump(_ digit: Int) {
+        guard let hint = PlayerSeekHint.jump(digit, duration: engine.duration) else { return }
+        engine.seekByViewer(hint.target); seekHint = hint
     }
     private func shiftSubtitle(_ delta: Double) {
         adjustSubtitle(delta)
@@ -1771,7 +1800,7 @@ struct PlayerControls: View {
     private func control(_ name: String, label: String, enabled: Bool = true, action: @escaping () -> Void) -> some View {
         Button { action(); touch() } label: { icon(name).opacity(enabled ? 1 : 0.3) }.disabled(!enabled).accessibilityLabel(label)
     }
-    private func touch() { interaction = UUID() }
+    private func touch() { seekHint = nil; interaction = UUID() }
     private func clock(_ seconds: Double) -> String {
         let value = seconds.isFinite ? max(0, Int(seconds)) : 0
         return value >= 3600 ? String(format: "%d:%02d:%02d", value / 3600, value % 3600 / 60, value % 60) : String(format: "%02d:%02d", value / 60, value % 60)

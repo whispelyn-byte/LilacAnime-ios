@@ -57,7 +57,7 @@ mapping = {
  'src/catalog-updates.js': [ios+'DesktopRecentUpdates.swift',ios+'HomeView.swift',ios+'DesktopShell.swift'],
  'src/index.html': [ios+'DesktopShell.swift',ios+'DesktopWorkspace.swift',ios+'SettingsView.swift',ios+'EpisodePlayerView.swift'],
  'src/ott.js': [ios+'HomeView.swift',ios+'UIComponents.swift'],
- 'src/player.js': [ios+'EpisodePlayerView.swift',ios+'MPVEngine.swift',ios+'PlayerInteraction.swift'],
+ 'src/player.js': [ios+'EpisodePlayerView.swift',ios+'MPVEngine.swift',ios+'PlayerInteraction.swift',ios+'PlayerSeekHint.swift'],
  'src/device-sync.js': [ios+'DeviceSync.swift',ios+'SettingsView.swift'],
  'scripts/build-jassub.cjs': ['iosApp/project.yml',ios+'MPVEngine.swift'],
  'scripts/build-windows-icon.cjs': ['iosApp/project.yml'],

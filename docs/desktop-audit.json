@@ -1,10 +1,10 @@
 {
-  "desktopCommit": "39de49cfa9b566eff05e257e3c48a47600417254",
-  "desktopVersion": "0.5.52",
+  "desktopCommit": "ad341f4722826504ee25b263ec37b95433e7e49f",
+  "desktopVersion": "0.5.53",
   "files": [
     {
       "desktop": ".github/workflows/build.yml",
-      "sha256": "5fbd6509d7bf59c95d6cd72fe232eeb2bc1df497ea89a37ce0695e594c7981dc",
+      "sha256": "82a21c71d1318fc9304f1dfb90e506a517623a3c512a34859253c6046fd0409d",
       "uncommitted": false,
       "category": "platform-build",
       "ios": [
@@ -129,7 +129,7 @@
     },
     {
       "desktop": "electron/local-ai.cjs",
-      "sha256": "4abc5f05bf154fd914c08a53a4aff8c7168cca7e3b8273ec4e65790825c0ef0d",
+      "sha256": "eac1963b536bc95e3d95facd851d256b24ba3e0fa064c01346881159e1bd1e99",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -143,7 +143,7 @@
     },
     {
       "desktop": "electron/main.cjs",
-      "sha256": "58c17c9017ae1b87191bd129ee541a9c22eacc150d61ddbde4edf5100976947d",
+      "sha256": "4758e9c7c1e63ae5d950cff34cb78287f7d80cb7a200464df639a8856c826510",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -278,7 +278,7 @@
     },
     {
       "desktop": "electron/updater.cjs",
-      "sha256": "f5b00942b962c7af1f51c4efad99c8911fe76180e137d39cf3989dfc30b5ba43",
+      "sha256": "bef1f6b67a72ba79dbff40494c5ef674bb6a55c71d144d76cacc53cf3b374a3e",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -316,7 +316,7 @@
     },
     {
       "desktop": "package-lock.json",
-      "sha256": "850b3a65e9764b05a0dcd162a3cc3e3123932105e67358a218d87c672f8f06e1",
+      "sha256": "cf2067ca40ed2316401d83993c9cbe4873a4459152a10aeaf17c2501a475ba2c",
       "uncommitted": false,
       "category": "platform-build",
       "ios": [
@@ -328,7 +328,7 @@
     },
     {
       "desktop": "package.json",
-      "sha256": "2810bfcfc87a1a6aa732a8dabcdd4c00976fdbaa1b2f890afcd91719859b1af7",
+      "sha256": "2bf08c5a85eaad111114c837dc270f8cd9986b8abac0243d2d12a87ddf147151",
       "uncommitted": false,
       "category": "platform-build",
       "ios": [
@@ -490,7 +490,7 @@
     },
     {
       "desktop": "src/index.html",
-      "sha256": "1e7802e0f66e4009cbd8437033ba3be402532a595dc798d29720355c3172e798",
+      "sha256": "0c992c37adcf69a2c20912923d9f957ef0c71a5086f6a75d22ca5c0a9362a213",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -582,7 +582,7 @@
     },
     {
       "desktop": "src/player-android.css",
-      "sha256": "6660ade9d0a50bf4fce9292421c574d91b37e17d9486255002beaa367aa0b3e1",
+      "sha256": "6785948b356e3dcd9e35bb6eda6256f13f86782d1892bca40191f32fe26ad95b",
       "uncommitted": false,
       "category": "native-layout",
       "ios": [
@@ -606,13 +606,14 @@
     },
     {
       "desktop": "src/player.js",
-      "sha256": "020b12ab396b57c09d8e50e88412203d655aa528a0c44cf6db1fdd9458591f39",
+      "sha256": "ac62ca05324dab8b1c90bec3e77560a670a68d00a574d55c431dacdc22c58a3d",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
         "iosApp/LilacAnime/EpisodePlayerView.swift",
         "iosApp/LilacAnime/MPVEngine.swift",
-        "iosApp/LilacAnime/PlayerInteraction.swift"
+        "iosApp/LilacAnime/PlayerInteraction.swift",
+        "iosApp/LilacAnime/PlayerSeekHint.swift"
       ]
     },
     {

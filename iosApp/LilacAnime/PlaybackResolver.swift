@@ -88,7 +88,7 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
         configuration.userContentController = controller
         configuration.allowsInlineMediaPlayback = true
         configuration.mediaTypesRequiringUserActionForPlayback = []
-        webView = WKWebView(frame: .zero, configuration: configuration)
+        webView = ProviderWebView.make(configuration: configuration)
         super.init()
         // Weak proxy avoids a content-controller -> self -> webView retain cycle.
         controller.add(WeakScriptHandler(self), name: "lilacMedia")
@@ -311,6 +311,10 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
                     guard let raw = track["url"], let url = URL(string: raw), !resolver.subtitles.contains(where: { $0.url == url }) else { continue }
                     resolver.subtitles.append(RemoteSubtitle(label: track["label"] ?? track["language"] ?? "자막", url: url, language: track["language"] ?? "und", headers: selected.headers))
                 }
+                let readable: Bool
+                do { readable = try await HLSData.readable(selected) }
+                catch { try Task.checkCancellation(); readable = true }
+                guard readable else { throw SubtitleFiles.failure("RE:Anime 서버의 영상을 읽을 수 없습니다. 다른 서버를 시도합니다.") }
                 selected.subtitles = resolver.subtitles
                 resolver.webView.pauseAllMediaPlayback(completionHandler: nil)
                 resolver.streams = [selected]
@@ -494,7 +498,8 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
       const emit = (u, kind='video', label='', language='', referer=location.href) => {
         try {
           const url = new URL(u, location.href).href;
-          if (/runative|magsrv|juneworewyjyna|pxltag/i.test(url)) return;
+          const address = new URL(url);
+          if (/runative|magsrv|juneworewyjyna|pxltag/i.test(url) || /(?:^|[./_-])ad(?:s|server|vert\\w*)?(?=[./_-]|$)/i.test(address.hostname + address.pathname)) return;
           if (seen.has(url)) return;
           if (kind === 'video' && !/\\.(m3u8|mp4|mkv|webm)(?:[?#]|$)/i.test(url)) return;
           seen.add(url);

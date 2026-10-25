@@ -13,6 +13,14 @@ def git(*args):
 shared = 'shared/src/commonMain/kotlin/com/lilac/anime/shared/'
 ios = 'iosApp/LilacAnime/'
 mapping = {
+ 'electron/popup-policy.cjs': [ios+'WebPopupPolicy.swift','iosApp/LilacAnimeTests/WebPopupPolicyTests.swift'],
+ 'electron/miruro-session.cjs': [ios+'MiruroBrowser.swift',shared+'MiruroTransport.kt'],
+ 'electron/miruro-browser.cjs': [ios+'MiruroBrowser.swift',shared+'DesktopSources.kt'],
+ 'electron/whisper.cjs': [ios+'WhisperSubtitles.swift',ios+'NativeAudio.m'],
+ 'electron/whisper-worker.py.cjs': [ios+'WhisperSubtitles.swift'],
+ 'src/whisper.js': [ios+'WhisperSubtitles.swift',ios+'WhisperLiveTranslation.swift',ios+'EpisodePlayerView.swift'],
+ 'src/video-cleanup.js': [ios+'VideoCleanup.swift',ios+'Resources/subtitle-cleanup.glsl'],
+ 'src/watermark-learner.js': [ios+'Resources/watermark-learner.js',ios+'VideoCleanup.swift'],
  'electron/miruro-playback.cjs': [ios+'MiruroPlayback.swift',ios+'EpisodePlayerView.swift'],
  'src/subtitle-source.js': [ios+'DesktopSubtitlePolicy.swift',ios+'DesktopSubtitlePreparer.swift',ios+'DownloadStore.swift'],
  'electron/provider-schedule.cjs': [shared+'WeeklySchedule.kt'],
@@ -79,6 +87,8 @@ groups.append(('defaultTranslationRules', [shared+'DesktopCloudPrompt.kt',ios+'T
 groups.append(('syncSubtitle retimeSubtitle prepareSubtitleSync cancelSubtitleSync onSubtitleSyncStatus syncPreparedSubtitle', [shared+'SubtitleSync.kt',ios+'SubtitleAutoSync.swift',ios+'EpisodePlayerView.swift']))
 groups.append(('prepareEpisodeStream useEpisodeStream streamAlive streamWarm', [ios+'EpisodePlayerView.swift',ios+'PlaybackResolver.swift',ios+'DesktopStreamPolicy.swift']))
 groups.append(('weeklySchedule providerSchedule', [shared+'WeeklySchedule.kt',shared+'IosServices.kt',ios+'WeeklyScheduleView.swift']))
+groups.append(('animeArtwork', [ios+'TitleArtwork.swift',shared+'DesktopArtwork.kt']))
+groups.append(('whisperStatus whisperSelect whisperInstall whisperDownload whisperRemove whisperTranscribe whisperCancel whisperJump onWhisperProgress', [ios+'WhisperSubtitles.swift',ios+'EpisodePlayerView.swift']))
 api_map = {name: targets for names,targets in groups for name in names.split()}
 apis = re.findall(r'^  (\w+):', (desktop/'electron/preload.cjs').read_text(encoding='utf-8'), re.M)
 assert apis, 'No preload APIs found'

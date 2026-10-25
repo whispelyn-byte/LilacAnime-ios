@@ -108,7 +108,7 @@ struct SettingsView: View {
     }
     private var general: some View {
         SettingsPage(title: "일반") {
-            SettingBlock(title: "작품 제목 표시", note: "번역된 제목은 TMDB, AniList, Wikidata에서 찾습니다. 찾지 못한 작품은 원래 제목으로 표시합니다.") {
+            SettingBlock(title: "작품 제목 표시", note: "한국어 제목은 Anissia, TMDB, AniList, Wikidata에서 찾습니다. 찾지 못한 작품은 원래 제목으로 표시합니다.") {
                 SettingChoices(options: [("original", "원래 제목"), ("ko", "한국어"), ("en", "영어")],
                                selection: Binding(get: { store.preferences.titleLanguage ?? "original" }, set: { store.preferences.titleLanguage = $0 }))
             }
@@ -162,6 +162,7 @@ struct SettingsView: View {
                 SettingChoices(options: [("auto", "자동"), ("kairan", "Kairan"), ("csora", "Csora"), ("anissia", "Anissia"), ("jimaku", "Jimaku"), ("manual", "직접 선택")],
                                selection: Binding(get: { store.preferences.subtitleProvider ?? "auto" }, set: { store.preferences.subtitleProvider = $0 }))
             }
+            SubtitleLineSpacingControl(value: $store.preferences.subtitleLineHeight)
             SettingBlock(title: "기본 자막 크기 (\(Int(store.preferences.subtitleSize))%)") {
                 Slider(value: $store.preferences.subtitleSize, in: 50...300, step: 10).tint(LilacStyle.accent).accessibilityLabel("기본 자막 크기")
             }
@@ -195,7 +196,7 @@ struct SettingsView: View {
         }
     }
     private var titles: some View {
-        SettingsPage(title: "한국어 제목 검색", intro: "Re:Anime·Animenosub·Miruro 작품의 한국어 제목을 TMDB, AniList, Wikidata 순으로 찾아 한국어로 보여 주고 Kairan·Csora·Anissia 자막을 검색합니다. TMDB가 가장 많은 작품을 찾으며, API 키가 있어야 사용됩니다.") {
+        SettingsPage(title: "한국어 제목 검색", intro: "Re:Anime·Animenosub·Miruro의 일본어 원제를 Anissia 제목 사전과 맞춰 한국어로 보여 주고 자막을 검색합니다. TMDB·AniList·Wikidata도 함께 사용하며, TMDB만 별도 API 키가 필요합니다.") {
             SettingBlock(title: "TMDB API 키", note: tmdbStatus ?? "themoviedb.org 설정 > API에서 발급한 API 키(v3) 또는 읽기 액세스 토큰을 넣을 수 있습니다. 키는 Keychain에 저장하고, 빈 키를 저장하면 삭제됩니다.") {
                 HStack(spacing: 6) {
                     SecureField("TMDB API 키 또는 읽기 액세스 토큰", text: $tmdbKey).textInputAutocapitalization(.never).autocorrectionDisabled().settingField()
@@ -223,6 +224,7 @@ struct SettingsView: View {
             SettingBlock(title: "번역 엔진", note: "Gemini · OpenAI · Qwen · Claude는 작품 정보와 등장인물 이름을 함께 보내 대사 흐름에 맞게 번역하고, DeepL은 줄마다 그대로 번역합니다. 로컬 AI는 인터넷 없이 이 기기에서 번역합니다.") {
                 SettingChoices(options: ["gemini", "openai", "deepl", "qwen", "claude", "local"].map { ($0, SubtitleLabels.engine($0)) }, selection: $store.preferences.translationProvider)
             }
+            WhisperSettingsView()
             if store.preferences.translationProvider != "local" { cloudBlocks }
             NavigationLink(value: Destination.localModels) {
                 SettingLinkLabel(title: "로컬 AI 모델 (llama.cpp)", detail: store.preferences.selectedGGUF.isEmpty ? "모델을 받거나 GGUF 파일을 가져옵니다." : "사용 중: " + store.preferences.selectedGGUF)

@@ -447,7 +447,7 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
                 failure = IllegalStateException("Miruro 응답 시간 초과")
             } catch (error: CancellationException) { throw error }
             catch (error: MiruroQueryFailure) { throw error }
-            catch (error: Exception) { if (error.message?.startsWith("MIRURO_STOP:") == true) throw error; failure = error }
+            catch (error: Exception) { failure = error }
         }
         throw failure ?: IllegalStateException("Miruro 연결 실패")
     }

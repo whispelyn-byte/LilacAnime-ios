@@ -1,10 +1,10 @@
 {
-  "desktopCommit": "ad341f4722826504ee25b263ec37b95433e7e49f",
-  "desktopVersion": "0.5.53",
+  "desktopCommit": "e4ac62214f5c4863eebae5052633e7f9f33dcbaa",
+  "desktopVersion": "0.5.54",
   "files": [
     {
       "desktop": ".github/workflows/build.yml",
-      "sha256": "82a21c71d1318fc9304f1dfb90e506a517623a3c512a34859253c6046fd0409d",
+      "sha256": "50866b4c3b3f61350b3989122f4209c5e85a77d58b627b03cdeb770900629e0d",
       "uncommitted": false,
       "category": "platform-build",
       "ios": [
@@ -143,7 +143,7 @@
     },
     {
       "desktop": "electron/main.cjs",
-      "sha256": "4758e9c7c1e63ae5d950cff34cb78287f7d80cb7a200464df639a8856c826510",
+      "sha256": "a050bfe73f9dd90ac9a20628a4d459cfbb12b1957d5a001ccdace29a40cd9fec",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -169,6 +169,7 @@
       "category": "runtime",
       "ios": [
         "iosApp/LilacAnime/MiruroBrowser.swift",
+        "iosApp/LilacAnime/MiruroWebView.swift",
         "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopSources.kt"
       ]
     },
@@ -180,16 +181,6 @@
       "ios": [
         "iosApp/LilacAnime/MiruroPlayback.swift",
         "iosApp/LilacAnime/EpisodePlayerView.swift"
-      ]
-    },
-    {
-      "desktop": "electron/miruro-session.cjs",
-      "sha256": "07fdd25e1043b3aa5d3903cc5e0dd0826d00fa9256edf8ab01f3797f25fd08d0",
-      "uncommitted": false,
-      "category": "runtime",
-      "ios": [
-        "iosApp/LilacAnime/MiruroBrowser.swift",
-        "shared/src/commonMain/kotlin/com/lilac/anime/shared/MiruroTransport.kt"
       ]
     },
     {
@@ -205,18 +196,8 @@
       ]
     },
     {
-      "desktop": "electron/popup-policy.cjs",
-      "sha256": "d05309fbd325a69c4599707050f4687a294fb218cbf78a81a9c45929009323bf",
-      "uncommitted": false,
-      "category": "runtime",
-      "ios": [
-        "iosApp/LilacAnime/WebPopupPolicy.swift",
-        "iosApp/LilacAnimeTests/WebPopupPolicyTests.swift"
-      ]
-    },
-    {
       "desktop": "electron/preload.cjs",
-      "sha256": "57ae2c63281ce0d5124b0d540491cbb8f971d50b8a45e3f97a4ea3880b485e0f",
+      "sha256": "cb98e966154be63693aadf417a19f3d903cf6bd7d8dc25ddd953e03877549546",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -278,7 +259,7 @@
     },
     {
       "desktop": "electron/updater.cjs",
-      "sha256": "bef1f6b67a72ba79dbff40494c5ef674bb6a55c71d144d76cacc53cf3b374a3e",
+      "sha256": "817a7a02e366104e2e8f68440c81a2ea6993824b2cc7fcd77c5a18cacb2f57c2",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -316,7 +297,7 @@
     },
     {
       "desktop": "package-lock.json",
-      "sha256": "cf2067ca40ed2316401d83993c9cbe4873a4459152a10aeaf17c2501a475ba2c",
+      "sha256": "23c86a4f610817edf287a4c9768ec14a66e2ec080e5ab13078fcd08b36f60ec9",
       "uncommitted": false,
       "category": "platform-build",
       "ios": [
@@ -328,7 +309,7 @@
     },
     {
       "desktop": "package.json",
-      "sha256": "2bf08c5a85eaad111114c837dc270f8cd9986b8abac0243d2d12a87ddf147151",
+      "sha256": "5d057d685057fb19ee94ea9ddbedfe15228d86555b092cb0e48c877a8520826f",
       "uncommitted": false,
       "category": "platform-build",
       "ios": [
@@ -398,7 +379,7 @@
     },
     {
       "desktop": "src/app.js",
-      "sha256": "a575b84691c3c343a18f2698c34422eb37bb5a3d30150c2a77a9feef45d829ef",
+      "sha256": "a05daeb99f359b685f06e1de7b5fdec6b1c51d4bd32aec9178242e19a92a35f1",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -958,17 +939,6 @@
       ]
     },
     {
-      "desktop": "tests/flix-popup.live.cjs",
-      "sha256": "36e29fdd328ed2180244981d145683bc0a2702e216c33982743d9935368e1e22",
-      "uncommitted": false,
-      "category": "validation",
-      "ios": [
-        "iosApp/LilacAnimeTests",
-        "iosApp/LilacAnimeUITests",
-        "shared/src/commonTest"
-      ]
-    },
-    {
       "desktop": "tests/flix-proxy.test.cjs",
       "sha256": "0f83d1d7fb14e7f23dfff911a785f5eeba676625df16d2bca07a24b1bdf16cd0",
       "uncommitted": false,
@@ -1025,7 +995,7 @@
     },
     {
       "desktop": "tests/miruro-browser.live.cjs",
-      "sha256": "b97094f7bc477fb1999af7d2024b9a6cc724a988dc3e38d3d7fec5b3a98c2aab",
+      "sha256": "de1b3b262b6c6d618cd3e46f81f88e2eb24624a8259d44e99fe4582d48a5e776",
       "uncommitted": false,
       "category": "validation",
       "ios": [
@@ -1068,19 +1038,8 @@
       ]
     },
     {
-      "desktop": "tests/miruro-session.test.cjs",
-      "sha256": "7fc6ff872715ee4c4bf94176fe6641f217a4ce0562968721dd03b97045ff83d2",
-      "uncommitted": false,
-      "category": "validation",
-      "ios": [
-        "iosApp/LilacAnimeTests",
-        "iosApp/LilacAnimeUITests",
-        "shared/src/commonTest"
-      ]
-    },
-    {
       "desktop": "tests/miruro.live.cjs",
-      "sha256": "0574c26503a3a474e593a1d9855a6edd2525b7551877e9a236dd391b0c89f4cb",
+      "sha256": "7961e98af87262baa069e6b13eeefabf7b86d312ce5d85bcdb46b0353ff04dc7",
       "uncommitted": false,
       "category": "validation",
       "ios": [
@@ -1103,28 +1062,6 @@
     {
       "desktop": "tests/player-interactions.test.cjs",
       "sha256": "08925950c8581ac8ab3a96e7abc109b5583d2d0fc57d62b8e911f2a65a2ad58b",
-      "uncommitted": false,
-      "category": "validation",
-      "ios": [
-        "iosApp/LilacAnimeTests",
-        "iosApp/LilacAnimeUITests",
-        "shared/src/commonTest"
-      ]
-    },
-    {
-      "desktop": "tests/popup-policy.live.cjs",
-      "sha256": "ef55673fcb4a4ca7ec392c11aee20bd99e3a1e18f69e6245143ff537011695f9",
-      "uncommitted": false,
-      "category": "validation",
-      "ios": [
-        "iosApp/LilacAnimeTests",
-        "iosApp/LilacAnimeUITests",
-        "shared/src/commonTest"
-      ]
-    },
-    {
-      "desktop": "tests/popup-policy.test.cjs",
-      "sha256": "6e0cb09b8209a7c9770c5ce27ead31eae8f9cdd777380b9906bba42e80c0a11a",
       "uncommitted": false,
       "category": "validation",
       "ios": [
@@ -1399,13 +1336,6 @@
       ]
     },
     {
-      "name": "linkkfPlay",
-      "ios": [
-        "iosApp/LilacAnime/PlaybackResolver.swift",
-        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopSources.kt"
-      ]
-    },
-    {
       "name": "linkkfResolve",
       "ios": [
         "iosApp/LilacAnime/PlaybackResolver.swift",
@@ -1508,13 +1438,6 @@
       "ios": [
         "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
         "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt"
-      ]
-    },
-    {
-      "name": "providerPlay",
-      "ios": [
-        "iosApp/LilacAnime/PlaybackResolver.swift",
-        "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopSources.kt"
       ]
     },
     {

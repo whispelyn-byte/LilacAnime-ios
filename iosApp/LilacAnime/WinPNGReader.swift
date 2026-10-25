@@ -5,7 +5,7 @@ import LilacShared
 /// Runs the post's own WinPNG/Jamaker converter, as the desktop hidden browser does.
 @MainActor
 final class WinPNGReader: NSObject, WKNavigationDelegate {
-    private let webView = ProviderWebView.make()
+    private let webView = WKWebView(frame: .zero)
     private var pending: CheckedContinuation<[[String: String]], Error>?
     private var timeout: Task<Void, Never>?
     static func subtitle(_ url: URL, episode: Double, matched: Bool) async throws -> URL? {

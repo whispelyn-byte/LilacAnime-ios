@@ -3,7 +3,7 @@ import WebKit
 import LilacShared
 @MainActor
 final class TitleLookup: NSObject {
-    private let web = ProviderWebView.make()
+    private let web = WKWebView()
     private var continuation: CheckedContinuation<String?, Never>?
     private var task: Task<Void, Never>?
     private var generation = UUID()

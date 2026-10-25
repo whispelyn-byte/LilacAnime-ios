@@ -30,11 +30,7 @@ final class DesktopLatestPortTests: XCTestCase {
         let precise = WhisperSubtitleFile.vtt([WhisperLine(start: 1.001, end: 2.001, text: "声")])
         XCTAssertTrue(precise.contains("00:00:01.001 --> 00:00:02.001"))
     }
-    func testMiruroChallengeIsDifferentFromAnUnsolvableBlock() {
-        func packet(_ html: String) -> [String: Any] { ["status": 403, "type": "text/html", "body": Data(html.utf8).base64EncodedString()] }
-        XCTAssertTrue(MiruroBrowser.challenge(packet("Just a moment /cdn-cgi/challenge-platform/")))
-        XCTAssertFalse(MiruroBrowser.blocked(packet("Just a moment")))
-        XCTAssertTrue(MiruroBrowser.blocked(packet("Sorry, you have been blocked")))
+    func testMiruroRequestsStayWithinAllowedAPIOrigins() {
         XCTAssertTrue(MiruroBrowser.allowed(URL(string: "https://www.miruro.to/api/v1/anime/1")!))
         XCTAssertFalse(MiruroBrowser.allowed(URL(string: "https://www.miruro.to.attacker.test/api/v1/anime/1")!))
         XCTAssertFalse(MiruroBrowser.allowed(URL(string: "https://www.miruro.to:1234/api/v1/anime/1")!))

@@ -103,7 +103,7 @@ class IosServices internal constructor(private val worker: CoroutineDispatcher) 
     private suspend fun <T> call(completion: (T?, String?) -> Unit, block: suspend () -> T) {
         try { completion(withContext(worker) { block() }, null) }
         catch (error: CancellationException) { completion(null, "요청을 취소했습니다."); throw error }
-        catch (error: Exception) { completion(null, error.message?.removePrefix("MIRURO_STOP: ") ?: "요청을 완료할 수 없습니다.") }
+        catch (error: Exception) { completion(null, error.message ?: "요청을 완료할 수 없습니다.") }
     }
     fun searchModels(query: String, completion: (List<ModelSearchResult>?, String?) -> Unit) {
         scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { models.search(query) } }

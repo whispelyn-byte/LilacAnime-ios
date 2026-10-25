@@ -13,9 +13,7 @@ def git(*args):
 shared = 'shared/src/commonMain/kotlin/com/lilac/anime/shared/'
 ios = 'iosApp/LilacAnime/'
 mapping = {
- 'electron/popup-policy.cjs': [ios+'WebPopupPolicy.swift','iosApp/LilacAnimeTests/WebPopupPolicyTests.swift'],
- 'electron/miruro-session.cjs': [ios+'MiruroBrowser.swift',shared+'MiruroTransport.kt'],
- 'electron/miruro-browser.cjs': [ios+'MiruroBrowser.swift',shared+'DesktopSources.kt'],
+ 'electron/miruro-browser.cjs': [ios+'MiruroBrowser.swift',ios+'MiruroWebView.swift',shared+'DesktopSources.kt'],
  'electron/whisper.cjs': [ios+'WhisperSubtitles.swift',ios+'NativeAudio.m'],
  'electron/whisper-worker.py.cjs': [ios+'WhisperSubtitles.swift'],
  'src/whisper.js': [ios+'WhisperSubtitles.swift',ios+'WhisperLiveTranslation.swift',ios+'EpisodePlayerView.swift'],
@@ -64,7 +62,7 @@ mapping = {
 }
 groups = [
  ('season top search detail linkkfHome linkkfDetail linkkfEpisodes linkkfSchedule linkkfSections linkkfFilterTags linkkfFilter linkkfSearch linkkfExtras linkkfRecordView providerCatalog catalogFacets catalogBrowse catalogUpdates providerSeason providerAiring providerDetail', [shared+'IosServices.kt',shared+'SourceRepository.kt']),
- ('linkkfPlay linkkfResolve providerPlay providerResolve providerSubtitleTracks', [ios+'PlaybackResolver.swift',shared+'DesktopSources.kt']),
+ ('linkkfResolve providerResolve providerSubtitleTracks', [ios+'PlaybackResolver.swift',shared+'DesktopSources.kt']),
  ('coverData', [ios+'UIComponents.swift',ios+'DownloadStore.swift']),
  ('opEdSkip clearOpEd onOpEdStatus', [ios+'OfflineAnalyzer.swift',shared+'AniSkip.kt']),
  ('downloadMedia onDownloadProgress downloads addDownload cancelDownload resumeDownload removeDownload playDownload openDownloadsFolder downloadRoot chooseDownloadRoot clearDownloads onDownloadsChanged controlDownloads', [ios+'DownloadStore.swift',ios+'DownloadTransfer.swift']),

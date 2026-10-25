@@ -88,7 +88,7 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
         configuration.userContentController = controller
         configuration.allowsInlineMediaPlayback = true
         configuration.mediaTypesRequiringUserActionForPlayback = []
-        webView = ProviderWebView.make(configuration: configuration)
+        webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
         // Weak proxy avoids a content-controller -> self -> webView retain cycle.
         controller.add(WeakScriptHandler(self), name: "lilacMedia")

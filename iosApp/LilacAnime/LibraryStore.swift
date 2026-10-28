@@ -49,6 +49,11 @@ struct WatchEntry: Codable, Identifiable {
     /// How far it was watched (0–100) when only that is known: an entry from the desktop app through 기기 동기화.
     var progressPercent: Double? = nil
     var displayNumber: String? = nil
+    /// An entry from the Android app keyed by its own episode id (DeviceSyncMapping.androidEpisodeKey), where it could not
+    /// tell the episode's address: it plays the episode of that number from the work's list, which then takes its place.
+    var androidAnimeID: String? = nil
+    var androidEpisodeKey: String? = nil
+    var byNumber: Bool { androidEpisodeKey != nil && !watchURL.hasPrefix("http") }
     var episodeLabel: String {
         displayNumber ?? anime.anime.episodes.first(where: { $0.id == episodeID })?.displayNumber ?? String(number)
     }
@@ -201,7 +206,7 @@ final class LibraryStore: ObservableObject {
                   directURL: String?, position: Double, duration: Double, displayNumber: String? = nil) {
         guard position.isFinite, duration.isFinite, position >= 0 else { return }
         let id = anime.id + "#" + episodeID
-        history.removeAll { $0.id == id }
+        history.removeAll { $0.id == id || ($0.byNumber && $0.anime.id == anime.id && $0.episodeLabel == (displayNumber ?? String(number))) }
         // Only the newest entry of a series keeps its episode list: the same long list in every watched episode's entry
         // made library.json grow without end. An older entry asks for the list again when it is played.
         for index in history.indices where history[index].anime.id == anime.id && !history[index].anime.snapshot.contains("\"episodes\":[]") {

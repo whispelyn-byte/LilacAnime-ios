@@ -254,7 +254,7 @@ final class DeviceSync: ObservableObject {
         let fresh = DeviceSyncMapping.lists(library)
         var working = fresh
         var changes: [String: [String: DeviceSyncPlan.Item?]] = [:]
-        for item in incoming {
+        for item in DeviceSyncMapping.fold(incoming, history: fresh["history"] ?? [:]) {
             guard let collection = item["collection"] as? String, DeviceSyncPlan.collections.contains(collection), let id = item["id"] as? String else { continue }
             let mine = working[collection]?[id]
             let changedHere = mine.map { DeviceSyncPlan.hash($0) } != next[collection]?[id]
@@ -342,6 +342,7 @@ enum DeviceSyncMapping {
         return item
     }
     static func historyID(_ entry: WatchEntry) -> String? {
+        if entry.byNumber, let key = entry.androidEpisodeKey { return fitted(entry.androidAnimeID.map { $0 + ":" + key } ?? key, source: entry.anime.source) }
         guard entry.anime.source != "local", let url = URL(string: entry.watchURL), ["http", "https"].contains(url.scheme ?? "") else { return nil }
         return fitted(entry.anime.source + ":" + entry.watchURL, source: entry.anime.source)
     }
@@ -349,6 +350,15 @@ enum DeviceSyncMapping {
         guard let key = historyID(entry) else { return nil }
         let (anime, snapshot) = trimmed(entry.anime)
         let progress = entry.duration > 0 ? (min(1, max(0, entry.position / entry.duration)) * 100).rounded() : (entry.progressPercent ?? 0)
+        if entry.byNumber {
+            // As the Android app sent it: its own episode key, no address.
+            var item: DeviceSyncPlan.Item = ["key": key, "src": "", "name": anime.title + " · " + entry.episodeTitle, "subtitleTitle": anime.title, "image": anime.poster,
+                "episode": ["provider": entry.anime.source, "number": Double(entry.episodeLabel) ?? Double(entry.number), "name": entry.episodeLabel, "key": entry.episodeID],
+                "anime": animeItem(anime, source: entry.anime.source), "progress": progress, "updated": (entry.updatedAt.timeIntervalSince1970 * 1000).rounded(),
+                "episodeNumber": entry.number, "androidEpisodeKey": entry.androidEpisodeKey ?? ""]
+            if let animeID = entry.androidAnimeID { item["androidAnimeId"] = animeID }
+            return item
+        }
         return ["key": key, "src": "", "name": anime.title + " · " + entry.episodeTitle, "subtitleTitle": anime.title, "image": anime.poster,
                 "episode": ["provider": entry.anime.source, "url": entry.watchURL, "id": entry.episodeID, "number": Double(entry.episodeLabel) ?? Double(entry.number), "name": entry.episodeLabel,
                             "special": entry.episodeLabel.range(of: #"^\d+(?:\.\d+)?[a-z]?$"#, options: [.regularExpression, .caseInsensitive]) == nil],
@@ -401,8 +411,12 @@ enum DeviceSyncMapping {
         if let snapshot = ios?["snapshot"] as? String { withProvider["ios"] = ["snapshot": snapshot] }
         guard let anime = savedAnime(withProvider) else { return nil }
         let episode = data["episode"] as? [String: Any] ?? [:]
-        let url = episode["url"] as? String ?? String(key.drop(while: { $0 != ":" }).dropFirst())
-        let episodeID = ios?["episodeID"] as? String ?? (episode["id"].map { String(describing: $0) }.flatMap { $0.isEmpty ? nil : $0 } ?? url)
+        // The Android app keys an episode whose address it cannot tell by its own episode id (see androidEpisodeKey).
+        let androidKey = (data["androidEpisodeKey"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        let url = episode["url"] as? String ?? (androidKey != nil ? "" : String(key.drop(while: { $0 != ":" }).dropFirst()))
+        let listed = episode["id"].map { String(describing: $0) }.flatMap { $0.isEmpty ? nil : $0 }
+        let ownKey = url.isEmpty ? ((episode["key"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? androidKey) : nil
+        let episodeID = ios?["episodeID"] as? String ?? listed ?? ownKey ?? url
         let number = Int(DeviceSyncPlan.number(episode["number"]) ?? 1)
         let name = episode["name"].map { String(describing: $0) } ?? String(number)
         let title = ios?["title"] as? String ?? (name.range(of: "\\d$", options: .regularExpression) != nil ? name + "화" : name)
@@ -410,10 +424,69 @@ enum DeviceSyncMapping {
         var entry = WatchEntry(id: anime.id + "#" + episodeID, anime: anime, episodeID: episodeID, episodeTitle: title, number: number,
             watchURL: url, directURL: nil, position: DeviceSyncPlan.number(ios?["position"]) ?? 0, duration: DeviceSyncPlan.number(ios?["duration"]) ?? 0, updatedAt: updated)
         entry.displayNumber = ios?["displayNumber"] as? String ?? name
-        if ios == nil { entry.progressPercent = DeviceSyncPlan.number(data["progress"]) }
+        if ios == nil || (DeviceSyncPlan.number(ios?["duration"]) ?? 0) <= 0 { entry.progressPercent = DeviceSyncPlan.number(data["progress"]) }
+        entry.androidEpisodeKey = androidKey
+        entry.androidAnimeID = (data["androidAnimeId"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         return entry
     }
 
+    /// The Android app (dream150/LilacAnime, DeviceSyncMapping.kt) sends its history in the desktop's shape, but keys an
+    /// episode by its own episode id ("<anime id>:reanime:<slug>:ep-3", "animenosub:<slug>:animenosub:<slug>_ep_3") when
+    /// it cannot tell the episode's address (Animenosub, 애니24, 링크애니). The key of an item, worked out as that app's
+    /// parsers make it (desktop 0.5.55 device-sync.js androidEpisodeKey).
+    static func androidEpisodeKey(_ item: DeviceSyncPlan.Item) -> String {
+        if let anime = item["androidAnimeId"] as? String, let key = item["androidEpisodeKey"] as? String, !anime.isEmpty, !key.isEmpty { return anime + ":" + key }
+        guard let anime = item["anime"] as? DeviceSyncPlan.Item, let provider = anime["provider"] as? String, let raw = anime["id"], !(raw is NSNull),
+              let episode = item["episode"] as? DeviceSyncPlan.Item else { return "" }
+        let id = String(describing: raw), name = episode["name"].map { String(describing: $0) } ?? ""
+        let number = DeviceSyncPlan.number(episode["number"]).map { $0 == $0.rounded() ? String(Int($0)) : String($0) } ?? ""
+        let display = name.range(of: #"^\d+[a-z]?$"#, options: [.regularExpression, .caseInsensitive]) != nil ? name : number
+        guard !display.isEmpty else { return "" }
+        let dub = episode["dub"] as? Bool == true || (episode["id"] as? String)?.contains("_dub_ep_") == true
+        switch provider {
+        case "reanime": return "reanime:\(id):reanime:\(id):ep-\(display)"
+        case "miruro": return "miruro:\(id):miruro:\(id):\(display)"
+        case "animenosub": return "animenosub:\(id):animenosub:\(id)_\(dub ? "dub_" : "")ep_\(display)"
+        case "linkani":
+            let bare = id.hasPrefix("linkani:") ? String(id.dropFirst("linkani:".count)) : id
+            return "\(bare):\(bare)_ep_\(display.lowercased())"
+        case "ohli24":
+            guard let slug = (episode["url"] as? String)?.components(separatedBy: "/").last, !slug.isEmpty, let decoded = slug.removingPercentEncoding else { return "" }
+            return "ohli24:\(id):ohli24:\(id):\(decoded)"
+        default: return ""
+        }
+    }
+    /// An Android entry without an address, or its removal, is this device's entry for that episode when there is one, so
+    /// one episode stays one entry; else it comes as it is and plays by its number (EpisodePlayerModel.openByNumber).
+    static func fold(_ incoming: [DeviceSyncPlan.Item], history: [String: DeviceSyncPlan.Item]) -> [DeviceSyncPlan.Item] {
+        var mine: [String: (id: String, item: DeviceSyncPlan.Item)] = [:]
+        for (id, item) in history {
+            let key = androidEpisodeKey(item)
+            if !key.isEmpty, ((item["episode"] as? DeviceSyncPlan.Item)?["url"] as? String)?.isEmpty == false { mine[key] = (id, item) }
+        }
+        guard !mine.isEmpty else { return incoming }
+        return incoming.map { item in
+            guard item["collection"] as? String == "history", let id = item["id"] as? String else { return item }
+            let data = item["data"] as? DeviceSyncPlan.Item
+            if ((data?["episode"] as? DeviceSyncPlan.Item)?["url"] as? String)?.isEmpty == false { return item }
+            let deleted = item["deleted"] as? Bool == true
+            let key = data.map(androidEpisodeKey) ?? ""
+            guard let own = mine[deleted || key.isEmpty ? id : key], own.id != id else { return item }
+            var folded = item; folded["id"] = own.id
+            if !deleted, let data {
+                var merged = own.item
+                merged["progress"] = data["progress"]; merged["updated"] = data["updated"]
+                merged["androidAnimeId"] = data["androidAnimeId"]; merged["androidEpisodeKey"] = data["androidEpisodeKey"]
+                // The phone knows how far in percent; this device keeps the position, so it is worked out from the length.
+                if var ios = merged["ios"] as? DeviceSyncPlan.Item, let duration = DeviceSyncPlan.number(ios["duration"]), duration > 0,
+                   let progress = DeviceSyncPlan.number(data["progress"]) {
+                    ios["position"] = duration * min(100, max(0, progress)) / 100; merged["ios"] = ios
+                }
+                folded["data"] = merged
+            }
+            return folded
+        }
+    }
     /// Writes the merged items into the lists: changed ones in place, new ones first, removals out.
     static func apply(_ changes: [String: [String: DeviceSyncPlan.Item?]], to library: LibraryStore) {
         var favorites = library.favorites, history = library.history

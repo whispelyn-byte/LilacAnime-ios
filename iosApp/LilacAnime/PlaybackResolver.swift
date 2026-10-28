@@ -35,6 +35,8 @@ struct PlaybackItem {
     var localSubtitles: [URL] = []
     var localSubtitleTracks: [RemoteSubtitle] = []
     var burnedKorean: Bool? = nil
+    /// From the Android app without the episode's address (WatchEntry.byNumber): found by its number when it opens.
+    var byNumber = false
     /// The episode the subtitle sites are searched for: its label ("12", "9.5", "4a"), or its number when the label is the
     /// episode's own title ("80000대장경"), as desktop searches by episodeNumberOf.
     var subtitleEpisodeKey: String { displayNumber.range(of: #"^\d+(?:\.\d+)?[a-z]?$"#, options: [.regularExpression, .caseInsensitive]) != nil ? displayNumber : String(number) }
@@ -47,6 +49,7 @@ struct PlaybackItem {
         anime = entry.anime; episodeID = entry.episodeID; title = entry.episodeTitle; number = entry.number
         displayNumber = entry.episodeLabel; watchURL = URL(string: entry.watchURL) ?? URL(string: "https://linkkf.app/")!
         directURL = entry.directURL.flatMap(URL.init(string:)).flatMap { $0.isFileURL ? $0 : nil }
+        byNumber = entry.byNumber
         let episodes = entry.anime.anime.episodes
         if let index = episodes.firstIndex(where: { $0.id == entry.episodeID }) {
             next = episodes.dropFirst(index + 1).map { PlaybackItem(anime: entry.anime, episode: $0) }

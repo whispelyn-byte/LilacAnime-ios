@@ -20,6 +20,7 @@ class IosServices internal constructor(private val worker: CoroutineDispatcher) 
     private val modelsLazy = lazy { ModelRepository() }
     private val tmdbLazy = lazy { TmdbTitleResolver() }
     private val metadataLazy = lazy { DesktopMetadataRepository() }
+    private val thumbnailsLazy = lazy { EpisodeThumbnailRepository() }
     private val source by sourceLazy
     private val discovery by discoveryLazy
     private val translator by translatorLazy
@@ -27,12 +28,17 @@ class IosServices internal constructor(private val worker: CoroutineDispatcher) 
     private val models by modelsLazy
     private val tmdb by tmdbLazy
     private val metadata by metadataLazy
+    private val thumbnails by thumbnailsLazy
     fun catalogKoreanIndex(completion: (String?, String?) -> Unit) { scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { metadata.wikidataIndex() } } }
     fun desktopMetadata(anime: Anime, credential: String, includeCast: Boolean, background: Boolean, completion: (DesktopMetadata?, String?) -> Unit) {
         scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { metadata.resolve(anime, credential, includeCast, background) } }
     }
     fun artwork(anime: Anime, korean: String, credential: String, completion: (TitleArtwork?, String?) -> Unit) {
         scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { metadata.artwork(anime, korean, credential) } }
+    }
+    /** 회차 썸네일 where the source gives none (see EpisodeThumbnailRepository): episode number -> picture. */
+    fun episodeThumbnails(anime: Anime, completion: (Map<Int, String>?, String?) -> Unit) {
+        scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { thumbnails.thumbnails(anime) } }
     }
     fun koreanTitle(titles: List<String>, credential: String, completion: (String?, String?) -> Unit) {
         scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { tmdb.desktopTitles(titles, credential, light = true).firstOrNull() } }
@@ -121,5 +127,6 @@ class IosServices internal constructor(private val worker: CoroutineDispatcher) 
         if (modelsLazy.isInitialized()) models.close()
         if (tmdbLazy.isInitialized()) tmdb.close()
         if (metadataLazy.isInitialized()) metadata.close()
+        if (thumbnailsLazy.isInitialized()) thumbnails.close()
     }
 }

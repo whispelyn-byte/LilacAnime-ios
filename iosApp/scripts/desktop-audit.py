@@ -39,7 +39,7 @@ mapping = {
  'electron/download-manager.cjs': [ios+'DownloadStore.swift',ios+'DownloadTransfer.swift',ios+'DesktopDownloads.swift'],
  'electron/flix-proxy.cjs': [ios+'HLSProxy.swift'],
  'electron/local-ai.cjs': [ios+'LocalModelsView.swift',ios+'LocalModelInput.swift',ios+'TranslationCoordinator.swift','iosApp/Native/Sources/LilacLocalAI/LocalAI.cpp',ios+'DesktopModelInstaller.swift',shared+'DesktopTranslationPrompt.kt'],
- 'electron/main.cjs': [shared+'SourceRepository.kt',shared+'DesktopSources.kt',shared+'DesktopMetadata.kt',shared+'DesktopTmdbRules.kt',shared+'TmdbTitleResolver.kt',shared+'SubtitleDiscovery.kt',shared+'DesktopCommunity.kt',ios+'PlaybackResolver.swift',ios+'DesktopFlixReadiness.swift',ios+'Resources/flix-discovery.js',ios+'OhliPlayback.swift',ios+'Resources/ohli-capture.js',ios+'WinPNGReader.swift'],
+ 'electron/main.cjs': [shared+'SourceRepository.kt',shared+'EpisodeThumbnails.kt',shared+'DesktopSources.kt',shared+'DesktopMetadata.kt',shared+'DesktopTmdbRules.kt',shared+'TmdbTitleResolver.kt',shared+'SubtitleDiscovery.kt',shared+'DesktopCommunity.kt',ios+'PlaybackResolver.swift',ios+'DesktopFlixReadiness.swift',ios+'Resources/flix-discovery.js',ios+'OhliPlayback.swift',ios+'Resources/ohli-capture.js',ios+'WinPNGReader.swift'],
  'electron/oped-fingerprint.cjs': [shared+'AudioFingerprint.kt',shared+'DesktopAudioFingerprint.kt',ios+'OfflineAnalyzer.swift',ios+'NativeAudio.m'],
  'electron/preload.cjs': [shared+'IosServices.kt',ios+'LibraryStore.swift'],
  'electron/device-sync.cjs': [ios+'DeviceSync.swift'],
@@ -49,13 +49,13 @@ mapping = {
  'electron/subtitle-translator.cjs': [shared+'CloudTranslator.kt',shared+'DesktopCloudPrompt.kt',ios+'TranslationCoordinator.swift',ios+'CloudSubtitleScheduler.swift'],
  'electron/updater.cjs': [ios+'DesktopUpdater.swift','.github/workflows/ipa.yml'],
  'src/anime-metadata.js': [shared+'DesktopAnimeMetadata.kt',ios+'UIComponents.swift'],
- 'src/app.js': [ios+'DesktopShell.swift',ios+'HomeView.swift',ios+'DesktopCatalog.swift',ios+'EpisodePlayerView.swift',ios+'DesktopSubtitlePreparer.swift',ios+'DesktopSubtitlePolicy.swift',ios+'DesktopStreamPolicy.swift'],
+ 'src/app.js': [ios+'DesktopShell.swift',ios+'HomeView.swift',ios+'EpisodePicker.swift',ios+'DesktopCatalog.swift',ios+'EpisodePlayerView.swift',ios+'DesktopSubtitlePreparer.swift',ios+'DesktopSubtitlePolicy.swift',ios+'DesktopStreamPolicy.swift'],
  'src/ass-renderer.js': [ios+'MPVEngine.swift',ios+'SubtitleFiles.swift'],
  'src/catalog-browser.js': [ios+'DesktopWorkspace.swift',ios+'CatalogView.swift'],
  'src/catalog-updates.js': [ios+'DesktopRecentUpdates.swift',ios+'HomeView.swift',ios+'DesktopShell.swift'],
  'src/index.html': [ios+'DesktopShell.swift',ios+'DesktopWorkspace.swift',ios+'SettingsView.swift',ios+'EpisodePlayerView.swift'],
  'src/ott.js': [ios+'HomeView.swift',ios+'UIComponents.swift'],
- 'src/player.js': [ios+'EpisodePlayerView.swift',ios+'MPVEngine.swift',ios+'PlayerInteraction.swift',ios+'PlayerSeekHint.swift'],
+ 'src/player.js': [ios+'EpisodePlayerView.swift',ios+'EpisodePicker.swift',ios+'MPVEngine.swift',ios+'PlayerInteraction.swift',ios+'PlayerSeekHint.swift'],
  'src/device-sync.js': [ios+'DeviceSync.swift',ios+'SettingsView.swift'],
  'scripts/build-jassub.cjs': ['iosApp/project.yml',ios+'MPVEngine.swift'],
  'scripts/build-windows-icon.cjs': ['iosApp/project.yml'],
@@ -86,6 +86,9 @@ groups.append(('syncSubtitle retimeSubtitle prepareSubtitleSync cancelSubtitleSy
 groups.append(('prepareEpisodeStream useEpisodeStream streamAlive streamWarm', [ios+'EpisodePlayerView.swift',ios+'PlaybackResolver.swift',ios+'DesktopStreamPolicy.swift']))
 groups.append(('weeklySchedule providerSchedule', [shared+'WeeklySchedule.kt',shared+'IosServices.kt',ios+'WeeklyScheduleView.swift']))
 groups.append(('animeArtwork', [ios+'TitleArtwork.swift',shared+'DesktopArtwork.kt']))
+groups.append(('episodeThumbnails', [shared+'EpisodeThumbnails.kt',shared+'IosServices.kt',ios+'EpisodePicker.swift']))
+# llama.cpp is built into the app here (Metal); there is no runtime to download ahead of the first translation.
+groups.append(('localRuntimeStatus installLocalRuntime onLocalRuntimeProgress', [ios+'LocalModelsView.swift','iosApp/Native/Sources/LilacLocalAI/LocalAI.cpp']))
 groups.append(('whisperStatus whisperSelect whisperInstall whisperDownload whisperRemove whisperTranscribe whisperCancel whisperJump onWhisperProgress', [ios+'WhisperSubtitles.swift',ios+'EpisodePlayerView.swift']))
 api_map = {name: targets for names,targets in groups for name in names.split()}
 apis = re.findall(r'^  (\w+):', (desktop/'electron/preload.cjs').read_text(encoding='utf-8'), re.M)

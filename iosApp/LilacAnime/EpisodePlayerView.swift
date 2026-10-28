@@ -180,6 +180,7 @@ final class EpisodePlayerModel: ObservableObject {
         lifecycleLibrary = library; suspended = nil; holdProgress = false
         active = nil; loadedSkip = false; systemPlayback = false; engine.error = nil
         let token = generation
+        if item.byNumber { openByNumber(library: library, token: token); return }
         subtitleOffset = library.subtitleChoice(animeID: item.anime.id, episodeID: item.episodeID)?.offset ?? library.preferences.subtitleOffset
         pendingFraction = library.resume(item.anime, episodeID: item.episodeID) > 0 ? nil : library.resumeFraction(item.anime, episodeID: item.episodeID)
         if library.preferences.subtitleProvider == "manual", let choice = library.subtitleChoice(animeID: item.anime.id, episodeID: item.episodeID), let relative = choice.relativeFile {
@@ -250,6 +251,40 @@ final class EpisodePlayerModel: ObservableObject {
             guard token == generation, !Task.isCancelled else { return }
             resolver.resolve(item, preferRaw: preferRaw, preferred: library.preferences.preferredServers?[item.anime.source] ?? library.preferences.preferredStream)
         }
+    }
+    /// An entry from the Android app without the episode's address (app.js playHistoryItem): the episode of that number
+    /// from the work's list plays, and its entry takes the Android one's place (LibraryStore.progress).
+    private func openByNumber(library: LibraryStore, token: UUID) {
+        let opening = item
+        error = nil
+        service.detail(summary: opening.anime.anime, sourceKey: opening.anime.source) { [weak self] detail, failure in
+            Task { @MainActor in
+                guard let self, token == self.generation else { return }
+                var found: (episodes: [Episode], index: Int)? = nil
+                for server in detail?.servers ?? [] {
+                    if let index = EpisodeMatch.index(server.episodes, id: opening.episodeID, label: opening.displayNumber, number: opening.number) { found = (server.episodes, index); break }
+                }
+                guard let detail, let found else {
+                    self.error = detail == nil ? (failure ?? "회차 목록을 불러오지 못했습니다.") : EpisodeMatch.title(opening.displayNumber) + "를 이 작품의 회차 목록에서 찾지 못했어요."
+                    return
+                }
+                let anime = detail.anime, episodes = found.episodes, index = found.index
+                let saved = SavedAnime(AnimeSnapshot.shared.withEpisodes(anime: anime, episodes: episodes), source: opening.anime.source)
+                let item = DownloadStore.shared.offline(PlaybackItem.inSeries(saved, episodes: episodes, at: index)) ?? PlaybackItem.inSeries(saved, episodes: episodes, at: index)
+                self.item = item; self.previous = item.preceding; self.searchTitle = item.anime.title
+                self.begin(library: library)
+            }
+        }
+    }
+    /// The 회차 panel's list: the episodes before this one, this one and the ones after it.
+    var seriesItems: [PlaybackItem] { previous + [item] + item.next }
+    /// An episode picked in the 회차 panel (player.js playSiblingEpisode), with the ones around it to step through.
+    func jump(to index: Int, library: LibraryStore) {
+        let all = seriesItems
+        guard all.indices.contains(index), index != previous.count else { return }
+        var target = all[index]; target.next = Array(all.dropFirst(index + 1))
+        change(target, library: library, remember: false)
+        previous = Array(all.prefix(index))
     }
     /// An episode opened from the watch history carries the list saved back then; like app.js playHistoryItem the series
     /// is asked again, so episodes that came out since are next.
@@ -1158,6 +1193,8 @@ struct EpisodePlayerView: View {
     @State private var importer = false
     @State private var importingFont = false
     @State private var settings = false
+    /// 회차 목록 (desktop #episodePanel): one sheet at a time with 플레이어 설정.
+    @State private var episodePanel = false
     @AppStorage("playerSettingsTab") private var settingsTab = 0
     @State private var openServerKind = ""
     @State private var originalOrientation: UIInterfaceOrientation = .portrait
@@ -1184,7 +1221,7 @@ struct EpisodePlayerView: View {
                     back: { dismiss() },
                     previous: { if var item = model.previous.popLast() { item.next = [model.item] + model.item.next; model.change(item, library: library, remember: false) } },
                     next: nextEpisode,
-                    settings: { settings = true },
+                    settings: { episodePanel = false; settings = true },
                     chapter: model.chapters.first(where: { model.engine.position >= $0.start && model.engine.position < $0.end }),
                     skipChapter: { if let chapter = model.chapters.first(where: { model.engine.position >= $0.start && model.engine.position < $0.end }) { model.engine.seek(chapter.end) } },
                     adjustSubtitle: { model.shiftSubtitle($0, library: library) },
@@ -1192,7 +1229,8 @@ struct EpisodePlayerView: View {
                     pipSupported: model.pictureInPicture.supported, pipActive: model.pictureInPicture.active,
                     screenshot: { await model.screenshot(title: DesktopCatalog.shared.title(model.item.anime.anime, source: model.item.anime.source, language: library.preferences.titleLanguage)) },
                     subtitleOffset: model.subtitleOffset,
-                    keyboardEnabled: !settings && !importer, toast: model.toast)
+                    keyboardEnabled: !settings && !episodePanel && !importer, toast: model.toast,
+                    episodes: model.seriesItems.count < 2 ? nil : { settings = false; episodePanel = true })
             } else {
                 VStack { HStack { Button { dismiss() } label: { Image(systemName: "arrow.left") }; Spacer(); Button { settings = true } label: { Image(systemName: "gearshape") } }.font(.title3).padding(20).background(.black.opacity(0.65)); Spacer() }.foregroundStyle(.white)
             }
@@ -1203,6 +1241,12 @@ struct EpisodePlayerView: View {
                 }.padding(24).foregroundStyle(.white).background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 16))
             }
             if settings { playerSettings.zIndex(10) }
+            if episodePanel {
+                PlayerEpisodePanel(title: DesktopCatalog.shared.title(model.item.anime.anime, source: model.item.anime.source, language: library.preferences.titleLanguage),
+                                   items: model.seriesItems, current: model.previous.count, close: { episodePanel = false }) { index in
+                    episodePanel = false; model.jump(to: index, library: library)
+                }.zIndex(10)
+            }
             if let offer = model.koreanOffer {
                 VStack { Spacer(); HStack(spacing: 16) {
                     Text(offer).font(.subheadline)
@@ -1278,6 +1322,7 @@ struct EpisodePlayerView: View {
             }
             .onChange(of: library.preferences) { _ in model.applyPreferences(library) }
             .onChange(of: settings) { if $0 { model.engine.finishSpaceHold() } }
+            .onChange(of: episodePanel) { if $0 { model.engine.finishSpaceHold() } }
             .alert("다운로드", isPresented: Binding(get: { downloads.notice != nil }, set: { if !$0 { downloads.notice = nil } })) {
                 Button("확인") { downloads.notice = nil }
             } message: { Text(downloads.notice ?? "") }
@@ -1614,6 +1659,8 @@ struct PlayerControls: View {
     var subtitleOffset = 0.0
     let keyboardEnabled: Bool
     var toast: EpisodePlayerModel.Toast? = nil
+    /// Opens the 회차 panel; nil when the work has one episode.
+    var episodes: (() -> Void)? = nil
     @GestureState private var holdingSpeed = false
     @State private var holdActive = false
     @State private var holdReleased = Date.distantPast
@@ -1647,6 +1694,7 @@ struct PlayerControls: View {
                             control(pipActive ? "pip.exit" : "pip.enter", label: pipActive ? "PiP 닫기" : "자막과 함께 PiP", enabled: pipSupported) {
                                 Task { if let message = await pictureInPicture() { flash(message) } }
                             }
+                            if let episodes { control("list.bullet", label: "회차 목록", action: episodes) }
                             control("gearshape", label: "플레이어 설정", action: settings)
                         }
                         Spacer(minLength: 4)

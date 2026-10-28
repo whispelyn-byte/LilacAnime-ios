@@ -8,6 +8,11 @@ struct HomeView: View {
     @StateObject private var model = CatalogModel()
     @StateObject private var home = DesktopSourceModel()
     @ObservedObject private var recent = DesktopRecentUpdates.shared
+    @EnvironmentObject private var playback: PlaybackRouter
+    @EnvironmentObject private var downloads: DownloadStore
+    /// 계속 시청하기 > 회차: the card whose episodes are open, and the episode picked there (opened once the sheet is gone).
+    @State private var episodesOf: WatchEntry?
+    @State private var pickedEpisode: PlaybackItem?
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var homeOrder = "season"
     @State private var featured = 0
@@ -84,6 +89,10 @@ struct HomeView: View {
                 .task(id: library.preferences.source + homeOrder) { if homeOrder == "updated" && !UIShowcase.enabled { await recent.loadHome(library.preferences.source) } }
                 .task { if !UIShowcase.enabled && model.items.isEmpty { model.source = library.preferences.source; model.load() } }
                 .onChange(of: library.preferences.source) { source in if !UIShowcase.enabled && model.source != source { model.source = source; model.load() } }
+                .sheet(item: $episodesOf, onDismiss: { if let item = pickedEpisode { pickedEpisode = nil; playback.open(item) } }) { entry in
+                    ContinueEpisodesSheet(entry: entry) { pickedEpisode = $0 }
+                        .environmentObject(library).environmentObject(downloads)
+                }
         }
     }
     /// 이번 시즌 신작 / 최근 업데이트 as the desktop's sort chips.
@@ -115,9 +124,17 @@ struct HomeView: View {
                                         }.frame(height: 4).padding(8)
                                     }
                                 AnimeDisplayTitle(anime: entry.anime.anime, source: entry.anime.source).font(.system(size: 14, weight: .semibold)).foregroundStyle(LilacStyle.text).lineLimit(1).padding(.top, 8)
-                                Text(entry.episodeTitle).font(.system(size: 12)).foregroundStyle(LilacStyle.accent).lineLimit(1).padding(.top, 3)
+                                    .padding(.trailing, 40)
+                                Text(entry.episodeTitle).font(.system(size: 12)).foregroundStyle(LilacStyle.accent).lineLimit(1).padding(.top, 3).padding(.trailing, 40)
                             }.frame(width: width)
                         }.buttonStyle(.plain)
+                            // ott.css .continue-episodes: the card's ⌄ opens the work's episodes (Netflix's episodes button).
+                            .overlay(alignment: .bottomTrailing) {
+                                Button { episodesOf = entry } label: {
+                                    Image(systemName: "chevron.down").font(.system(size: 14, weight: .semibold)).foregroundStyle(LilacStyle.text)
+                                        .frame(width: 32, height: 32).overlay(Circle().stroke(LilacStyle.muted, lineWidth: 1.5)).contentShape(Circle())
+                                }.buttonStyle(.plain).accessibilityLabel("회차 목록").accessibilityIdentifier("continue-episodes")
+                            }
                     }
                 }.padding(.horizontal, gutter)
             }

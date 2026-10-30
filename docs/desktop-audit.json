@@ -1,5 +1,5 @@
 {
-  "desktopCommit": "9296268aba4ebc879172ba9da445f609fa1b1f70",
+  "desktopCommit": "8b8fe7016b28c16531d552d2943b9b07440ceef5",
   "desktopVersion": "0.5.54",
   "files": [
     {
@@ -380,7 +380,7 @@
     },
     {
       "desktop": "src/app.js",
-      "sha256": "342d1897d7539ebcfde5e4fdc4450469d374d7c84601072cd047f9ea4340a81c",
+      "sha256": "99d33dd289158a014d433dbf5a3d6f5c6b46cd436c4851cbe269420633c00311",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -473,7 +473,7 @@
     },
     {
       "desktop": "src/index.html",
-      "sha256": "e4e1ea8d99a7086a85cb8a7f69849f30aa5bb850bcf77c5519602e4259833632",
+      "sha256": "540bc6be5ab1deada60eec7593680357aaf3cb1ccc88f6f0ab27ce98088051ee",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -531,7 +531,7 @@
     },
     {
       "desktop": "src/ott.css",
-      "sha256": "1bab72c22b64336a0ca7d1bcbdbeb8191b4fad13df986ea4f9b730f276199b0e",
+      "sha256": "f7bba1dfe379c922049e79ad86c1b4a70bddd5a6a7fe3e363d8f3b7cbb5f7a94",
       "uncommitted": false,
       "category": "native-layout",
       "ios": [
@@ -565,7 +565,7 @@
     },
     {
       "desktop": "src/player-android.css",
-      "sha256": "1febfd5c834a7bb7da9f1b539e9784a453febd405fe50cd976ac5fc4b32b4b18",
+      "sha256": "57e47987a363786a2491dd549d5d8ce4ddf18558a2f8750852daec28e05809cc",
       "uncommitted": false,
       "category": "native-layout",
       "ios": [
@@ -660,6 +660,18 @@
       ]
     },
     {
+      "desktop": "src/unify.css",
+      "sha256": "dbd860d5a108854527142284d061f68ded8dc6132b47ac979e365ae2c41c8ddd",
+      "uncommitted": false,
+      "category": "native-layout",
+      "ios": [
+        "iosApp/LilacAnime/DesktopShell.swift",
+        "iosApp/LilacAnime/UIComponents.swift",
+        "iosApp/LilacAnime/PlayerSettingsPanel.swift",
+        "iosApp/LilacAnime/EpisodePlayerView.swift"
+      ]
+    },
+    {
       "desktop": "src/video-cleanup.js",
       "sha256": "e9bd53103a31614c1ab3df0cd73db4b1e109d73778db2be744a9bf0a8a2aba1a",
       "uncommitted": false,
@@ -711,7 +723,7 @@
     },
     {
       "desktop": "src/whisper.js",
-      "sha256": "b73e62d6af8c5dae35c919d433950916971994f206ee6cd2ebad553c57f6d521",
+      "sha256": "d9be2df7d4002ebc626db70aad652a7f5f95aa4873665e8bb97f6ee2d78f437f",
       "uncommitted": false,
       "category": "runtime",
       "ios": [

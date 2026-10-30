@@ -223,6 +223,9 @@ object AnimenosubParser {
 
     private fun isSeriesUrl(url: String): Boolean {
         if (!url.startsWith(BASE_URL + "/anime/")) return false
+        // The menu's link to the series index (/anime/) is not a series: it came first in every list as
+        // "Animenosub - Watch Anime Online" with no episodes.
+        if (url.removePrefix(BASE_URL + "/anime/").substringBefore('?').substringBefore('#').trim('/').isEmpty()) return false
         return extractSlug(url).isNotBlank()
     }
 

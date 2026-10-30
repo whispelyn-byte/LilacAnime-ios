@@ -24,13 +24,33 @@ enum HLSData {
         return lines.enumerated().filter { !omitted.contains($0.offset) }.map(\.element).joined(separator: "\n")
     }
 
+    /// The video's requests go out over several sessions, each with its own connections. One session speaks HTTP/2 to
+    /// Cloudflare (RE:Anime's FlixCloud CDN) and carries every request over a single connection, which the far-away edge
+    /// gives a few hundred KB/s: the ranges and segments fetched at once all shared it, and the one the player waited
+    /// for got a small part of it (playback stopped to buffer, most of all after starting or a seek). Desktop's fetch
+    /// opens a connection per request (HTTP/1.1), which is what the ranges were made for.
+    private static let sessions: [URLSession] = (0..<6).map { _ in
+        // The shared cookie store, as URLSession.shared: a CDN's cookie from the playlist goes with its segments.
+        let configuration = URLSessionConfiguration.default
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.httpMaximumConnectionsPerHost = 8
+        return URLSession(configuration: configuration)
+    }
+    private static let turn = SessionTurn()
+    private final class SessionTurn: @unchecked Sendable {
+        private let lock = NSLock(); private var value = 0
+        func next(_ count: Int) -> Int { lock.lock(); defer { lock.unlock() }; value = (value + 1) % count; return value }
+    }
+    static func session() -> URLSession { sessions[turn.next(sessions.count)] }
+
     static func fetch(_ url: URL, stream: ResolvedStream, range: String? = nil, timeout: TimeInterval = 60) async throws -> (Data, HTTPURLResponse) {
         try Task.checkCancellation()
         if url == stream.url, let manifest = stream.hlsManifest {
             return (Data(manifest.utf8), HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/vnd.apple.mpegurl"])!)
         }
         var fetchRequest = request(url, stream: stream, range: range); fetchRequest.timeoutInterval = timeout
-        let (data, response) = try await URLSession.shared.data(for: fetchRequest)
+        let (data, response) = try await session().data(for: fetchRequest)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw SubtitleFiles.failure("영상 요청 실패") }
         return (data, http)
     }
@@ -52,7 +72,7 @@ enum HLSData {
     /// A range read as it arrives, so a request that has gone quiet can be told from a slow one still receiving.
     private static func watchedFetch(_ url: URL, stream: ResolvedStream, range: String, heard: Heard) async throws -> (Data, HTTPURLResponse) {
         defer { heard.finish() }
-        let (bytes, response) = try await URLSession.shared.bytes(for: request(url, stream: stream, range: range))
+        let (bytes, response) = try await session().bytes(for: request(url, stream: stream, range: range))
         heard.touch()
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw SubtitleFiles.failure("영상 요청 실패") }
         var data = Data(), chunk: [UInt8] = []
@@ -218,6 +238,19 @@ enum HLSData {
         }
         throw failure
     }
+    /// What the player asks for that is not a disguised segment (playlists, keys, the .ts / .jpg segments of other
+    /// sources): one request that has had nothing for 12 seconds is asked for again, up to three times. With the 60
+    /// seconds a request was allowed to stay silent, one stalled segment stopped playback for a minute and then failed.
+    static func playerFetch(_ url: URL, stream: ResolvedStream, range: String?) async throws -> (Data, HTTPURLResponse) {
+        var failure: Error = SubtitleFiles.failure("영상 요청 실패")
+        for attempt in 0..<3 {
+            try Task.checkCancellation()
+            do { return try await fetch(url, stream: stream, range: range, timeout: attempt < 2 ? 12 : 30) }
+            catch is CancellationError { throw CancellationError() }
+            catch { failure = error }
+        }
+        throw failure
+    }
     static func references(_ text: String, base: URL) -> [URL] {
         var urls: [URL] = []
         let regex = try! NSRegularExpression(pattern: "URI=\"([^\"]+)\"", options: [.caseInsensitive])
@@ -316,7 +349,7 @@ final class HLSProxy {
                 let aes = self.queue.sync { self.encrypted.contains(url) }
                 // Ordinary AAC, MP3 and byte-range media remain on the original passthrough path.
                 let segment = !aes && ["png", "webp", "html"].contains(url.pathExtension.lowercased())
-                let (data, response) = segment ? try await media.load(url, stream: stream) : try await HLSData.fetch(url, stream: stream, range: stream.manifestKey == nil ? range : nil)
+                let (data, response) = segment ? try await media.load(url, stream: stream) : try await HLSData.playerFetch(url, stream: stream, range: stream.manifestKey == nil ? range : nil)
                 var body = data
                 var contentType = response.mimeType ?? "application/octet-stream"
                 if url.pathExtension.lowercased() == "m3u8" || contentType.contains("mpegurl") || (url == stream.url && stream.hlsManifest != nil) {
@@ -382,11 +415,15 @@ private actor HLSMediaCache {
         while used.count > 16 { let old = used.removeFirst(); tasks.removeValue(forKey: old)?.cancel() }
         return task
     }
+    /// The segments after this one are fetched once it is here: started with it, they took most of the bandwidth from
+    /// the one the player was waiting for (after a seek, six segments of each playlist arrived together, late).
     func load(_ url: URL, stream: ResolvedStream) async throws -> (Data, HTTPURLResponse) {
         let current = task(url, stream: stream)
-        for next in sequence.following(url) { _ = task(next, stream: stream) }
-        do { return try await current.value }
-        catch { tasks[url] = nil; used.removeAll { $0 == url }; throw error }
+        do {
+            let value = try await current.value
+            for next in sequence.following(url) { _ = task(next, stream: stream) }
+            return value
+        } catch { tasks[url] = nil; used.removeAll { $0 == url }; throw error }
     }
     func stop() { tasks.values.forEach { $0.cancel() }; tasks = [:]; used = []; sequence = HLSMediaOrder() }
 }

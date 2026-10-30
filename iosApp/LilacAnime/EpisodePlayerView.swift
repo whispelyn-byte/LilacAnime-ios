@@ -1216,7 +1216,9 @@ struct EpisodePlayerView: View {
             }
             if !showWeb && !model.systemPlayback {
                 PlayerControls(engine: model.engine, seek: library.preferences.seekSeconds,
-                    title: DesktopCatalog.shared.title(model.item.anime.anime, source: model.item.anime.source, language: library.preferences.titleLanguage), episode: model.item.title,
+                    title: DesktopCatalog.shared.title(model.item.anime.anime, source: model.item.anime.source, language: library.preferences.titleLanguage),
+                    // desktop playerMeta: the episode, and where it plays from (its source, or 다운로드 for a saved file).
+                    episode: model.item.title + " · " + (model.item.directURL?.isFileURL == true || model.active?.url.isFileURL == true ? "다운로드" : ContentSources.name(model.item.anime.source)),
                     canPrevious: !model.previous.isEmpty, canNext: !model.item.next.isEmpty,
                     back: { dismiss() },
                     previous: { if var item = model.previous.popLast() { item.next = [model.item] + model.item.next; model.change(item, library: library, remember: false) } },
@@ -1346,13 +1348,11 @@ struct EpisodePlayerView: View {
         if servers.count >= 2 {
             PSSection {
                 PSGroup("영상 서버")
-                PSNote("영상이 안 나오거나 자꾸 끊기면 다른 서버를 골라 보세요. 보통은 자동이 알맞게 고릅니다.")
                 serverPicker(servers)
             }
         }
         PSSection {
             PSGroup("화질")
-            PSNote("숫자가 클수록 선명하지만, 인터넷이 느리면 끊길 수 있어요.")
             PlayerChoiceGrid(options: ["Auto", "480p", "720p", "1080p"].map { ($0, $0 == "Auto" ? "자동" : $0) }, selection: Binding(get: { library.preferences.quality }, set: {
                 library.preferences.quality = $0; if let stream = model.active { model.save(library: library); model.play(stream, library: library) }
             }), identifier: "player-quality").padding(.top, 4)
@@ -1376,7 +1376,6 @@ struct EpisodePlayerView: View {
                 library.preferences.seekSeconds = SeekStep.clamped($0)
             }), identifier: "player-seek-steps")
             PSSecondsInput(value: library.preferences.seekSeconds) { library.preferences.seekSeconds = SeekStep.clamped($0) }
-            PSNote("화면 가운데 뒤로/앞으로 버튼과 ←/→ 방향키로 이동할 시간이에요. 1~120초로 직접 입력할 수도 있어요.")
         }.padding(.top, 12).padding(.bottom, 12)
         PSSection {
             PSGroup("화면 비율")
@@ -1384,12 +1383,10 @@ struct EpisodePlayerView: View {
                 let value = PlayerAspect(rawValue: $0) ?? .original
                 library.preferences.selectPlayerAspect(value); model.engine.setAspect(value)
             }), identifier: "player-aspect")
-            PSNote("선택한 비율로 영상을 늘립니다. 화면 채우기는 화면에 맞춰 여백 없이 늘립니다.")
             Text("화면 맞춤").font(.system(size: 11)).foregroundStyle(.white.opacity(0.72)).padding(.top, 6)
             PlayerChoiceGrid(options: PlayerFit.allCases.map { ($0.rawValue, $0.title) }, selection: Binding(get: { PlayerPresentation(library.preferences).fit.rawValue }, set: {
                 library.preferences.selectPlayerFit(PlayerFit(rawValue: $0) ?? .contain); model.engine.setFit($0)
             }), identifier: "player-fit")
-            PSNote("맞춤은 원본 비율을 지키고, 채움은 가장자리를 잘라 화면을 채우고, 늘림은 화면 전체로 늘립니다.")
         }
         Group {
             VideoCleanupControls(settings: $library.preferences.videoCleanup, engine: model.engine)
@@ -1397,8 +1394,6 @@ struct EpisodePlayerView: View {
             PlayerChoiceGrid(options: Anime4KMode.allCases.map { ($0.rawValue, $0.title) }, selection: Binding(get: {
                 Anime4KMode(saved: library.preferences.anime4k).rawValue
             }, set: { library.preferences.anime4k = $0 }), identifier: "player-anime4k")
-            PSNote("기본은 끄기입니다. 가볍게부터 사용해 보세요. 화면 확대 시 2배 업스케일을 사용하며, 기기에 따라 발열·배터리 사용량이 늘 수 있습니다.")
-            PSNote("앱 기본 플레이어에서 적용됩니다. PiP·웹/외부 플레이어와 원본 스크린샷에는 적용되지 않습니다.")
             if let error = model.engine.anime4kError { PSNote(error, color: .orange) }
             PSGroup("자동 재생 · 건너뛰기")
             PSSwitch(title: "다음 화 자동재생", detail: "영상이 끝나면 다음 화를 재생합니다", isOn: $library.preferences.autoPlay)
@@ -1484,7 +1479,6 @@ struct EpisodePlayerView: View {
         }
         Group {
             PSGroup("자막 가져올 곳")
-            PSNote("누르면 그곳의 자막으로 바꾸고, 다음 화부터도 그곳을 먼저 찾습니다.")
             PSSourceGrid(options: subtitleSources, selection: model.activeSubtitleSource) { model.chooseSource($0, library: library) }
             if model.openSheet == "anissia" { makerBox }
             if model.openSheet == "reanime" && model.trackSource == "reanime" { trackBox }
@@ -1495,12 +1489,10 @@ struct EpisodePlayerView: View {
             Button("한국어 자막 다시 찾기") { model.findKoreanAgain(library: library) }
             Button("파일 앱에서 자막 열기") { importingFont = false; settings = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { importer = true } }
         }
-        PSNote("자막 파일은 ASS · SSA · SRT · VTT · SMI를 열 수 있어요.").padding(.top, 6)
         PSButtonRow {
             Button(model.syncButtonTitle) { model.runSubtitleSync(library: library) }
                 .disabled(!model.syncRunning && !model.syncAvailable).accessibilityIdentifier("player-subtitle-sync-run")
         }
-        PSNote("자막이 대사보다 일찍·늦게 나오면 영상 음성에 맞춰 시간을 고쳐요. Re:Anime·Miruro처럼 사이트 자막 트랙이 있으면 그 트랙에 맞춰 몇 초 만에 맞춥니다.").padding(.top, 6)
         PSSwitch(title: "싱크가 어긋나면 자동으로 맞추기", detail: "자막을 켜면 뒤에서 영상 음성(사이트 자막 트랙이 있으면 그 트랙)과 비교해, 확실히 어긋나 있을 때만 맞춰요. 확실하지 않으면 그대로 둬요. 잘못 맞으면 알림에서 되돌릴 수 있어요",
                  isOn: Binding(get: { library.preferences.subtitleSyncCheck ?? true }, set: { library.preferences.subtitleSyncCheck = $0 }), small: true)
         if let status = model.prefetchStatus { PSNote(status).padding(.top, 4) }
@@ -1517,12 +1509,12 @@ struct EpisodePlayerView: View {
     /// The source cards; the site's own subtitle shows only on the source that has one.
     private var subtitleSources: [PSSource] {
         var sources: [PSSource] = []
-        if model.trackSource == "linkkf" { sources.append(PSSource(id: "linkkf", title: "Linkkf", detail: "사이트 한국어 자막")) }
-        if model.trackSource == "reanime" { sources.append(PSSource(id: "reanime", title: model.item.anime.source == "miruro" ? "Miruro" : "Re:Anime", detail: "사이트 자막 트랙")) }
+        if model.trackSource == "linkkf" { sources.append(PSSource(id: "linkkf", title: "Linkkf", detail: "사이트 자막")) }
+        if model.trackSource == "reanime" { sources.append(PSSource(id: "reanime", title: model.item.anime.source == "miruro" ? "Miruro" : "Re:Anime", detail: "사이트 트랙")) }
         let korean = ["kairan": "Kairan", "csora": "Csora", "anissia": "Anissia"]
-        for id in ["kairan", "csora", "anissia"] { sources.append(PSSource(id: id, title: korean[id] ?? id, detail: "한국어 자막")) }
+        for id in ["kairan", "csora", "anissia"] { sources.append(PSSource(id: id, title: korean[id] ?? id, detail: "한국어")) }
         sources.append(PSSource(id: "jimaku", title: "Jimaku", detail: "일본어 → 번역"))
-        sources.append(PSSource(id: "ai", title: "AI 번역", detail: "한국어로 번역"))
+        sources.append(PSSource(id: "ai", title: "AI 번역", detail: "자동 번역"))
         return sources
     }
     /// The one 번역 row (app.js labelTranslateButtons): the API configured, and the local model; again for a translation on screen.
@@ -1539,7 +1531,7 @@ struct EpisodePlayerView: View {
     }
     private var makerBox: some View {
         PSBox(title: "Anissia 자막 제작자", state: model.searching ? "불러오는 중…" : model.makers.isEmpty ? "" : "\(model.makers.count)명",
-              note: "이 작품의 자막을 만든 분들이에요. 다른 분의 자막으로 바꾸려면 누르세요.") {
+              note: "자막을 만든 분 · 누르면 그분 자막으로") {
             if !model.searching && model.makers.isEmpty { PSNote(model.subtitleSearchError ?? "제작자 정보를 찾지 못했습니다.") }
             PlayerChoiceGrid(options: model.makers.map { ($0.website, $0.name) }, selection: Binding(get: { model.makers.first { $0.name == model.selectedMaker }?.website ?? "" }, set: { website in
                 if let maker = model.makers.first(where: { $0.website == website }) { model.chooseMaker(maker, library: library) }
@@ -1548,7 +1540,7 @@ struct EpisodePlayerView: View {
     }
     private var trackBox: some View {
         PSBox(title: (model.item.anime.source == "miruro" ? "Miruro" : "Re:Anime") + " 자막 트랙", state: "\(model.siteTracks.count)개 트랙",
-              note: "영상 사이트가 주는 여러 언어 자막이에요. 한국어가 없으면 영어 트랙 등을 고르세요. 고르면 위의 번역 버튼으로 한국어로 번역할 수 있어요.") {
+              note: "사이트의 언어별 자막 · 한국어가 없으면 골라서 번역") {
             ForEach(SiteTrackOrder.sorted(model.siteTracks)) { track in
                 PSTrackOption(title: SiteTrackOrder.name(track), detail: SiteTrackOrder.detail(track), selected: model.selectedTrackURL == track.url) {
                     model.chooseTrack(track, library: library)
@@ -1560,7 +1552,7 @@ struct EpisodePlayerView: View {
         let files = model.jimaku.files(model.item)
         let failure = model.jimaku.error(model.item)
         return PSBox(title: "Jimaku 일본어 자막", state: failure != nil ? "" : files == nil ? "Jimaku에서 찾는 중…" : files!.isEmpty ? "" : "\(files!.count)개 파일",
-                     note: "일본어 자막 파일이에요. 고르면 일본어로 먼저 나오고, 설정에 따라 한국어로 번역해 바꿔 줍니다.") {
+                     note: "일본어 자막 파일 · 고르면 한국어로 번역") {
             if let failure { PSNote(failure, color: .red) }
             else if files?.isEmpty == true { PSNote("이 회차의 파일이 없습니다.") }
             ForEach(files ?? [], id: \.subtitleResultID) { asset in
@@ -1582,12 +1574,10 @@ struct EpisodePlayerView: View {
             Slider(value: $library.preferences.subtitlePadding, in: 3...30, step: 1).accessibilityLabel("자막 높이")
             PSLabel(title: "자막 타이밍", value: syncLabel)
             PSSyncInput(value: model.subtitleOffset) { model.setSubtitleOffset($0, library: library) }
-            PSNote("음수는 빠르게, 양수는 늦게 표시합니다. 크기 제한 없이 직접 입력할 수 있어요.").padding(.bottom, 6)
             PlayerChoiceGrid(options: [("fast", "0.25초 빠르게"), ("reset", "원래대로"), ("slow", "0.25초 늦게")], selection: Binding(get: { "" }, set: {
                 if $0 == "reset" { model.setSubtitleOffset(0, library: library) }
                 else { model.shiftSubtitle($0 == "fast" ? -0.25 : 0.25, library: library) }
             }), identifier: "player-subtitle-sync")
-            PSNote("자막이 대사보다 늦게 나오면 빠르게, 먼저 나오면 늦게를 누르세요.").padding(.top, 6)
         }
         Group {
             PSGroup("특수 효과 자막 (ASS)")
@@ -1608,7 +1598,6 @@ struct EpisodePlayerView: View {
                 Button("글꼴 파일 선택") { importingFont = true; settings = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { importer = true } }
                     .buttonStyle(PSTextButtonStyle())
             }
-            PSNote("파일 앱의 글꼴 파일(TTF · OTF · TTC)을 고르면 자막을 그 글꼴로 보여 줍니다.")
             discoveredFonts
         }
     }

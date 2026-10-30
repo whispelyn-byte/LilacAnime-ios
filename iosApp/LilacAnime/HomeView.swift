@@ -125,7 +125,9 @@ struct HomeView: View {
                                     }
                                 AnimeDisplayTitle(anime: entry.anime.anime, source: entry.anime.source).font(.system(size: 14, weight: .semibold)).foregroundStyle(LilacStyle.text).lineLimit(1).padding(.top, 8)
                                     .padding(.trailing, 40)
-                                Text(entry.episodeTitle).font(.system(size: 12)).foregroundStyle(LilacStyle.accent).lineLimit(1).padding(.top, 3).padding(.trailing, 40)
+                                // desktop renderContinue: the episode, the watched part in whole percents and the source.
+                                Text([entry.episodeTitle, "\(Int((progress * 100).rounded()))%", entry.directURL.map { $0.hasPrefix("file:") } == true ? "다운로드" : ContentSources.name(entry.anime.source)].joined(separator: " · "))
+                                    .font(.system(size: 12)).foregroundStyle(LilacStyle.accent).lineLimit(1).padding(.top, 3).padding(.trailing, 40)
                             }.frame(width: width)
                         }.buttonStyle(.plain)
                             // ott.css .continue-episodes: the card's ⌄ opens the work's episodes (Netflix's episodes button).

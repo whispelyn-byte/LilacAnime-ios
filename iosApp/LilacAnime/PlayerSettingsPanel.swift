@@ -24,10 +24,7 @@ struct PlayerSettingsPanel<Content: View>: View {
                     HStack(spacing: 10) {
                         Image(systemName: "gearshape").font(.system(size: 17)).frame(width: 36, height: 36)
                             .background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("플레이어 설정").font(.system(size: 15, weight: .bold))
-                            Text("재생 · 화질 · 자막").font(.system(size: 11)).foregroundStyle(.white.opacity(0.5))
-                        }
+                        Text("플레이어 설정").font(.system(size: 15, weight: .bold))
                         Spacer()
                         Button(action: close) { Image(systemName: "xmark").font(.system(size: 17)).frame(width: 42, height: 42).contentShape(Circle()) }
                             .buttonStyle(.plain).accessibilityLabel("닫기").keyboardShortcut(.escape, modifiers: [])
@@ -116,9 +113,9 @@ struct PSSwitch: View {
         Toggle(isOn: $isOn) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.system(size: small ? 12 : 13, weight: .semibold)).foregroundStyle(.white)
-                Text(detail).font(.system(size: small ? 10 : 11)).foregroundStyle(PS.detail).fixedSize(horizontal: false, vertical: true)
             }
-        }.toggleStyle(.switch).tint(LilacStyle.accent).padding(.vertical, 5)
+        // Desktop 플레이어 설정 is short: each option its name and its control; what it does is read out, not shown.
+        }.toggleStyle(.switch).tint(LilacStyle.accent).padding(.vertical, 5).accessibilityHint(detail)
     }
 }
 

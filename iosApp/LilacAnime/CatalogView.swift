@@ -149,8 +149,10 @@ struct CatalogView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("어떤 이야기를 찾고 있나요?").font(.system(size: sizeClass == .regular ? 34 : 26, weight: .heavy)).foregroundStyle(LilacStyle.text)
-                        Text("제목을 검색해 작품 정보와 평점을 확인하세요.").font(.system(size: 14)).foregroundStyle(LilacStyle.muted)
+                        // desktop doSearch: once searched, the page's title says what was searched.
+                        let searched = navigation.query.trimmingCharacters(in: .whitespacesAndNewlines)
+                        Text(searched.isEmpty ? "어떤 이야기를 찾고 있나요?" : "“" + searched + "”").font(.system(size: sizeClass == .regular ? 34 : 26, weight: .heavy)).foregroundStyle(LilacStyle.text).lineLimit(2)
+                        if searched.isEmpty { Text("제목을 검색해 작품 정보와 평점을 확인하세요.").font(.system(size: 14)).foregroundStyle(LilacStyle.muted) }
                     }
                     // .big-search: one wide field with the button inside its end.
                     HStack(spacing: 8) {

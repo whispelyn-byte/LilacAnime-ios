@@ -134,7 +134,7 @@ struct EpisodePickList: View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
                 Rectangle().fill(dark ? Color.black.opacity(0.5) : LilacStyle.line)
-                Rectangle().fill(Color(red: 0.9, green: 0.04, blue: 0.08)).frame(width: geometry.size.width * progress)
+                Rectangle().fill(LilacStyle.accent).frame(width: geometry.size.width * progress)
             }
         }.clipShape(RoundedRectangle(cornerRadius: 2))
     }

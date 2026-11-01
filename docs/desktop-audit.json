@@ -1,10 +1,22 @@
 {
-  "desktopCommit": "1ba25c79a05c1fe132d9169f1b5fb81f293537e0",
-  "desktopVersion": "0.5.57",
+  "desktopCommit": "c2aad8dfbbaa8eb3c80b02f5b512947ad160b693",
+  "desktopVersion": "0.5.58",
   "files": [
     {
       "desktop": ".github/workflows/build.yml",
       "sha256": "50866b4c3b3f61350b3989122f4209c5e85a77d58b627b03cdeb770900629e0d",
+      "uncommitted": false,
+      "category": "platform-build",
+      "ios": [
+        "iosApp/project.yml",
+        "shared/build.gradle.kts",
+        ".github/workflows/kmp.yml",
+        ".github/workflows/ipa.yml"
+      ]
+    },
+    {
+      "desktop": ".github/workflows/pages.yml",
+      "sha256": "5d0e3f2ed21b14c6156028d21c91462fe918455f2a678dbdc0bd84be1f8a944e",
       "uncommitted": false,
       "category": "platform-build",
       "ios": [
@@ -145,7 +157,7 @@
     },
     {
       "desktop": "electron/main.cjs",
-      "sha256": "c7a96fac492394cc4844fd7f8237b0ffb1af1d55f1f7596db1b7e98eba568e10",
+      "sha256": "21f840a52c08986e808a3943e3db687efccf0ddcc801cbec894645587af855c5",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -301,7 +313,7 @@
     },
     {
       "desktop": "package-lock.json",
-      "sha256": "32f78efc833f5125c9fa164569b1bbd667a1c82a1b816ccc9c3db9627996076d",
+      "sha256": "cccc0f4148e3e91e3fe0945a2c59ac9984225b3aaeb444847e1b1c87d7e766c7",
       "uncommitted": false,
       "category": "platform-build",
       "ios": [
@@ -313,7 +325,7 @@
     },
     {
       "desktop": "package.json",
-      "sha256": "f948ca6880d9ba16353d1b83f247b3eda446e684bfa706af801255097ea54ed3",
+      "sha256": "a3bad90790d726c6c0e5a95fed2a891b10f2dd6e164cbd909469cfbc358050a7",
       "uncommitted": false,
       "category": "platform-build",
       "ios": [
@@ -383,7 +395,7 @@
     },
     {
       "desktop": "src/app.js",
-      "sha256": "823c596ba5e026a2f68422cc2897d2077e687d25b3c9fe559306ad5bd69dfa2a",
+      "sha256": "e7b61f42c155df6928cecc7aa46eab92928fbadad718248f87d674c4298a250d",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -494,7 +506,7 @@
     },
     {
       "desktop": "src/logo.png",
-      "sha256": "ee1fa521925ed94e206584cb9ddd33f851187421e36504ddffd294f47ca7c74c",
+      "sha256": "b78beb9b3397049f1197413a34ec8a7c093d9263db14547ebd6051fc642913a7",
       "uncommitted": false,
       "category": "native-assets",
       "ios": [
@@ -598,7 +610,7 @@
     },
     {
       "desktop": "src/player.js",
-      "sha256": "44195c56f5321f145acf110dcd6f5210c2bdd99fd3ac1692efb21810abf46ef5",
+      "sha256": "f7ce41144162e53c0289c0e36f31e8c94f5be1eb0cf4202f452a7608d8d8de92",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -767,6 +779,17 @@
       ]
     },
     {
+      "desktop": "tests/cache-file.test.cjs",
+      "sha256": "b636c16dabc44d0058a9b9381c37d0fc0bbc4d48d310feb8e6d79e13e35b1538",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
       "desktop": "tests/catalog-browser-ui.test.cjs",
       "sha256": "2b808d42ad34fb3e04b1cfc3b5232286b358b7dadd0346834d2e163e60bf1e42",
       "uncommitted": false,
@@ -856,7 +879,7 @@
     },
     {
       "desktop": "tests/community-search.test.cjs",
-      "sha256": "225a1fb1be835b54266be701f53b99400037f27c6d66de6ee8222b8ce472a212",
+      "sha256": "4b9761b86a0a913e88002561d1dd5c7c24b11397e0ec8c20449f45682ae67c74",
       "uncommitted": false,
       "category": "validation",
       "ios": [
@@ -1153,7 +1176,7 @@
     },
     {
       "desktop": "tests/resolver-probe.test.cjs",
-      "sha256": "98469a68699db3e3ba63796540c8afd8493e314e5834731cc40de02092fd17a2",
+      "sha256": "966b844d65ce63f386c2625a960b277310d1a71df9d01e94b9c196f29fae4002",
       "uncommitted": false,
       "category": "validation",
       "ios": [

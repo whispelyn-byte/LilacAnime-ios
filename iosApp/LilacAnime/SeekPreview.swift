@@ -27,7 +27,9 @@ final class SeekPreview: ObservableObject {
     func show(_ time: Double, duration: Double, video: SubtitleAutoSync.Video?) {
         guard let video, duration > 0 else { pending?.cancel(); image = nil; return }
         let key = video.url.absoluteString
-        if key != source { reset(); source = key; reader = SeekFrameReader(video) }
+        // The episode is opened (its playlist and stream read) as soon as the bar is touched, while the finger has yet to
+        // rest: the first picture then needs only its seek (desktop c2aad8d).
+        if key != source { reset(); source = key; reader = SeekFrameReader(video); reader?.prepare() }
         let slot = Self.slot(time)
         guard slot != wanted, let reader else { return }
         wanted = slot
@@ -75,18 +77,23 @@ final class SeekFrameReader: @unchecked Sendable {
         } onCancel: { flag.cancelled = true }
     }
     func close() { queue.async { if let reader = self.reader { LilacFrameReaderClose(reader) }; self.reader = nil; self.failed = true } }
+    /// Opens the episode ahead of the first picture asked for.
+    func prepare() { queue.async { _ = self.open() } }
 
+    private func open() -> Bool {
+        if reader != nil { return true }
+        guard !failed else { return false }
+        let source = video.url.isFileURL ? video.url.path : video.url.absoluteString
+        let headers = video.headers.filter { !$0.value.isEmpty }.map { $0.key + ": " + $0.value + "\r\n" }.joined()
+        var message: UnsafeMutablePointer<CChar>?
+        reader = LilacFrameReaderOpen(source, headers, &message)
+        if let message { LilacAudioFreeError(message) }
+        // A stream it cannot open is not tried again for every slot.
+        if reader == nil { failed = true }
+        return reader != nil
+    }
     private func read(_ seconds: Double, width: Int32, height: Int32, flag: Flag) -> CGImage? {
-        guard !flag.cancelled, !failed else { return nil }
-        if reader == nil {
-            let source = video.url.isFileURL ? video.url.path : video.url.absoluteString
-            let headers = video.headers.filter { !$0.value.isEmpty }.map { $0.key + ": " + $0.value + "\r\n" }.joined()
-            var message: UnsafeMutablePointer<CChar>?
-            reader = LilacFrameReaderOpen(source, headers, &message)
-            if let message { LilacAudioFreeError(message) }
-            // A stream it cannot open is not tried again for every slot.
-            guard reader != nil else { failed = true; return nil }
-        }
+        guard !flag.cancelled, !failed, open() else { return nil }
         var rgba: UnsafeMutablePointer<UInt8>?, outWidth: Int32 = 0, outHeight: Int32 = 0
         let opaque = Unmanaged.passUnretained(flag).toOpaque()
         let status = withExtendedLifetime(flag) {

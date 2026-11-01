@@ -151,6 +151,29 @@ class CommunityTiersTest {
         assertEquals(2, DesktopTitleRules.explicitSeason("Kaguya-sama 2nd ~Love Is War~"))
         assertNull(DesktopCommunity.season("환생했는데 제7왕자라 내맘대로 마술을 연마합니다"))
     }
+    // Desktop ae060bc: an ordinal glued to a word or a superscript is not a season.
+    @Test fun anOrdinalGluedToAWordOrASuperscriptIsNotASeason() {
+        assertEquals(1, DesktopTitleRules.season("JMAF23th"))
+        assertNull(DesktopTitleRules.explicitSeason("JMAF23th"))
+        assertEquals(1, DesktopTitleRules.season("DNA²"))
+        assertEquals(3, DesktopTitleRules.season("Hell Mode 3rd Season"))
+        assertEquals(3, DesktopTitleRules.season("Wagnaria!!3"))
+    }
+    // kannasub.tistory.com: posts are linked by title, its search page draws results in script, and its sidebar links the
+    // show's category, whose page lists the posts in its structured data.
+    @Test fun aTistoryBlogWhoseSearchShowsNothingIsReadThroughTheShowsCategory() {
+        val origin = "https://kannasub.tistory.com"; val show = "환생했는데 제7왕자라 내맘대로 마술을 연마합니다 2기"
+        assertTrue(TistoryListing.isPost("/entry/" + show.replace(' ', '-') + "-4화-자막"))
+        assertTrue(TistoryListing.isPost("$origin/123")); assertTrue(TistoryListing.isPost("/entry/123"))
+        assertFalse(TistoryListing.isPost("/entry/post")); assertFalse(TistoryListing.isPost("/category/자막/123"))
+        val search = com.fleeksoft.ksoup.Ksoup.parse("<a href=\"/category/" + "2025년 3분기 자막".encodeURLPathPart() + "/" + show.encodeURLPathPart() + "\">$show</a>" +
+            "<a href=\"/category/" + "2026년 4분기 자막".encodeURLPathPart() + "/" + "빌려준 마력은 리볼빙으로 강제징수".encodeURLPathPart() + "\">other</a>", origin)
+        val categories = TistoryListing.categories(search, listOf(show, "환생했는데 제7왕자라 내맘대로 마술을 연마합니다"))
+        assertEquals(listOf(origin + "/category/" + "2025년 3분기 자막".encodeURLPathPart() + "/" + show.encodeURLPathPart()), categories.keys.toList())
+        val items = listOf(4, 5).joinToString(",") { """{"@type":"ListItem","position":$it,"item":{"@id":"$origin/entry/${show.replace(' ', '-')}-${it}화-자막","name":"$show ${it}화 자막"}}""" }
+        val listed = TistoryListing.listed("""<script type="application/ld+json">{"@type":"ItemList","itemListElement":[$items]}</script>""")
+        assertEquals(listOf("$show 4화 자막", "$show 5화 자막"), listed.map { it.second })
+    }
     @Test fun extensionlessTistoryAttachmentsAreTakenByTheirLinkText() {
         val html = listOf("24309F3C5383FF2226\">[leopard-raws]No Game No Life 07.smi", "223F803C5383FF2817\">No Game No Life 07.rar")
             .joinToString("") { "<a href=\"https://t1.daumcdn.net/cfile/tistory/$it</a>" } + "<a href=\"https://example.com/about\">소개</a>"

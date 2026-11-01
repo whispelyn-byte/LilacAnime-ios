@@ -1,5 +1,9 @@
 package com.lilac.anime.shared
 
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.*
+import io.ktor.http.*
+import kotlinx.coroutines.test.runTest
 import kotlin.test.*
 import kotlinx.serialization.json.*
 
@@ -27,5 +31,27 @@ class AnissiaTitlesTest {
         assertEquals(3, AnissiaCatalogRules.japaneseSeason("作品 第三期"))
         assertEquals(2, AnissiaCatalogRules.japaneseSeason("作品 Ⅱ"))
         assertEquals(AnissiaCatalogRules.key("作品 第3期"), AnissiaCatalogRules.key("作品 III"))
+    }
+    // Desktop ae060bc: Anissia is searched by the Japanese title less its season; the daily catalog only when that finds none.
+    @Test fun anissiaIsSearchedByTheJapaneseTitleBeforeItsCatalogIsRead() = runTest {
+        writeCommunityCache("anissia-titles", "{}")
+        val asked = mutableListOf<String>()
+        val found = """[{"animeNo":2588,"subject":"환생했는데 제7왕자라 내맘대로 마술을 연마합니다","originalSubject":"転生したら第七王子だったので、気ままに魔術を極めます","startDate":"2024-04-02"},
+            {"animeNo":2986,"subject":"환생했는데 제7왕자라 내맘대로 마술을 연마합니다 2기","originalSubject":"転生したら第七王子だったので、気ままに魔術を極めます","startDate":"2025-07-10"}]"""
+        val client = HttpClient(MockEngine { request ->
+            val query = request.url.parameters["q"]
+            asked += request.url.encodedPath + (query?.let { "?q=$it" } ?: "")
+            val content = when {
+                query == null -> """[{"animeNo":9,"subject":"실패작","originalSubject":"失敗作","startDate":"2020-01-01"}]"""
+                "第七王子" in query -> found
+                else -> "[]"
+            }
+            respond("""{"code":"ok","data":{"content":$content,"totalPages":1}}""", headers = headersOf(HttpHeaders.ContentType, "application/json"))
+        })
+        val catalog = AnissiaTitleCatalog(client)
+        assertEquals("환생했는데 제7왕자라 내맘대로 마술을 연마합니다 2기", catalog.title("転生したら第七王子だったので、気ままに魔術を極めます 第2期", "", "2025-07-10", "TV"))
+        assertEquals(listOf("/anime/list/0?q=転生したら第七王子だったので、気ままに魔術を極めます"), asked)
+        assertEquals("실패작", catalog.title("失敗作", "", "2020-01-01", "TV"))
+        assertEquals("/anime/list/0", asked.last(), "a search that finds none reads the catalog")
     }
 }

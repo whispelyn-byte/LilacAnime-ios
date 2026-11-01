@@ -1,14 +1,17 @@
 package com.lilac.anime.shared
 import com.fleeksoft.ksoup.Ksoup
+import com.fleeksoft.ksoup.nodes.Document
 import com.fleeksoft.ksoup.parser.Parser
 import com.lilac.anime.shared.compat.*
 import com.lilac.anime.shared.ported.*
 import io.ktor.http.Url
+import io.ktor.http.decodeURLPart
 import io.ktor.http.encodeURLPathPart
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.serialization.json.*
 
 /** Anissia maker discovery and linked/RSS post lookup, following Desktop's community flow. */
 data class SubtitleMaker(val name: String, val website: String, val status: String)
@@ -137,11 +140,23 @@ internal class AnissiaDiscovery(private val repository: SourceRepository, privat
                         val url = item.selectFirst("link")?.text().orEmpty()
                         if (url.startsWith("https://")) posts += KairanPost(item.selectFirst("title")?.text().orEmpty(), url)
                     }
-                    for (query in listOf(subject, nickname).filter(String::isNotBlank).distinct()) {
-                        val html = attempt { repository.getText(origin + "/search/" + query.encodeURLPathPart()) }.orEmpty()
+                    // Posts of a later season often omit "2기", so the series name is searched as well.
+                    val series = subject.replace(Regex("\\s*(?:\\d+\\s*기(?![가-힣])|season\\s*\\d+|시즌\\s*\\d+)\\s*$", RegexOption.IGNORE_CASE), "").trim()
+                    val categories = mutableMapOf<String, Double>()
+                    for (query in listOf(subject, series, nickname).filter(String::isNotBlank).distinct()) {
+                        val html = attempt { repository.getText(origin + "/search/" + query.encodeURLPathPart()) } ?: continue
                         val doc = Ksoup.parse(html, origin)
-                        posts += doc.select("a[href]").filter { Regex("/(?:entry/)?\\d+$").containsMatchIn(it.attr("href")) }
+                        posts += doc.select("a[href]").filter { TistoryListing.isPost(it.attr("href")) }
                             .map { KairanPost(it.text(), it.absUrl("href")) }
+                        for ((href, score) in TistoryListing.categories(doc, listOf(subject, series))) if ((categories[href] ?: 0.0) < score) categories[href] = score
+                    }
+                    // Some skins draw search results in the page's script, so the HTML has none; their sidebar still links
+                    // the show's category, whose page lists every post.
+                    for (href in categories.entries.sortedByDescending { it.value }.take(2).map { it.key }) for (page in 1..3) {
+                        val html = attempt { repository.getText(if (page > 1) "$href?page=$page" else href) } ?: break
+                        val before = posts.distinctBy { it.url }.size
+                        posts += TistoryListing.listed(html).map { (url, name) -> KairanPost(name, url) }
+                        if (posts.distinctBy { it.url }.size == before) break
                     }
                 }
                 val candidates = posts.distinctBy { it.url }.map { it.copy(title = AnissiaTitleRules.rename(it.title, nickname, subject)) }
@@ -212,5 +227,46 @@ internal object AnissiaTitleRules {
         if (nickname.isBlank() || !title.contains(nickname) || DesktopCommunity.score(subject, title) >= .52) return title
         val number = Regex("^\\s*(\\d{1,3})(?!\\d)").find(title.substringAfter(nickname))?.groupValues?.get(1)?.toIntOrNull()
         return if (number == null) title else "$subject ${number}화"
+    }
+}
+
+/** main.cjs tistoryPosts: what a Tistory search or category page links. */
+internal object TistoryListing {
+    // Posts are linked by number ("/123", "/entry/123") or, on newer blogs, by title ("/entry/환생했는데-…-2기-4화-자막").
+    private val postLink = Regex("^(?:https?://[^/]+)?/(?:entry/(?!post\\b)[^/?#]+|\\d+)$")
+    fun isPost(href: String) = postLink.matches(href)
+    /** The categories a page links ("2025년 3분기 자막/환생했는데 … 2기") named like the show, with their score. */
+    fun categories(doc: Document, titles: List<String>): Map<String, Double> {
+        val wanted = titles.filter(String::isNotBlank).map(DesktopCommunity::title)
+        val found = mutableMapOf<String, Double>()
+        for (link in doc.select("a[href*=\"/category/\"]")) {
+            val name = runCatching { link.attr("href").substringAfter("/category/").substringBefore('?').decodeURLPart().substringAfterLast('/') }.getOrNull() ?: continue
+            val score = wanted.maxOfOrNull { DesktopCommunity.score(it, DesktopCommunity.title(name)) } ?: continue
+            val href = link.absUrl("href").substringBefore('?')
+            if (score >= .52 && href.isNotBlank() && (found[href] ?: 0.0) < score) found[href] = score
+        }
+        return found
+    }
+    /** The posts a list page names in its structured data (schema.org ItemList), which every skin writes. */
+    fun listed(html: String): List<Pair<String, String>> {
+        val found = mutableListOf<Pair<String, String>>()
+        fun walk(value: JsonElement) {
+            when (value) {
+                is JsonArray -> value.forEach(::walk)
+                is JsonObject -> {
+                    val item = value["item"] as? JsonObject
+                    if ((value["@type"] as? JsonPrimitive)?.contentOrNull == "ListItem" && item != null) {
+                        val url = (item["@id"] as? JsonPrimitive)?.contentOrNull ?: (item["url"] as? JsonPrimitive)?.contentOrNull
+                        val name = (item["name"] as? JsonPrimitive)?.contentOrNull
+                        if (!url.isNullOrBlank() && !name.isNullOrBlank()) found += url to name
+                    }
+                    value.values.forEach(::walk)
+                }
+                else -> Unit
+            }
+        }
+        for (script in Ksoup.parse(html).select("script[type=\"application/ld+json\"]"))
+            runCatching { Json.parseToJsonElement(script.data()) }.getOrNull()?.let(::walk)
+        return found
     }
 }

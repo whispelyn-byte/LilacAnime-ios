@@ -15,10 +15,12 @@ internal expect fun normalizeDesktopTitle(value: String): String
 object DesktopTitleRules {
     // Compiled once: subtitle ranking calls these for every post of a blog.
     private val comparePunctuation = Regex("[\\s:：'’\"“”!！?？.,·・\\-–—~〜()（）]")
-    // A bare ordinal counts only at the end or before a subtitle: "the 7th Prince" (제7왕자) is not a 7th season.
-    private val seasonMark = Regex("(?:season|시즌)\\s*(\\d+)|(\\d+)\\s*기(?![가-힣])|(\\d+)(?:st|nd|rd|th)(?:\\s*season\\b|(?=\\s*(?:$|[~\\-(:!])))|[가-힣](\\d)(?=\\s|$)", RegexOption.IGNORE_CASE)
+    // A bare ordinal counts only at the end or before a subtitle: "the 7th Prince" (제7왕자) is not a 7th season, nor one
+    // glued to a word ("JMAF23th", the 23rd Japan Media Arts Festival).
+    private val seasonMark = Regex("(?:season|시즌)\\s*(\\d+)|(\\d+)\\s*기(?![가-힣])|(?<![a-z\\d])(\\d+)(?:st|nd|rd|th)(?:\\s*season\\b|(?=\\s*(?:$|[~\\-(:!])))|[가-힣](\\d)(?=\\s|$)", RegexOption.IGNORE_CASE)
     private val trailingDigit = Regex("([a-z]+)[!?'’)]*\\s*([2-9])$", RegexOption.IGNORE_CASE)
     private val trailingRoman = Regex("\\s(II|III|IV)$")
+    private val superscript = Regex("[¹²³⁴⁵⁶⁷⁸⁹]")
     private val otherMedia = Regex("\\([^()]*(?:게임|드라마|실사|소설|만화|웹툰|영화 시리즈|음반|노래)[^()]*\\)")
     private val animeQualifier = Regex("\\s*\\([^()]*(?:애니메이션|애니|TV|\\d{4}년)[^()]*\\)")
     private val firstSeasonSuffix = Regex("\\s*애니메이션(?:\\s*1\\s*기)?\\s*$|\\s+1\\s*기\\s*$|\\s+\\d+\\s*화\\s*$")
@@ -33,7 +35,8 @@ object DesktopTitleRules {
     fun explicitSeason(title: String): Int? = seasonMark
         .find(normalizeDesktopTitle(title))?.groupValues?.drop(1)?.firstOrNull(String::isNotBlank)?.toIntOrNull()
     fun season(title: String): Int {
-        val value = normalizeDesktopTitle(title).trim()
+        // A superscript is part of the name, not a season ("DNA²" would read "DNA2").
+        val value = normalizeDesktopTitle(title.replace(superscript, "")).trim()
         explicitSeason(value)?.let { return it }
         val digit = trailingDigit.find(value)
         if (digit != null && digit.groupValues[1].lowercase() !in listOf("no", "vol", "part", "cour", "lv", "level", "ep", "episode", "chapter", "chapters", "act", "phase", "movie", "film", "special", "specials", "ova", "oad", "recap", "arc")) return digit.groupValues[2].toInt()

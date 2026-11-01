@@ -33,8 +33,10 @@ final class SeekPreview: ObservableObject {
         let slot = Self.slot(time)
         guard slot != wanted, let reader else { return }
         wanted = slot
-        pending?.cancel()
+        pending?.cancel(); filling?.cancel()
         if let frame = frames[slot] { image = frame; return }
+        // The nearest picture filled in ahead stands in until this one comes.
+        if let near = nearest(slot) { image = near }
         // Asked for only once the finger rests a moment, so a sweep across the bar loads nothing on the way.
         let at = Self.readTime(slot: slot, duration: duration)
         pending = Task { [weak self] in
@@ -50,6 +52,47 @@ final class SeekPreview: ObservableObject {
     func reset() {
         hide(); frames = [:]; kept = []; image = nil; source = nil
         reader?.close(); reader = nil
+    }
+
+    // MARK: Filled in ahead (desktop 125762c)
+    // While an episode plays, a picture every 30 s is read in the background, the wide steps first (every 4 min, then 2,
+    // 1, ½), one at a time and only while the player has 15 s of its own stream ahead (or is paused) and the bar is not
+    // held. Dragging then shows the nearest one at once. At most two thirds of the kept pictures are filled in, so a long
+    // episode is covered more coarsely and a drag still has room.
+    static let fillSeconds = 30.0
+    private var filling: Task<CGImage?, Never>?
+    nonisolated static func fillOrder(duration: Double) -> [Int] {
+        var slots: [Int] = [], seen = Set<Int>()
+        for step in [240.0, 120, 60, fillSeconds] {
+            var at = 0.0
+            while at < duration - 1 { let slot = Self.slot(at); if seen.insert(slot).inserted { slots.append(slot) }; at += step }
+        }
+        return Array(slots.prefix(keptLimit * 2 / 3))
+    }
+    func nearest(_ slot: Int) -> UIImage? {
+        for step in 1...Int(Self.fillSeconds / Self.slotSeconds / 2) { if let near = frames[slot - step] ?? frames[slot + step] { return near } }
+        return nil
+    }
+    /// Runs until cancelled: the episode playing is read from `video`, and a new one starts its own order.
+    func fill(video: () -> SubtitleAutoSync.Video?, duration: () -> Double, ready: () -> Bool) async {
+        var key = "", queue: [Int] = []
+        while !Task.isCancelled {
+            guard let current = video(), duration() > 0 else { try? await Task.sleep(nanoseconds: 1_000_000_000); continue }
+            if current.url.absoluteString != key { key = current.url.absoluteString; queue = Self.fillOrder(duration: duration()) }
+            guard !queue.isEmpty, wanted == nil, ready() else { try? await Task.sleep(nanoseconds: queue.isEmpty ? 1_000_000_000 : 250_000_000); continue }
+            let slot = queue.removeFirst()
+            if key != source { reset(); source = key; reader = SeekFrameReader(current) }
+            guard frames[slot] == nil, let reader else { continue }
+            let at = Self.readTime(slot: slot, duration: duration())
+            let read = Task { await reader.frame(at: at) }
+            filling = read
+            let picture = await withTaskCancellationHandler { await read.value } onCancel: { read.cancel() }
+            filling = nil
+            guard source == key else { continue }
+            if let picture { keep(UIImage(cgImage: picture), slot: slot) }
+            // A drag took the reader over: this one comes again at the end.
+            else if read.isCancelled { queue.append(slot) }
+        }
     }
     private func keep(_ frame: UIImage, slot: Int) {
         if frames[slot] == nil { kept.append(slot) }

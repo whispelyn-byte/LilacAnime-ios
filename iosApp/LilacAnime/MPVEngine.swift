@@ -63,8 +63,8 @@ final class MPVEngine: ObservableObject {
     private var configuredSpeed: Double?
     private var lastNowPlaying: (paused: Bool, duration: Int, speed: Double, at: Date)?
     private enum ObservedProperty: UInt64, CaseIterable {
-        case position = 1, duration, pause, cache, volume, mute, speed, tracks, eof
-        var name: String { ["time-pos", "duration", "pause", "paused-for-cache", "volume", "mute", "speed", "track-list", "eof-reached"][Int(rawValue) - 1] }
+        case position = 1, duration, pause, cache, volume, mute, speed, tracks, eof, cacheAhead
+        var name: String { ["time-pos", "duration", "pause", "paused-for-cache", "volume", "mute", "speed", "track-list", "eof-reached", "demuxer-cache-duration"][Int(rawValue) - 1] }
         var format: mpv_format {
             switch self {
             case .pause, .cache, .mute, .eof: return MPV_FORMAT_FLAG
@@ -246,6 +246,8 @@ final class MPVEngine: ObservableObject {
     private static let blocking = DispatchQueue(label: "Lilac.MPV", qos: .userInitiated)
     var canCaptureVideo: Bool { handle != nil && fileLoaded }
     var canSaveProgress: Bool { canCaptureVideo && !restoringVideoOutput }
+    /// Seconds of its own stream the player has read ahead of the position (mpv demuxer-cache-duration).
+    var cacheAhead: Double { fileLoaded ? observed[.cacheAhead] ?? 0 : 0 }
     /// Keep the video track selected: toggling vid reselects the demux stream on
     /// return and can discard buffered audio/video while synchronizing again.
     /// A null output submits no Metal work and leaves the media timeline intact.

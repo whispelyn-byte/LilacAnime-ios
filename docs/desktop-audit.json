@@ -1,5 +1,5 @@
 {
-  "desktopCommit": "c2aad8dfbbaa8eb3c80b02f5b512947ad160b693",
+  "desktopCommit": "125762c5b2396909f23e593846835afcba6c4d54",
   "desktopVersion": "0.5.58",
   "files": [
     {
@@ -610,7 +610,7 @@
     },
     {
       "desktop": "src/player.js",
-      "sha256": "f7ce41144162e53c0289c0e36f31e8c94f5be1eb0cf4202f452a7608d8d8de92",
+      "sha256": "cc7c8e9459ac5e603cddaecadaa3c87e5e529fd99c59f080c988b6943f1b756f",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -1187,7 +1187,7 @@
     },
     {
       "desktop": "tests/seek-preview.electron.cjs",
-      "sha256": "8d062933cfc4d8bbc451ae9ce7fd572606bde9be167a75425b59ebc0267bbad4",
+      "sha256": "81b33abfb7a2e6aa797c4de8ae4e4cfd32f3025c50a212c47134f9c6d1160dd9",
       "uncommitted": false,
       "category": "validation",
       "ios": [

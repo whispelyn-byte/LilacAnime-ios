@@ -78,6 +78,7 @@ final class EpisodePlayerModel: ObservableObject {
     private var resolutionTask: Task<Void, Never>?
     private var selectionTask: Task<Void, Never>?
     private var miruroRecoveryTask: Task<Void, Never>?
+    private var seekPreviewFill: Task<Void, Never>?
     private var miruroMonitor = MiruroStallMonitor()
     private var miruroFailedServers: Set<String> = []
     // 자막 싱크 맞추기 (desktop runSubtitleSync / checkSubtitleSync): one run at a time, each subtitle once.
@@ -128,7 +129,7 @@ final class EpisodePlayerModel: ObservableObject {
         NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification).sink { [weak self] _ in Task { @MainActor in self?.enteredBackground() } }.store(in: &observers)
         NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification).sink { [weak self] _ in Task { @MainActor in self?.enteringForeground() } }.store(in: &observers)
         // Paused from the lock screen while playing in the background: the app is suspended from then on too.
-        engine.$paused.dropFirst().sink { [weak self] paused in Task { @MainActor in if paused { self?.pausedInBackground() } } }.store(in: &observers)
+        engine.$paused.dropFirst().sink { [weak self] paused in Task { @MainActor in if paused { self?.pausedInBackground() } else { self?.fillSeekPreview() } } }.store(in: &observers)
         engine.$error.dropFirst().sink { [weak self] message in
             Task { @MainActor in
                 guard let self, self.playbackError != message else { return }
@@ -893,6 +894,21 @@ final class EpisodePlayerModel: ObservableObject {
     var syncAvailable: Bool { subtitle != nil && syncVideo != nil && !systemPlayback }
     /// The seek bar preview reads what the player reads, as 자막 싱크 does.
     var seekPreviewVideo: SubtitleAutoSync.Video? { syncVideo }
+    /// The seek bar preview's pictures filled in ahead (desktop 125762c), from five seconds after playing first starts until
+    /// the player closes; only in the foreground, without system playback, and while the player has 15 s ahead or is paused.
+    func fillSeekPreview() {
+        guard seekPreviewFill == nil else { return }
+        seekPreviewFill = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard let preview = self?.seekPreview, !Task.isCancelled else { return }
+            await preview.fill(video: { [weak self] in self?.systemPlayback == false ? self?.seekPreviewVideo : nil },
+                               duration: { [weak self] in self?.engine.duration ?? 0 },
+                               ready: { [weak self] in
+                guard let self else { return false }
+                return UIApplication.shared.applicationState == .active && !self.systemPlayback && !self.engine.buffering && (self.engine.paused || self.engine.cacheAhead >= 15)
+            })
+        }
+    }
     var syncButtonTitle: String { syncRunning ? (syncStatus ?? "싱크 맞추는 중") + " · 눌러서 취소" : "음성에 맞춰 싱크 맞추기" }
     private func cancelSync() {
         syncCancel.cancel(); syncTask?.cancel(); syncTask = nil; syncRunning = false; syncStatus = nil
@@ -1179,7 +1195,7 @@ final class EpisodePlayerModel: ObservableObject {
             watchURL: item.watchURL.absoluteString, directURL: active?.url.absoluteString, position: engine.position, duration: engine.duration, displayNumber: item.displayNumber)
     }
     func shutdown(library: LibraryStore) {
-        pictureInPicture.stop(); seekPreview.reset()
+        pictureInPicture.stop(); seekPreviewFill?.cancel(); seekPreviewFill = nil; seekPreview.reset()
         subtitleClassification?.cancel()
         resolutionTask?.cancel(); selectionTask?.cancel()
         whisper.cancel(); nextWhisper.cancel(); whisperLive.cancel(); whisperStartTask?.cancel()

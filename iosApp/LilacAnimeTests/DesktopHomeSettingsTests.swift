@@ -44,6 +44,16 @@ final class DesktopHomeSettingsTests: XCTestCase {
         // The last slot is read just inside the episode's end.
         XCTAssertEqual(SeekPreview.readTime(slot: 280, duration: 1_398), 1_397.5)
     }
+    func testSeekPreviewIsFilledInWideStepsFirst() {
+        // Every 4 min, then 2, 1 and ½ (desktop 125762c): a 10-minute episode in 20 pictures.
+        let order = SeekPreview.fillOrder(duration: 600)
+        XCTAssertEqual(Array(order.prefix(8)), [0, 48, 96, 24, 72, 12, 36, 60])
+        XCTAssertEqual(order.count, 20)
+        XCTAssertEqual(Set(order).count, order.count)
+        // A long episode is covered more coarsely, leaving room for the pictures a drag reads.
+        XCTAssertEqual(SeekPreview.fillOrder(duration: 7_200).count, SeekPreview.keptLimit * 2 / 3)
+        XCTAssertEqual(SeekPreview.fillOrder(duration: 0), [])
+    }
     @MainActor func testSeekPreviewWithoutAVideoShowsNothing() {
         let preview = SeekPreview()
         preview.show(30, duration: 1_400, video: nil)

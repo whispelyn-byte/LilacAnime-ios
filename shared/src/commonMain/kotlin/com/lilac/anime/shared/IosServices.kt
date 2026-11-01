@@ -106,6 +106,18 @@ class IosServices internal constructor(private val worker: CoroutineDispatcher) 
     fun skipSegments(anilistId: Int, malId: Int, episode: Int, duration: Int, completion: (List<SkipSegment>?, String?) -> Unit) {
         scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { skip.segments(anilistId, malId, episode, duration) } }
     }
+    /** OP/ED times of a work's episode; a work opened without its ids (애니24 waits for them 1.5 s) is looked up by its
+     *  original title first (desktop oped:get). */
+    fun skipSegmentsFor(anime: Anime, episode: Int, duration: Int, completion: (List<SkipSegment>?, String?) -> Unit) {
+        scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) {
+            var anilist = anime.anilistId ?: 0; var mal = anime.malId ?: 0
+            if (anilist == 0 && mal == 0 && anime.native.isNotBlank()) {
+                val ids = try { source.nativeIDs(anime.native, anime.year) } catch (error: CancellationException) { throw error } catch (_: Exception) { null }
+                anilist = ids?.first ?: 0; mal = ids?.second ?: 0
+            }
+            skip.segments(anilist, mal, episode, duration)
+        } }
+    }
     private suspend fun <T> call(completion: (T?, String?) -> Unit, block: suspend () -> T) {
         try { completion(withContext(worker) { block() }, null) }
         catch (error: CancellationException) { completion(null, "요청을 취소했습니다."); throw error }

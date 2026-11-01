@@ -51,6 +51,21 @@ final class DesktopHomeSettingsTests: XCTestCase {
         preview.show(30, duration: 0, video: SubtitleAutoSync.Video(url: URL(fileURLWithPath: "/nonexistent.mp4"), headers: [:], duration: 0))
         XCTAssertNil(preview.image)
     }
+    @MainActor func testHomeListsAreKeptTenMinutesInMemoryAndADayOnDisk() {
+        HomeSnapshot.directory = FileManager.default.temporaryDirectory.appendingPathComponent("HomeSnapshotTest-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: HomeSnapshot.directory); HomeSnapshot.forget() }
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let lists = HomeSnapshot.Lists(sections: [SourceSection(name: "이번 시즌", items: list("s", 50))], airing: list("a", 3))
+        HomeSnapshot.save("animenosub|0", lists, now: start)
+        XCTAssertEqual(HomeSnapshot.fresh("animenosub|0", now: start.addingTimeInterval(9 * 60))?.sections.first?.items.count, 50)
+        XCTAssertNil(HomeSnapshot.fresh("animenosub|0", now: start.addingTimeInterval(11 * 60)))
+        let kept = HomeSnapshot.read("animenosub|0", now: start.addingTimeInterval(23 * 3600))
+        XCTAssertEqual(kept?.sections.first?.name, "이번 시즌")
+        XCTAssertEqual(kept?.sections.first?.items.map(\.id), (0..<40).map { "s\($0)" })
+        XCTAssertEqual(kept?.airing.map(\.id), ["a0", "a1", "a2"])
+        XCTAssertNil(HomeSnapshot.read("animenosub|0", now: start.addingTimeInterval(25 * 3600)))
+        XCTAssertNil(HomeSnapshot.read("reanime|0", now: start))
+    }
     func testStartSectionFallsBackToHome() {
         let defaults = UserDefaults(suiteName: "start-view-test")!
         defaults.removePersistentDomain(forName: "start-view-test")

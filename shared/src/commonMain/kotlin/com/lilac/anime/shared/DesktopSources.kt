@@ -123,6 +123,13 @@ object DesktopSourceParser {
         if (trimmed.startsWith("/")) return origin + trimmed
         return origin + url.encodedPath.substringBeforeLast('/') + "/" + trimmed
     }
+    /** 애니24 별점 높은순 pages ranked by how many rated each show, then by its rating; each show once. */
+    fun ohliPopular(items: List<JsonObject>): List<Anime> {
+        fun number(item: JsonObject, key: String) = (item[key] as? JsonPrimitive)?.content?.toDoubleOrNull() ?: 0.0
+        return items.distinctBy { it.text("slug") }
+            .sortedWith(compareByDescending<JsonObject> { number(it, "rating_count") }.thenByDescending { number(it, "rating") })
+            .map(::ohliAnime)
+    }
     /** The best variant of an 애니24 master playlist (desktop ohliVariant). */
     fun ohliVariant(text: String, base: String): String {
         check(text.startsWith("#EXTM3U")) { "애니24 영상 재생목록을 받지 못했습니다." }
@@ -352,6 +359,9 @@ data class DesktopPlaybackServer(val label: String, val kind: String, val url: S
 /** An 애니24 episode read from its player directly: the best variant, its playlist, and the subtitle files named. */
 data class OhliDirectStream(val url: String, val manifest: String, val subtitles: List<String>)
 
+/** 애니24 인기 순위 cards a page (desktop SORTED_PAGE). */
+private const val OHLI_POPULAR_PAGE = 36
+
 internal class DesktopSourceRepository(private val client: HttpClient) {
     private val nativeIDs = mutableMapOf<String, Pair<Int?, Int?>?>()
     internal suspend fun lookupNativeIDs(native: String, year: String): Pair<Int?, Int?>? {
@@ -486,6 +496,7 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
             // The airing shows first, then the finished ones a page at a time; movies from their own board.
             if (query.isNotBlank()) return if (page > 1) emptyList() else ohliSearch(query)
             if (filter.format.equals("Movie", true)) return ohliBoard("극장판", page).first
+            if (filter.sort == "popular") return ohliPopular().drop((page - 1) * OHLI_POPULAR_PAGE).take(OHLI_POPULAR_PAGE)
             return if (page <= 1) ohliAiring() else ohliBoard("완결", page - 1).first
         }
         val base = "https://linkani.tv"
@@ -538,6 +549,25 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
         val ids = dayIds?.await()
         SourceCatalogPage(raw.filter { ids == null || it.id in ids }, comics.text("next_page_url").isNotBlank(), raw.joinToString("|") { it.id })
     }
+    /**
+     * 인기 순위 (desktop ohliPopular, 0.5.57+): the site keeps no views (a sort it does not know falls back to update-desc),
+     * so its "별점 높은순" (a weighted rating) front pages are ranked by how many people rated each show. Kept for an hour.
+     */
+    private var ohliPopularCache: Pair<Long, List<Anime>>? = null
+    internal suspend fun ohliPopular(): List<Anime> {
+        val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
+        ohliPopularCache?.takeIf { now - it.first < 3_600_000 }?.let { return it.second }
+        val pages = coroutineScope {
+            (1..5).map { page -> async {
+                try { ohliPage(mapOf("sort" to "rating-desc", "page" to page.toString())).obj("comics").list("data").filterIsInstance<JsonObject>() }
+                catch (error: CancellationException) { throw error } catch (_: Exception) { emptyList() }
+            } }.awaitAll()
+        }
+        val items = DesktopSourceParser.ohliPopular(pages.flatten())
+        check(items.isNotEmpty()) { "애니24 별점 순위를 불러오지 못했습니다." }
+        ohliPopularCache = now to items
+        return items
+    }
     suspend fun ohliAiring(): List<Anime> =
         DesktopSourceParser.ohliProps(text(DesktopSourceParser.ohliPath("방영중"))).list("items").filterIsInstance<JsonObject>().map(DesktopSourceParser::ohliAnime)
     private suspend fun ohliBoard(board: String, page: Int, keyword: String = ""): Pair<List<Anime>, Boolean> {
@@ -588,6 +618,8 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
         val comic = props.obj("comic")
         val rows = props.obj("episodes").list("data").filterIsInstance<JsonObject>().toMutableList()
         // The rest of a long series' episode pages (원피스: 13) and the AniList lookup go out together, not one by one.
+        // The lookup is waited for 1.5 s at most (desktop 0.5.57+): past 30 requests a minute AniList answers 429, waited
+        // out for up to 15 s. OP/ED times look the ids up again by the original title (IosServices.skipSegmentsFor).
         val head = DesktopSourceParser.ohliDetail(comic, rows, summary).anime
         return coroutineScope {
             val lookup = async { if (head.anilistId == null) lookupNativeIDs(head.native, head.year) else null }
@@ -596,7 +628,7 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
             }.awaitAll()
             more.forEach { rows += it }
             val detail = DesktopSourceParser.ohliDetail(comic, rows, summary)
-            val ids = if (detail.anime.anilistId == null) lookup.await() else { lookup.cancel(); null }
+            val ids = if (detail.anime.anilistId == null) withTimeoutOrNull(1500) { lookup.await() }.also { lookup.cancel() } else { lookup.cancel(); null }
             if (ids == null) detail else detail.copy(anime = detail.anime.copy(anilistId = ids.first, malId = ids.second))
         }
     }

@@ -162,6 +162,11 @@ class SourceRepository(private val client: HttpClient, private val details: Deta
             val items = all.drop((page - 1) * 36).take(36)
             return SourceCatalogPage(items, page * 36 < all.size, items.joinToString("|") { it.id })
         }
+        if (source == "ohli24" && filter.sort == "popular" && query.isBlank() && filter.extras.isEmpty() && filter.genres.isEmpty() && filter.year.isBlank() && filter.format.isBlank()) {
+            // 인기순: the most rated shows (desktop sortedCatalog), 36 a page.
+            val all = desktop.ohliPopular(); val items = all.drop((page - 1) * 36).take(36)
+            return SourceCatalogPage(items, page * 36 < all.size, items.joinToString("|") { it.id })
+        }
         if (source == "ohli24") {
             val result = desktop.ohliCatalog(page, filter)
             return if (query.isBlank()) result else result.copy(items = result.items.filter { anime -> listOf(anime.title, anime.native, anime.english, anime.romaji).any { it.contains(query.trim(), true) } })
@@ -230,8 +235,12 @@ class SourceRepository(private val client: HttpClient, private val details: Deta
         if (source == "linkkf") return listOf("PV" to "5086", "극장판" to "5061", "16+" to "5085").map { (name, tag) ->
             SourceSection(name, linkkf.filtered(1, BrowseFilter(format = tag)))
         }
-        return listOf(SourceSection("이번 시즌", homeShows(source, true)),
-            SourceSection("인기 작품", browse(source, filter = BrowseFilter(sort = "popular"))))
+        // Asked for together (desktop 0.5.57+: the home's lists load at once, not one after another).
+        return coroutineScope {
+            val season = async { homeShows(source, true) }
+            val popular = async { browse(source, filter = BrowseFilter(sort = "popular")) }
+            listOf(SourceSection("이번 시즌", season.await()), SourceSection("인기 작품", popular.await()))
+        }
     }
     suspend fun homeShows(source: String, seasonOnly: Boolean): List<Anime> {
         if (source in listOf("miruro", "ohli24", "linkani")) return desktop.homeShows(source, seasonOnly)
@@ -247,8 +256,18 @@ class SourceRepository(private val client: HttpClient, private val details: Deta
             }
             return ReAnimeHarParser.parseSearch(JsonObject(mapOf("results" to JsonArray(playable))).toString())
         }
-        return (1..3).flatMap { page -> browse(source, page = page, filter = if(seasonOnly) BrowseFilter(year = year, season = season, sort = "popular") else BrowseFilter(status = "RELEASING", sort = "popular")) }.distinctBy { it.id }
+        // The three pages are asked for together (one after another took 2.5-3.5 s); a page past the last one is empty.
+        val filter = if (seasonOnly) BrowseFilter(year = year, season = season, sort = "popular") else BrowseFilter(status = "RELEASING", sort = "popular")
+        val pages = coroutineScope {
+            (1..3).map { page -> async {
+                try { browse(source, page = page, filter = filter) }
+                catch (error: CancellationException) { throw error } catch (error: Exception) { if (page == 1) throw error; emptyList() }
+            } }.awaitAll()
+        }
+        return pages.takeWhile { it.isNotEmpty() }.flatten().distinctBy { it.id }
     }
+    /** AniList and MAL ids of a work by its original title (and year), as its detail page looks them up. */
+    suspend fun nativeIDs(native: String, year: String): Pair<Int?, Int?>? = desktop.lookupNativeIDs(native, year)
     suspend fun sourceSchedule(source: String, day: Int): List<Anime> {
         if (source == "linkkf") return parseCatalog(kotlinx.serialization.json.Json.parseToJsonElement(getText("https://linkkf1.5imgdarr.top/api/singlefilter.php", mapOf("categorytagid" to (21189 + day.coerceIn(0,6)).toString(), "limit" to "50"))))
         return homeShows(source, false)

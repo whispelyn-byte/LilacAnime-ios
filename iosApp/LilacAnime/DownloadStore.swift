@@ -659,7 +659,7 @@ final class DownloadStore: ObservableObject {
             defer { service.close() }
             for attempt in 0..<2 {
                 let segments: [SkipSegment] = await withCheckedContinuation { continuation in
-                    service.skipSegments(anilistId: entry.anime.anime.anilistId?.int32Value ?? 0, malId: entry.anime.anime.malId?.int32Value ?? 0, episode: Int32(entry.number), duration: 0) { values, _ in continuation.resume(returning: values ?? []) }
+                    service.skipSegmentsFor(anime: entry.anime.anime, episode: Int32(entry.number), duration: 0) { values, _ in continuation.resume(returning: values ?? []) }
                 }
                 if !segments.isEmpty {
                     let chapters = segments.map { OfflineChapter(type: $0.type, start: $0.start, end: $0.end, score: 1) }

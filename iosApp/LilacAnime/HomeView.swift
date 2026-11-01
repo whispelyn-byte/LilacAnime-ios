@@ -84,7 +84,7 @@ struct HomeView: View {
                 }.padding(.bottom, 40)
             }.background(LilacStyle.background)
                 .toolbar(.hidden, for: .navigationBar)
-                .refreshable { scheduleRefresh += 1; if !UIShowcase.enabled { model.load(); home.load(source: model.source, day: max(day, 0)) } }
+                .refreshable { scheduleRefresh += 1; if !UIShowcase.enabled { model.load(); home.load(source: model.source, day: max(day, 0), force: true) } }
                 .onReceive(home.$airing) { value in if day == ScheduleWeek.today && !value.isEmpty { heroAiring = value } }
                 .onChange(of: day) { value in if !UIShowcase.enabled { home.load(source: model.source, day: max(value, 0)) } }
                 .task(id: library.preferences.source) { if !UIShowcase.enabled { featured = 0; heroAiring = []; home.load(source: library.preferences.source, day: max(day, 0)) } }

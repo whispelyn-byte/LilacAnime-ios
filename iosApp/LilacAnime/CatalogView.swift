@@ -319,8 +319,8 @@ struct DetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 // ott.css #detailDialog: a tall still on top fading into the page, the poster and title coming up over it.
-                // The wide header picture (TMDB backdrop, AniList banner) when there is one; the page waits for it (at most
-                // 1.5 s) so it does not swap in over the poster.
+                // The wide header picture (TMDB backdrop, AniList banner) when there is one. The page is drawn at once with
+                // what is at hand (desktop 1ba25c7: it waited up to 1.5 s); a picture still on its way is filled in when it comes.
                 ZStack {
                     if let banner = art?.banner, !banner.isEmpty {
                         AnimeArtwork(url: banner, height: heroHeight, preloaded: artworks.image(banner))
@@ -375,16 +375,16 @@ struct DetailView: View {
             }
     }
     /// The artwork asked for alongside the work's details (from its card first); when the card's titles do not find both
-    /// pictures, the details' (with the original title) are tried too. What is not ready after 1.5 s is filled in when it comes.
+    /// pictures, the details' (with the original title) are tried too. A picture already kept is shown at once, the rest
+    /// filled in when it comes.
     private func loadArtwork() async {
-        guard !UIShowcase.enabled else { artReady = true; return }
-        let deadline = Task { try? await Task.sleep(nanoseconds: 1_500_000_000); if !Task.isCancelled { artReady = true } }
-        defer { deadline.cancel() }
+        if art == nil, let kept = artworks.cached(summary, source: source) { art = kept }
+        artReady = true
+        guard !UIShowcase.enabled else { return }
         var found = await artworks.artwork(summary, source: source)
         if !found.complete, let full = model.anime { found = await artworks.artwork(full, source: source) }
         guard !Task.isCancelled else { return }
         if found.complete || art?.complete != true { art = found }
-        artReady = true
     }
     /// The poster beside the title, the original title and a line of facts (#detailDialog .detail-body). Under the Korean
     /// title logo the text title stays, small: the logo is the series', the title says which season it is.

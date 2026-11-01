@@ -224,8 +224,7 @@ final class EpisodePlayerModel: ObservableObject {
             }
             if !self.loadedSkip && duration > 0 {
                 self.loadedSkip = true
-                self.service.skipSegments(anilistId: self.item.anime.anime.anilistId?.int32Value ?? 0,
-                    malId: self.item.anime.anime.malId?.int32Value ?? 0, episode: Int32(self.item.number), duration: Int32(duration)) { [weak self] segments, _ in
+                self.service.skipSegmentsFor(anime: self.item.anime.anime, episode: Int32(self.item.number), duration: Int32(duration)) { [weak self] segments, _ in
                         guard let self, token == self.generation else { return }
                         if let segments, !segments.isEmpty {
                             self.chapters = segments.map { OfflineChapter(type: $0.type, start: $0.start, end: $0.end, score: 1) }

@@ -224,14 +224,31 @@ final class DesktopSourceModel: ObservableObject {
     @Published var loading = false
     private let service = IosServices()
     private var generation = UUID()
-    func load(source: String, day: Int) {
-        service.cancel(); generation = UUID(); let token = generation; loading = true; error = nil
-        sections = []; airing = []
+    /// A source's lists: the ones loaded in the last ten minutes as they are, else the last kept ones (a day) at once
+    /// while the fresh ones load (HomeSnapshot, desktop 14e689d). force (pull to refresh) always asks again.
+    func load(source: String, day: Int, force: Bool = false) {
+        service.cancel(); generation = UUID(); let token = generation; error = nil
+        let key = source + "|" + String(day)
+        if !force, let kept = HomeSnapshot.fresh(key) { sections = kept.sections; airing = kept.airing; loading = false; return }
+        let last = HomeSnapshot.read(key)
+        sections = last?.sections ?? []; airing = last?.airing ?? []; loading = true
+        final class Arrived { var sections: [SourceSection]?; var airing: [Anime]? }
+        let arrived = Arrived()
+        let keep = { if let sections = arrived.sections, let airing = arrived.airing { HomeSnapshot.save(key, .init(sections: sections, airing: airing)) } }
         service.sourceSchedule(sourceKey: source, day: Int32(day)) { [weak self] values, failure in
-            guard let self, token == self.generation else { return }; self.airing = values ?? []; self.error = failure; self.loading = false
+            guard let self, token == self.generation else { return }; self.loading = false
+            if let values, !values.isEmpty || last == nil { self.airing = values }
+            // A source that does not answer keeps its last lists.
+            if failure != nil && last == nil { self.error = failure }
+            if failure == nil { arrived.airing = values ?? []; keep() }
         }
         service.sourceSections(sourceKey: source) { [weak self] values, failure in
-            guard let self, token == self.generation else { return }; self.sections = values ?? []; if let failure { self.error = failure }
+            guard let self, token == self.generation else { return }
+            // The source not answering gives Jikan's lists in their place (SourceRepository.sourceSections).
+            let answered = !(values ?? []).isEmpty && !(values ?? []).contains { $0.name.hasPrefix("영상 소스 응답 없음") || $0.name.hasPrefix("Jikan") }
+            if let values, answered || last == nil { self.sections = values }
+            if let failure, last == nil { self.error = failure }
+            if answered, let values { arrived.sections = values; keep() }
         }
     }
     deinit { service.close() }

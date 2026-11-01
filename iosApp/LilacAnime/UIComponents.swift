@@ -133,6 +133,8 @@ struct AnimePosterCard: View {
 struct HomeHero: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let picks: [Anime]
+    /// Each pick's list (이번 시즌 신작 · 지금 방영 중 · 인기 작품), shown above its title.
+    var labels: [String] = []
     @Binding var index: Int
     let source: String
     @EnvironmentObject private var library: LibraryStore
@@ -193,7 +195,7 @@ struct HomeHero: View {
     private var copy: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
-                Text("이번 시즌 추천").font(.system(size: 13, weight: .bold)).foregroundStyle(LilacStyle.accent)
+                Text(labels.indices.contains(min(index, picks.count - 1)) ? labels[min(index, picks.count - 1)] : "이번 시즌 신작").font(.system(size: 13, weight: .bold)).foregroundStyle(LilacStyle.accent)
                 if picks.count > 1 {
                     HStack(spacing: 12) {
                         Rectangle().frame(width: 22, height: 1)

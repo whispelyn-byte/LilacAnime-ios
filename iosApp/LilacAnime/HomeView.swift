@@ -14,16 +14,22 @@ struct HomeView: View {
     @State private var episodesOf: WatchEntry?
     @State private var pickedEpisode: PlaybackItem?
     @Environment(\.horizontalSizeClass) private var sizeClass
-    @State private var homeOrder = "season"
+    /// 이번 시즌 / 최근 업데이트, kept across launches (desktop #22); a source without update lists shows 이번 시즌 but keeps it.
+    @AppStorage("homeOrder") private var savedHomeOrder = "season"
+    private var homeOrder: String { savedHomeOrder == "updated" && DesktopRecentUpdates.supported.contains(library.preferences.source) ? "updated" : "season" }
     @State private var featured = 0
     @State private var day = ScheduleWeek.today
     @State private var scheduleRefresh = 0
-    /// app.js renderHero: up to five shows with art; the one shown moves on every nine seconds.
-    private var heroItems: [Anime] {
-        let pool = home.sections.first { $0.name == "이번 시즌" }?.items.isEmpty == false ? home.sections.first { $0.name == "이번 시즌" }!.items : items
-        let withArt = pool.filter { !$0.poster.isEmpty || !$0.backdrop.isEmpty }
-        return Array((withArt.isEmpty ? pool : withArt).prefix(5))
+    /// 추천 (app.js heroSelection): five works a day from this season, on air and popular in turn, each with its own
+    /// label; works in 시청기록 left out. The one shown moves on every nine seconds.
+    private var heroPicks: [HomeSpotlight.Pick] {
+        let season = home.sections.first { $0.name == "이번 시즌" }?.items ?? []
+        return HomeSpotlight.picks(season: season.isEmpty ? items : season, airing: heroAiring, top: home.sections.first { $0.name == "인기 작품" }?.items ?? [],
+                                   watchedIDs: Set(library.history.map { $0.anime.anime.id }), watchedTitles: Set(library.history.map { $0.anime.title }), day: HomeSpotlight.today())
     }
+    private var heroItems: [Anime] { heroPicks.map(\.anime) }
+    /// What is on air today (the schedule's other days do not change the picks).
+    @State private var heroAiring: [Anime] = []
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var workspace = false
     let browse: () -> Void
@@ -41,7 +47,7 @@ struct HomeView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 30) {
                     if !heroItems.isEmpty {
-                        HomeHero(picks: heroItems, index: $featured, source: model.source)
+                        HomeHero(picks: heroItems, labels: heroPicks.map(\.label), index: $featured, source: model.source)
                     } else if model.loading {
                         Rectangle().fill(LilacStyle.card).frame(height: 420).overlay { ProgressView("작품을 불러오는 중…") }
                     }
@@ -79,8 +85,9 @@ struct HomeView: View {
             }.background(LilacStyle.background)
                 .toolbar(.hidden, for: .navigationBar)
                 .refreshable { scheduleRefresh += 1; if !UIShowcase.enabled { model.load(); home.load(source: model.source, day: max(day, 0)) } }
+                .onReceive(home.$airing) { value in if day == ScheduleWeek.today && !value.isEmpty { heroAiring = value } }
                 .onChange(of: day) { value in if !UIShowcase.enabled { home.load(source: model.source, day: max(value, 0)) } }
-                .task(id: library.preferences.source) { if !UIShowcase.enabled { featured = 0; home.load(source: library.preferences.source, day: max(day, 0)) } }
+                .task(id: library.preferences.source) { if !UIShowcase.enabled { featured = 0; heroAiring = []; home.load(source: library.preferences.source, day: max(day, 0)) } }
                 .task(id: "\(featured)/\(heroItems.count)") {
                     guard !UIShowcase.enabled, !reduceMotion, heroItems.count > 1 else { return }
                     do { try await Task.sleep(nanoseconds: 9_000_000_000) } catch { return }
@@ -99,7 +106,7 @@ struct HomeView: View {
     private var orderChips: some View {
         HStack(spacing: 2) {
             ForEach([("season", "이번 시즌 신작"), ("updated", "최근 업데이트")], id: \.0) { value, title in
-                Button { homeOrder = value } label: { LilacChip(text: title, selected: homeOrder == value) }.buttonStyle(.plain)
+                Button { savedHomeOrder = value } label: { LilacChip(text: title, selected: homeOrder == value) }.buttonStyle(.plain)
             }
         }.padding(3).background(LilacStyle.card2, in: RoundedRectangle(cornerRadius: 8)).padding(.horizontal, gutter)
     }

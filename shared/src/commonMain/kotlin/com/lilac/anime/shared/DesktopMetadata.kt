@@ -15,7 +15,8 @@ internal expect fun normalizeDesktopTitle(value: String): String
 object DesktopTitleRules {
     // Compiled once: subtitle ranking calls these for every post of a blog.
     private val comparePunctuation = Regex("[\\s:：'’\"“”!！?？.,·・\\-–—~〜()（）]")
-    private val seasonMark = Regex("(?:season|시즌)\\s*(\\d+)|(\\d+)\\s*기(?![가-힣])|(\\d+)(?:st|nd|rd|th)(?:\\s*season)?\\b|[가-힣](\\d)(?=\\s|$)", RegexOption.IGNORE_CASE)
+    // A bare ordinal counts only at the end or before a subtitle: "the 7th Prince" (제7왕자) is not a 7th season.
+    private val seasonMark = Regex("(?:season|시즌)\\s*(\\d+)|(\\d+)\\s*기(?![가-힣])|(\\d+)(?:st|nd|rd|th)(?:\\s*season\\b|(?=\\s*(?:$|[~\\-(:!])))|[가-힣](\\d)(?=\\s|$)", RegexOption.IGNORE_CASE)
     private val trailingDigit = Regex("([a-z]+)[!?'’)]*\\s*([2-9])$", RegexOption.IGNORE_CASE)
     private val trailingRoman = Regex("\\s(II|III|IV)$")
     private val otherMedia = Regex("\\([^()]*(?:게임|드라마|실사|소설|만화|웹툰|영화 시리즈|음반|노래)[^()]*\\)")

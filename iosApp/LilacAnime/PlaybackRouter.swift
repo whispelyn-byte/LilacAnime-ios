@@ -22,7 +22,13 @@ struct PlaybackButton<Content: View>: View {
 
 @MainActor
 final class DesktopNavigation: ObservableObject {
-    @Published var section = "home"
+    /// 설정 > 일반 > 시작 화면 (desktop #23): 홈 · 전체 · 시청기록 · 내 목록.
+    nonisolated static let startSections = [("home", "홈"), ("catalog", "전체"), ("history", "시청기록"), ("favorites", "내 목록")]
+    nonisolated static func startSection(_ defaults: UserDefaults = .standard) -> String {
+        let value = defaults.string(forKey: "startView") ?? ""
+        return startSections.contains { $0.0 == value } ? value : "home"
+    }
+    @Published var section = DesktopNavigation.startSection()
     @Published var query = ""
     @Published var listMode = "browse"
     @Published var showDownloads = false

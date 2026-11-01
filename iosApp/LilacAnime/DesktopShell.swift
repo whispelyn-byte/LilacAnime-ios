@@ -107,7 +107,8 @@ struct DesktopSavedView: View {
     @EnvironmentObject private var navigation: DesktopNavigation
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var tab = 0
-    @State private var order = "saved"
+    /// 저장순 / 회차 업데이트순, kept across launches (desktop #22).
+    @AppStorage("libraryOrder") private var order = "saved"
     @ObservedObject private var recent = DesktopRecentUpdates.shared
     var body: some View {
         VStack(spacing: 0) {

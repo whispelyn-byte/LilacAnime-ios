@@ -18,6 +18,7 @@ struct SettingsView: View {
     @State private var previousProvider = ""
     @State private var error: String?
     @State private var importFont = false
+    @AppStorage("startView") private var startView = "home"
     @State private var tmdbKey = ""
     @State private var tmdbStatus: String?
     @State private var tmdbTesting = false
@@ -111,6 +112,10 @@ struct SettingsView: View {
             SettingBlock(title: "작품 제목 표시", note: "한국어 제목은 Anissia, TMDB, AniList, Wikidata에서 찾습니다. 찾지 못한 작품은 원래 제목으로 표시합니다.") {
                 SettingChoices(options: [("original", "원래 제목"), ("ko", "한국어"), ("en", "영어")],
                                selection: Binding(get: { store.preferences.titleLanguage ?? "original" }, set: { store.preferences.titleLanguage = $0 }))
+            }
+            // 시작 화면 (desktop #23): the page shown when the app opens.
+            SettingBlock(title: "시작 화면", note: "앱을 켰을 때 처음 보이는 화면입니다.") {
+                SettingChoices(options: DesktopNavigation.startSections, selection: $startView)
             }
             SettingBlock(title: "테마") {
                 SettingChoices(options: [("system", "시스템 설정"), ("light", "라이트 모드"), ("dark", "다크 모드")], selection: $store.preferences.theme)

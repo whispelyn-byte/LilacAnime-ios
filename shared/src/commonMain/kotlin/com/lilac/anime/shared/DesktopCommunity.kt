@@ -27,6 +27,7 @@ object DesktopCommunity {
     private val numberJoin = Regex("\\d+(?:\\.\\d+)?\\s*(?:화|회|편)?\\s*[~∼〜～–—\\-,、&/+·・]\\s*(?=\\d)")
     private val titleNoise = Regex("\\d+(?:\\.\\d+)?\\s*(?:화|회|편)|\\bep(?:isode)?\\s*\\.?\\s*\\d+(?:\\.\\d+)?|\\((?:끝|완|完)\\)|작업\\s*중|블루레이판|자막", RegexOption.IGNORE_CASE)
     private val subtitleLink = Regex("drive\\.google\\.com|docs\\.google\\.com|\\.zip(?:$|\\?)|\\.(?:ass|ssa|srt|vtt|smi)(?:$|\\?)", RegexOption.IGNORE_CASE)
+    private val subtitleLabel = Regex("\\.(?:ass|ssa|srt|vtt|smi|zip|7z|rar)(?:\\s*\\(?\\d+(?:\\.\\d+)?\\s*[KMG]B\\)?)?$", RegexOption.IGNORE_CASE)
     private val fontLabel = Regex("폰트|font", RegexOption.IGNORE_CASE)
     private val tildeBlock = Regex("[~〜～][^~〜～]*[~〜～]")
     private val spaces = Regex("\\s+")
@@ -164,7 +165,9 @@ object DesktopCommunity {
      */
     fun links(post: CommunityPost, episode: Int, offsets: List<Int> = emptyList(), allowOffset: Boolean = false, episodeNumber: Double = episode.toDouble(), season: Int? = null): CommunityMatch {
         val anchors = Ksoup.parse(post.html, post.url).select("a[href]").map { CommunityLink(it.absUrl("href"), it.text().trim()) }
-            .filter { subtitleLink.containsMatchIn(it.href) }.distinctBy { it.href }
+            // Old Tistory attachments ("t1.daumcdn.net/cfile/tistory/24309F…") have no extension in the URL; their link text
+            // is the file name ("[ohys-raws]No Game No Life 07.smi").
+            .filter { subtitleLink.containsMatchIn(it.href) || subtitleLabel.containsMatchIn(it.label) }.distinctBy { it.href }
         val own = postEpisodes(post.title)
         fun planFor(number: Double) = plan(post.title, own, anchors, number, season)
         fun named(found: LinkPlan) = found.tiers.any { tier -> tier.any { linkEpisodes(it.label).any } }

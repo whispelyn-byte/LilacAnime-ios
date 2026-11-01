@@ -141,6 +141,22 @@ class CommunityTiersTest {
         } finally { repository.close() }
     }
 
+    // Desktop a991c08: "the 7th Prince" is not a 7th season; old Tistory attachments are taken by their link text.
+    @Test fun anOrdinalInsideTheTitleIsNotASeason() {
+        val prince = "I Was Reincarnated as the 7th Prince so I Can Take My Time Perfecting My Magical Ability"
+        assertNull(DesktopTitleRules.explicitSeason(prince))
+        assertEquals(2, DesktopTitleRules.explicitSeason("$prince Season 2"))
+        assertEquals(2, DesktopTitleRules.explicitSeason("Mushoku Tensei 2nd Season"))
+        assertEquals(3, DesktopTitleRules.explicitSeason("Overlord 3rd"))
+        assertEquals(2, DesktopTitleRules.explicitSeason("Kaguya-sama 2nd ~Love Is War~"))
+        assertNull(DesktopCommunity.season("환생했는데 제7왕자라 내맘대로 마술을 연마합니다"))
+    }
+    @Test fun extensionlessTistoryAttachmentsAreTakenByTheirLinkText() {
+        val html = listOf("24309F3C5383FF2226\">[leopard-raws]No Game No Life 07.smi", "223F803C5383FF2817\">No Game No Life 07.rar")
+            .joinToString("") { "<a href=\"https://t1.daumcdn.net/cfile/tistory/$it</a>" } + "<a href=\"https://example.com/about\">소개</a>"
+        val found = DesktopCommunity.links(CommunityPost("노 게임 노 라이프 7화 자막", "https://therapi.tistory.com/323", html), 7)
+        assertEquals(listOf("https://t1.daumcdn.net/cfile/tistory/24309F3C5383FF2226", "https://t1.daumcdn.net/cfile/tistory/223F803C5383FF2817"), found.links)
+    }
     @Test fun koreanSitesAreSearchedForTmdbArtworkByTheirBareName() {
         for (test in desktopOracle.list("koreanTmdbQueries").filterIsInstance<JsonObject>())
             assertEquals(test.list("expected").map { it.jsonPrimitive.content }, DesktopArtwork.koreanTmdbQueries(test.text("input")), test.text("input"))

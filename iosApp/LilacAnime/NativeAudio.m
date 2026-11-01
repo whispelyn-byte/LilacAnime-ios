@@ -3,6 +3,7 @@
 @import Libavcodec;
 @import Libavutil;
 @import Libswresample;
+@import Libswscale;
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -286,6 +287,8 @@ int LilacSpeechLevels(const char *source, const char *headers, const char *desti
     av_dict_set(&options, "protocol_whitelist", "file,http,https,tcp,tls,crypto,data", 0);
     av_dict_set(&options, "allowed_extensions", "ALL", 0);
     if (headers && headers[0] && strncmp(source, "http://127.0.0.1", 16) != 0) av_dict_set(&options, "headers", headers, 0);
+    // The player's own proxy serves this reader behind the player (HLSProxy, desktop flix-proxy's Lavf reader).
+    if (strncmp(source, "http://127.0.0.1", 16) == 0) av_dict_set(&options, "user_agent", LILAC_BACKGROUND_AGENT, 0);
     if (strncmp(source, "http", 4) == 0) {
         av_dict_set(&options, "reconnect", "1", 0); av_dict_set(&options, "reconnect_streamed", "1", 0);
         av_dict_set(&options, "reconnect_delay_max", "5", 0);
@@ -386,6 +389,7 @@ int LilacWhisperAudio(const char *source, const char *headers, const char *desti
     av_dict_set(&options, "extension_picky", "0", 0);
     av_dict_set(&options, "rw_timeout", "15000000", 0);
     if (headers && headers[0] && strncmp(source, "http", 4) == 0 && strncmp(source, "http://127.0.0.1", 16) != 0) av_dict_set(&options, "headers", headers, 0);
+    if (strncmp(source, "http://127.0.0.1", 16) == 0) av_dict_set(&options, "user_agent", LILAC_BACKGROUND_AGENT, 0);
     status = avformat_open_input(&format, source, NULL, &options); av_dict_free(&options);
     if (status < 0) goto done;
     status = avformat_find_stream_info(format, NULL); if (status < 0) goto done;
@@ -439,5 +443,121 @@ done:
     av_dict_free(&options); av_packet_free(&packet); av_frame_free(&frame); swr_free(&swr);
     avcodec_free_context(&codec); avformat_close_input(&format);
     if (status < 0) { remove(destination); if (error) { char message[AV_ERROR_MAX_STRING_SIZE]; av_strerror(status, message, sizeof(message)); *error = strdup(message); } return -1; }
+    return 0;
+}
+
+// --- 재생 막대 미리보기 (desktop player.js seek bar preview) ---------------------------------------------------------
+// One reader per episode, kept open while the bar is used: each picture is a seek, then decoding from the keyframe
+// until a picture within 2.5 s (half a preview slot) of the place. Only the video is read; loop filtering and pictures
+// no other refers to are skipped, which is enough for a small preview and much quicker.
+struct LilacFrameReader {
+    AVFormatContext *format;
+    AVCodecContext *codec;
+    AVFrame *frame;
+    AVPacket *packet;
+    struct SwsContext *scaler;
+    int stream;
+    bool (*cancelled)(void *);
+    void *opaque;
+    double deadline;
+};
+static int frameInterrupted(void *opaque) {
+    LilacFrameReader *reader = opaque;
+    if (reader->cancelled && reader->cancelled(reader->opaque)) return 1;
+    return [NSDate timeIntervalSinceReferenceDate] > reader->deadline;
+}
+void LilacFrameFree(unsigned char *rgba) { free(rgba); }
+void LilacFrameReaderClose(LilacFrameReader *reader) {
+    if (!reader) return;
+    sws_freeContext(reader->scaler);
+    av_frame_free(&reader->frame);
+    av_packet_free(&reader->packet);
+    avcodec_free_context(&reader->codec);
+    avformat_close_input(&reader->format);
+    free(reader);
+}
+LilacFrameReader *LilacFrameReaderOpen(const char *source, const char *headers, char **error) {
+    LilacFrameReader *reader = calloc(1, sizeof(LilacFrameReader));
+    AVDictionary *options = NULL; const AVCodec *decoder = NULL; int status = AVERROR(ENOMEM);
+    if (error) *error = NULL;
+    if (!reader) return NULL;
+    reader->deadline = [NSDate timeIntervalSinceReferenceDate] + 20;
+    reader->format = avformat_alloc_context();
+    if (!reader->format) goto failed;
+    reader->format->interrupt_callback.callback = frameInterrupted; reader->format->interrupt_callback.opaque = reader;
+    av_dict_set(&options, "protocol_whitelist", "file,http,https,tcp,tls,crypto,data", 0);
+    av_dict_set(&options, "allowed_extensions", "ALL", 0);
+    av_dict_set(&options, "allowed_segment_extensions", "ALL", 0);
+    av_dict_set(&options, "extension_picky", "0", 0);
+    av_dict_set(&options, "rw_timeout", "15000000", 0);
+    if (headers && headers[0] && strncmp(source, "http", 4) == 0 && strncmp(source, "http://127.0.0.1", 16) != 0) av_dict_set(&options, "headers", headers, 0);
+    if (strncmp(source, "http://127.0.0.1", 16) == 0) av_dict_set(&options, "user_agent", LILAC_PREVIEW_AGENT, 0);
+    status = avformat_open_input(&reader->format, source, NULL, &options); av_dict_free(&options);
+    if (status < 0) goto failed;
+    status = avformat_find_stream_info(reader->format, NULL);
+    if (status < 0) goto failed;
+    reader->stream = av_find_best_stream(reader->format, AVMEDIA_TYPE_VIDEO, -1, -1, &decoder, 0);
+    if (reader->stream < 0 || !decoder) { status = reader->stream < 0 ? reader->stream : AVERROR_DECODER_NOT_FOUND; goto failed; }
+    for (unsigned i = 0; i < reader->format->nb_streams; i++) if ((int)i != reader->stream) reader->format->streams[i]->discard = AVDISCARD_ALL;
+    reader->codec = avcodec_alloc_context3(decoder);
+    if (!reader->codec) { status = AVERROR(ENOMEM); goto failed; }
+    status = avcodec_parameters_to_context(reader->codec, reader->format->streams[reader->stream]->codecpar);
+    if (status < 0) goto failed;
+    reader->codec->thread_count = 0;
+    reader->codec->skip_loop_filter = AVDISCARD_ALL;
+    reader->codec->skip_frame = AVDISCARD_NONREF;
+    status = avcodec_open2(reader->codec, decoder, NULL);
+    if (status < 0) goto failed;
+    reader->frame = av_frame_alloc(); reader->packet = av_packet_alloc();
+    if (!reader->frame || !reader->packet) { status = AVERROR(ENOMEM); goto failed; }
+    return reader;
+failed:
+    if (error) { char message[AV_ERROR_MAX_STRING_SIZE]; av_strerror(status, message, sizeof(message)); *error = strdup(message); }
+    LilacFrameReaderClose(reader);
+    return NULL;
+}
+int LilacFrameReaderRead(LilacFrameReader *reader, double seconds, int maxWidth, int maxHeight, unsigned char **rgba, int *width, int *height,
+                         bool (*cancelled)(void *), void *opaque) {
+    if (!reader || !rgba || !width || !height || maxWidth < 2 || maxHeight < 2) return AVERROR(EINVAL);
+    *rgba = NULL; *width = 0; *height = 0;
+    reader->cancelled = cancelled; reader->opaque = opaque;
+    reader->deadline = [NSDate timeIntervalSinceReferenceDate] + 15;
+    AVStream *stream = reader->format->streams[reader->stream];
+    // Times as the player counts them: from the episode's start.
+    double origin = reader->format->start_time != AV_NOPTS_VALUE ? reader->format->start_time / (double)AV_TIME_BASE : 0;
+    int64_t target = (int64_t)((seconds + origin) * AV_TIME_BASE);
+    int status = avformat_seek_file(reader->format, -1, INT64_MIN, target, target, 0);
+    if (status < 0) status = av_seek_frame(reader->format, -1, target, AVSEEK_FLAG_BACKWARD);
+    if (status < 0) return status;
+    avcodec_flush_buffers(reader->codec);
+    bool found = false, ended = false; int decoded = 0;
+    while (!found && !ended) {
+        status = av_read_frame(reader->format, reader->packet);
+        if (status < 0) { ended = true; avcodec_send_packet(reader->codec, NULL); }
+        else if (reader->packet->stream_index != reader->stream) { av_packet_unref(reader->packet); continue; }
+        else { avcodec_send_packet(reader->codec, reader->packet); av_packet_unref(reader->packet); }
+        while (!found && avcodec_receive_frame(reader->codec, reader->frame) == 0) {
+            int64_t pts = reader->frame->best_effort_timestamp;
+            double at = pts == AV_NOPTS_VALUE ? seconds : pts * av_q2d(stream->time_base) - origin;
+            // Up to 240 pictures past the keyframe; a stream without times takes the first.
+            if (at >= seconds - 2.5 || ++decoded >= 240) found = true;
+            else av_frame_unref(reader->frame);
+        }
+    }
+    if (!found) return status < 0 ? status : AVERROR(EAGAIN);
+    int sourceWidth = reader->frame->width, sourceHeight = reader->frame->height;
+    if (sourceWidth <= 0 || sourceHeight <= 0) { av_frame_unref(reader->frame); return AVERROR_INVALIDDATA; }
+    double scale = fmin(1, fmin((double)maxWidth / sourceWidth, (double)maxHeight / sourceHeight));
+    int outWidth = (int)(sourceWidth * scale) & ~1, outHeight = (int)(sourceHeight * scale) & ~1;
+    if (outWidth < 2) outWidth = 2;
+    if (outHeight < 2) outHeight = 2;
+    reader->scaler = sws_getCachedContext(reader->scaler, sourceWidth, sourceHeight, (enum AVPixelFormat)reader->frame->format,
+                                          outWidth, outHeight, AV_PIX_FMT_RGB0, SWS_BILINEAR, NULL, NULL, NULL);
+    unsigned char *out = reader->scaler ? malloc((size_t)outWidth * outHeight * 4) : NULL;
+    if (!out) { av_frame_unref(reader->frame); return AVERROR(ENOMEM); }
+    uint8_t *planes[4] = {out, NULL, NULL, NULL}; int strides[4] = {outWidth * 4, 0, 0, 0};
+    sws_scale(reader->scaler, (const uint8_t * const *)reader->frame->data, reader->frame->linesize, 0, sourceHeight, planes, strides);
+    av_frame_unref(reader->frame);
+    *rgba = out; *width = outWidth; *height = outHeight;
     return 0;
 }

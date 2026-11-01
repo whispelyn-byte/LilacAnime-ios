@@ -344,12 +344,14 @@ final class HLSProxy {
             send(connection, status: 404, body: Data()); return
         }
         let range = lines.first { $0.lowercased().hasPrefix("range:") }.map { String($0.dropFirst(6)).trimmingCharacters(in: .whitespaces) }
+        let agent = lines.first { $0.lowercased().hasPrefix("user-agent:") } ?? ""
+        let preview = agent.contains(HLSProxy.previewAgent), background = preview || agent.contains(HLSProxy.backgroundAgent)
         Task {
             do {
                 let aes = self.queue.sync { self.encrypted.contains(url) }
                 // Ordinary AAC, MP3 and byte-range media remain on the original passthrough path.
                 let segment = !aes && ["png", "webp", "html"].contains(url.pathExtension.lowercased())
-                let (data, response) = segment ? try await media.load(url, stream: stream) : try await HLSData.playerFetch(url, stream: stream, range: stream.manifestKey == nil ? range : nil)
+                let (data, response) = segment ? try await media.load(url, stream: stream, background: background, ahead: !preview) : try await HLSData.playerFetch(url, stream: stream, range: stream.manifestKey == nil ? range : nil)
                 var body = data
                 var contentType = response.mimeType ?? "application/octet-stream"
                 if url.pathExtension.lowercased() == "m3u8" || contentType.contains("mpegurl") || (url == stream.url && stream.hlsManifest != nil) {
@@ -388,6 +390,10 @@ final class HLSProxy {
         connection.send(content: packet, completion: .contentProcessed { _ in connection.cancel() })
     }
     func stop() { listener?.cancel(); listener = nil; Task { await media.stop() } }
+    /// NativeAudio's FFmpeg reading this proxy for 자막 싱크 or Whisper (LILAC_BACKGROUND_AGENT).
+    static let backgroundAgent: String = LILAC_BACKGROUND_AGENT
+    /// NativeAudio's seek bar preview (LILAC_PREVIEW_AGENT): one segment where the finger rests, nothing ahead of it.
+    static let previewAgent: String = LILAC_PREVIEW_AGENT
 }
 
 /// Desktop flix-proxy keeps each URL's place in its own playlist. Audio and
@@ -407,17 +413,25 @@ private actor HLSMediaCache {
     private var tasks: [URL: Task<(Data, HTTPURLResponse), Error>] = [:]
     private var used: [URL] = []
     private var sequence = HLSMediaOrder()
+    /// Segments asked by a background reader (자막 싱크, Whisper), kept apart so they never push out the player's.
+    private var aside: [URL: Task<(Data, HTTPURLResponse), Error>] = [:]
+    private var playerLoads = 0
     func order(_ urls: [URL]) { sequence.insert(urls) }
     private func task(_ url: URL, stream: ResolvedStream) -> Task<(Data, HTTPURLResponse), Error> {
         used.removeAll { $0 == url }; used.append(url)
         if let task = tasks[url] { return task }
-        let task = Task { try await HLSData.mediaSegment(url, stream: stream) }; tasks[url] = task
+        let task = aside.removeValue(forKey: url) ?? Task { try await HLSData.mediaSegment(url, stream: stream) }; tasks[url] = task
         while used.count > 16 { let old = used.removeFirst(); tasks.removeValue(forKey: old)?.cancel() }
         return task
     }
     /// The segments after this one are fetched once it is here: started with it, they took most of the bandwidth from
     /// the one the player was waiting for (after a seek, six segments of each playlist arrived together, late).
-    func load(_ url: URL, stream: ResolvedStream) async throws -> (Data, HTTPURLResponse) {
+    /// A background reader (desktop flix-proxy, v0.5.56) reads the whole episode beside the player: it is served from the
+    /// player's segments when they are here, and fetches ahead of itself only while the player asks for nothing. Counted
+    /// as the player it took the player's place in the cache and left it without segments ahead (1.25x then stalled).
+    func load(_ url: URL, stream: ResolvedStream, background: Bool = false, ahead: Bool = true) async throws -> (Data, HTTPURLResponse) {
+        if background { return try await loadBehind(url, stream: stream, ahead: ahead) }
+        playerLoads += 1; defer { playerLoads -= 1 }
         let current = task(url, stream: stream)
         do {
             let value = try await current.value
@@ -425,5 +439,18 @@ private actor HLSMediaCache {
             return value
         } catch { tasks[url] = nil; used.removeAll { $0 == url }; throw error }
     }
-    func stop() { tasks.values.forEach { $0.cancel() }; tasks = [:]; used = []; sequence = HLSMediaOrder() }
+    private func loadBehind(_ url: URL, stream: ResolvedStream, ahead: Bool) async throws -> (Data, HTTPURLResponse) {
+        if let task = tasks[url] { return try await task.value }
+        let current = aside[url] ?? Task { try await HLSData.mediaSegment(url, stream: stream) }
+        aside[url] = current
+        defer { if aside[url] == current { aside[url] = nil } }
+        let value = try await current.value
+        if ahead && playerLoads == 0 {
+            for next in sequence.following(url).prefix(2) where tasks[next] == nil && aside[next] == nil && aside.count < 4 {
+                aside[next] = Task { try await HLSData.mediaSegment(next, stream: stream) }
+            }
+        }
+        return value
+    }
+    func stop() { tasks.values.forEach { $0.cancel() }; aside.values.forEach { $0.cancel() }; tasks = [:]; aside = [:]; used = []; sequence = HLSMediaOrder() }
 }

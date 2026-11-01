@@ -59,6 +59,7 @@ final class EpisodePlayerModel: ObservableObject {
     @Published var systemPlayback = false
     @Published var systemStream: ResolvedStream?
     let engine = MPVEngine()
+    let seekPreview = SeekPreview()
     lazy var pictureInPicture = PlayerPictureInPicture(engine: engine)
     let resolver = PlaybackResolver()
     let translation = TranslationCoordinator()
@@ -891,6 +892,8 @@ final class EpisodePlayerModel: ObservableObject {
         return SubtitleAutoSync.Video(url: playing.url, headers: headers, duration: engine.duration)
     }
     var syncAvailable: Bool { subtitle != nil && syncVideo != nil && !systemPlayback }
+    /// The seek bar preview reads what the player reads, as 자막 싱크 does.
+    var seekPreviewVideo: SubtitleAutoSync.Video? { syncVideo }
     var syncButtonTitle: String { syncRunning ? (syncStatus ?? "싱크 맞추는 중") + " · 눌러서 취소" : "음성에 맞춰 싱크 맞추기" }
     private func cancelSync() {
         syncCancel.cancel(); syncTask?.cancel(); syncTask = nil; syncRunning = false; syncStatus = nil
@@ -1177,7 +1180,7 @@ final class EpisodePlayerModel: ObservableObject {
             watchURL: item.watchURL.absoluteString, directURL: active?.url.absoluteString, position: engine.position, duration: engine.duration, displayNumber: item.displayNumber)
     }
     func shutdown(library: LibraryStore) {
-        pictureInPicture.stop()
+        pictureInPicture.stop(); seekPreview.reset()
         subtitleClassification?.cancel()
         resolutionTask?.cancel(); selectionTask?.cancel()
         whisper.cancel(); nextWhisper.cancel(); whisperLive.cancel(); whisperStartTask?.cancel()
@@ -1232,7 +1235,8 @@ struct EpisodePlayerView: View {
                     screenshot: { await model.screenshot(title: DesktopCatalog.shared.title(model.item.anime.anime, source: model.item.anime.source, language: library.preferences.titleLanguage)) },
                     subtitleOffset: model.subtitleOffset,
                     keyboardEnabled: !settings && !episodePanel && !importer, toast: model.toast,
-                    episodes: model.seriesItems.count < 2 ? nil : { settings = false; episodePanel = true })
+                    episodes: model.seriesItems.count < 2 ? nil : { settings = false; episodePanel = true },
+                    preview: model.seekPreview, previewVideo: { model.seekPreviewVideo })
             } else {
                 VStack { HStack { Button { dismiss() } label: { Image(systemName: "arrow.left") }; Spacer(); Button { settings = true } label: { Image(systemName: "gearshape") } }.font(.title3).padding(20).background(.black.opacity(0.65)); Spacer() }.foregroundStyle(.white)
             }
@@ -1650,6 +1654,8 @@ struct PlayerControls: View {
     var toast: EpisodePlayerModel.Toast? = nil
     /// Opens the 회차 panel; nil when the work has one episode.
     var episodes: (() -> Void)? = nil
+    var preview: SeekPreview? = nil
+    var previewVideo: () -> SubtitleAutoSync.Video? = { nil }
     @GestureState private var holdingSpeed = false
     @State private var holdActive = false
     @State private var holdReleased = Date.distantPast
@@ -1701,11 +1707,21 @@ struct PlayerControls: View {
                         HStack(spacing: 8) {
                             HStack(spacing: 8) {
                                 Text(clock(dragging ? value : engine.position)).monospacedDigit()
-                                Slider(value: Binding(get: { dragging ? value : min(max(engine.position, 0), max(engine.duration, 1)) }, set: { value = $0 }),
+                                Slider(value: Binding(get: { dragging ? value : min(max(engine.position, 0), max(engine.duration, 1)) }, set: { value = $0; if dragging { preview?.show($0, duration: engine.duration, video: previewVideo()) } }),
                                     in: 0...max(engine.duration, 1), onEditingChanged: { editing in
-                                        if editing { value = engine.position }; dragging = editing
-                                        if !editing { engine.seekByViewer(value) }; touch()
+                                        if editing { value = engine.position; preview?.show(value, duration: engine.duration, video: previewVideo()) }; dragging = editing
+                                        if !editing { preview?.hide(); engine.seekByViewer(value) }; touch()
                                     }).tint(LilacStyle.accent)
+                                    // The picture at the place being dragged to, over the bar (desktop seek bar preview).
+                                    .overlay(alignment: .bottomLeading) {
+                                        if dragging, let preview, engine.duration > 0 {
+                                            GeometryReader { bar in
+                                                let half: CGFloat = 92, x = bar.size.width * min(max(value / engine.duration, 0), 1)
+                                                SeekPreviewBubble(preview: preview, time: clock(value))
+                                                    .position(x: min(max(x, half), max(half, bar.size.width - half)), y: -70)
+                                            }
+                                        }
+                                    }
                                 Text(clock(engine.duration)).monospacedDigit().foregroundStyle(.white.opacity(0.65))
                             }.font(.system(size: 11)).padding(.horizontal, 12).padding(.vertical, 2)
                                 .background(.black.opacity(0.52), in: RoundedRectangle(cornerRadius: 20))

@@ -1,5 +1,5 @@
 {
-  "desktopCommit": "125762c5b2396909f23e593846835afcba6c4d54",
+  "desktopCommit": "d8f797840aa38c5d1a0e146203a4fb16caeb52c8",
   "desktopVersion": "0.5.58",
   "files": [
     {
@@ -91,6 +91,16 @@
       ]
     },
     {
+      "desktop": "electron/cross-site-tracks.cjs",
+      "sha256": "d1a09e0d5bf193dc425df2d2e8c7ddcf79831a7e0ba1c1039e30f891ebb11cab",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/CrossSiteTracks.kt",
+        "iosApp/LilacAnime/CrossSiteTracks.swift"
+      ]
+    },
+    {
       "desktop": "electron/desktop-state.cjs",
       "sha256": "89a4d714a5112324dd3312fad95a7bfc44b120efe3134f632407909cececff85",
       "uncommitted": false,
@@ -111,7 +121,7 @@
     },
     {
       "desktop": "electron/download-manager.cjs",
-      "sha256": "fe5ff59dc1aa2011acc1e5972f2654cc9843e9f1f530c14bdb78407426095636",
+      "sha256": "66fb13f1d40b9b563606ee475799f17f16a7ccc7674fe4a2bf2a5d5ee8d8e4db",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -136,9 +146,19 @@
       "uncommitted": false,
       "category": "runtime",
       "ios": [
-        "iosApp/LilacAnime/HLSProxy.swift",
-        "iosApp/LilacAnime/NativeAudio.m",
-        "iosApp/LilacAnime/NativeAudio.h"
+        "iosApp/LilacAnime/HLSProxy.swift"
+      ]
+    },
+    {
+      "desktop": "electron/korean-site-subtitles.cjs",
+      "sha256": "afbc95a70cf04eaa19f470ca7569b530cf809ef0deacf285f684c492ba145936",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/KoreanSiteSubtitles.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/SourceRepository.kt",
+        "iosApp/LilacAnime/CrossSiteTracks.swift",
+        "iosApp/LilacAnime/PlaybackResolver.swift"
       ]
     },
     {
@@ -157,7 +177,7 @@
     },
     {
       "desktop": "electron/main.cjs",
-      "sha256": "21f840a52c08986e808a3943e3db687efccf0ddcc801cbec894645587af855c5",
+      "sha256": "e2fa257ff231df796ea4a414ea8f3f1089be978adcb948a7541ec30f1db39e9b",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -174,8 +194,7 @@
         "iosApp/LilacAnime/Resources/flix-discovery.js",
         "iosApp/LilacAnime/OhliPlayback.swift",
         "iosApp/LilacAnime/Resources/ohli-capture.js",
-        "iosApp/LilacAnime/WinPNGReader.swift",
-        "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt"
+        "iosApp/LilacAnime/WinPNGReader.swift"
       ]
     },
     {
@@ -213,7 +232,7 @@
     },
     {
       "desktop": "electron/preload.cjs",
-      "sha256": "9c331b37d37e8c932df8cd371d111835b3b5e677f23bcbff4056acfae518dcd1",
+      "sha256": "7048865ac8a992a6eb6ae887bfd466c1b13a7a7136b7fa0ff273a9e2d37b62f9",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -395,7 +414,7 @@
     },
     {
       "desktop": "src/app.js",
-      "sha256": "e7b61f42c155df6928cecc7aa46eab92928fbadad718248f87d674c4298a250d",
+      "sha256": "8461749b9329141b925779d4c43a756baa7763d76b8cf1d6d7adc5c1b075c45d",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -406,13 +425,7 @@
         "iosApp/LilacAnime/EpisodePlayerView.swift",
         "iosApp/LilacAnime/DesktopSubtitlePreparer.swift",
         "iosApp/LilacAnime/DesktopSubtitlePolicy.swift",
-        "iosApp/LilacAnime/DesktopStreamPolicy.swift",
-        "iosApp/LilacAnime/HomeSpotlight.swift",
-        "iosApp/LilacAnime/SettingsView.swift",
-        "iosApp/LilacAnime/PlaybackRouter.swift",
-        "iosApp/LilacAnime/HomeSnapshot.swift",
-        "iosApp/LilacAnime/CatalogView.swift",
-        "iosApp/LilacAnime/DesktopWorkspace.swift"
+        "iosApp/LilacAnime/DesktopStreamPolicy.swift"
       ]
     },
     {
@@ -494,7 +507,7 @@
     },
     {
       "desktop": "src/index.html",
-      "sha256": "437d809fd117d29f5dfa1ca110141b33929f0738dbc936c9ab5cbaac7bbe879e",
+      "sha256": "ea6b69dace5e06f2a9202b23b95e08117de7fae8ca5fd05ce21d81ab2c6d65e8",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -618,9 +631,7 @@
         "iosApp/LilacAnime/EpisodePicker.swift",
         "iosApp/LilacAnime/MPVEngine.swift",
         "iosApp/LilacAnime/PlayerInteraction.swift",
-        "iosApp/LilacAnime/PlayerSeekHint.swift",
-        "iosApp/LilacAnime/SeekPreview.swift",
-        "iosApp/LilacAnime/NativeAudio.m"
+        "iosApp/LilacAnime/PlayerSeekHint.swift"
       ]
     },
     {
@@ -673,7 +684,7 @@
     },
     {
       "desktop": "src/subtitle-source.js",
-      "sha256": "d676462e841f46e92f1c0625cf9b9207d4c2a572159120ea3ace49833c255af4",
+      "sha256": "fa748b3776c41d1218944196d73ac31ea08ab86abe2db3e8b89e08a41411d3da",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -889,6 +900,17 @@
       ]
     },
     {
+      "desktop": "tests/cross-site-tracks.test.cjs",
+      "sha256": "e6bb396bf4ffbfbaa7ba30bf95f7e91bd1a51641fe828bea1b6ca40b7e6e0309",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
       "desktop": "tests/desktop-state.test.cjs",
       "sha256": "339fc1c8423ea8c030a132b8a7fd495d32fa7eb5a823a36b51f27985c22d03ae",
       "uncommitted": false,
@@ -922,8 +944,19 @@
       ]
     },
     {
+      "desktop": "tests/download-other-site-tracks.test.cjs",
+      "sha256": "abde1c20fb1657364edcca8cef2e3f518fc0f8b6940128154541e5b4eef51d75",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
       "desktop": "tests/download-subtitle-choice.test.cjs",
-      "sha256": "7017833284f61a583220c89c8b3dd1f05e9c81d1c7d060e59d84a6ec9c4c3020",
+      "sha256": "aab5b148fdd3b94bc4adc4cce6cd99aaa189822b90947a5e783ac52c659a7726",
       "uncommitted": false,
       "category": "validation",
       "ios": [
@@ -1021,8 +1054,30 @@
       ]
     },
     {
+      "desktop": "tests/ipc-handlers.test.cjs",
+      "sha256": "9e383ddad5993196f92c7110f3073ddea441540e00b4db62987d996d5b849a8a",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
       "desktop": "tests/issue7.electron.cjs",
       "sha256": "7d386f6588fd591223d48857a38b54c73c125e3938a2cff84df41ea3743eb8c2",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/korean-site-subtitles.test.cjs",
+      "sha256": "b2a9366fbf2fc63a555976c4c67ef89e8531f4c11fe569595d245333f3c7ee67",
       "uncommitted": false,
       "category": "validation",
       "ios": [
@@ -1242,7 +1297,7 @@
     },
     {
       "desktop": "tests/subtitle-source.test.cjs",
-      "sha256": "1d5f0e1b65b728258a3d6d3a3ee6b61d69f50197b8decdf0472e5a9d9acdc35f",
+      "sha256": "9bd4972acb6cab35fda2bb473375a5e63d44c3f0b65a6b35a7986fe770783f56",
       "uncommitted": false,
       "category": "validation",
       "ios": [
@@ -1597,6 +1652,24 @@
       "ios": [
         "iosApp/LilacAnime/PlaybackResolver.swift",
         "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopSources.kt"
+      ]
+    },
+    {
+      "name": "crossSiteSubtitleTracks",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/CrossSiteTracks.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
+        "iosApp/LilacAnime/CrossSiteTracks.swift",
+        "iosApp/LilacAnime/EpisodePlayerView.swift"
+      ]
+    },
+    {
+      "name": "koreanSiteSubtitleTracks",
+      "ios": [
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/CrossSiteTracks.kt",
+        "shared/src/commonMain/kotlin/com/lilac/anime/shared/IosServices.kt",
+        "iosApp/LilacAnime/CrossSiteTracks.swift",
+        "iosApp/LilacAnime/EpisodePlayerView.swift"
       ]
     },
     {

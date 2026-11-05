@@ -73,6 +73,9 @@ final class EpisodePlayerModel: ObservableObject {
     private let preparer: DesktopSubtitlePreparer
     let jimaku: DesktopJimakuCatalog
     private let nextResolver = PlaybackResolver()
+    /// 다른 사이트 자막 트랙: RE:Anime · Miruro's tracks of this episode (CrossSiteTracks), asked as it opens.
+    @Published private(set) var otherTracks: [RemoteSubtitle] = []
+    private var otherTracksTask: Task<[RemoteSubtitle], Never>?
     private var prefetchTask: Task<Void, Never>?
     private var automaticTask: Task<Void, Never>?
     private var resolutionTask: Task<Void, Never>?
@@ -236,6 +239,7 @@ final class EpisodePlayerModel: ObservableObject {
         }
         chapters = OfflineAnalyzer.chapters(animeID: item.anime.id, episodeID: item.episodeID)
         refreshSeries(token: token)
+        loadOtherTracks(library: library, token: token)
         resolutionTask?.cancel()
         resolutionTask = Task {
             // 다음 화 미리 준비 > 영상: the stream found while the episode before played, when it still answers.
@@ -248,10 +252,34 @@ final class EpisodePlayerModel: ObservableObject {
                     return
                 }
             }
-            preferRaw = await preparer.preferRaw(item, preferences: library.preferences)
+            preferRaw = await preparer.preferRaw(item, preferences: library.preferences, otherTracks: otherTracksTask)
             guard token == generation, !Task.isCancelled else { return }
             resolver.resolve(item, preferRaw: preferRaw, preferred: library.preferences.preferredServers?[item.anime.source] ?? library.preferences.preferredStream)
         }
+    }
+    /// The other sites' tracks of the episode (desktop loadMissingSubtitleTracks): asked once as it opens, so a Korean one
+    /// can choose Animenosub's and Miruro's clean video, then listed and offered once found.
+    /// 애니24's, 링크애니's and Linkkf's Korean files (slower) are always asked too and join the list when they come; the
+    /// automatic subtitle waits for them only while RE:Anime and Miruro have no Korean track (desktop d8f7978).
+    private func loadOtherTracks(library: LibraryStore, token: UUID) {
+        otherTracks = []; otherTracksTask = nil
+        guard library.preferences.otherSiteTracks != false, item.anime.source != "local" else { return }
+        let fast = CrossSiteTracks.shared.tracks(item), korean = CrossSiteTracks.shared.koreanTracks(item)
+        otherTracksTask = CrossSiteTracks.shared.all(item)
+        for task in [fast, korean] {
+            Task {
+                let found = await task.value
+                guard token == generation else { return }
+                let known = otherTracks
+                otherTracks = known + found.filter { track in !known.contains { $0.url == track.url } }
+            }
+        }
+    }
+    /// 다른 사이트 자막 트랙도 찾기 changed in the player: on asks for this episode's at once, off takes them away.
+    func otherSiteTracksChanged(_ on: Bool, library: LibraryStore) {
+        library.preferences.otherSiteTracks = on
+        CrossSiteTracks.shared.clear()
+        if on { loadOtherTracks(library: library, token: generation) } else { otherTracks = []; otherTracksTask = nil }
     }
     /// An entry from the Android app without the episode's address (app.js playHistoryItem): the episode of that number
     /// from the work's list plays, and its entry takes the Android one's place (LibraryStore.progress).
@@ -339,7 +367,7 @@ final class EpisodePlayerModel: ObservableObject {
         selectedJimakuURL = nil
         subtitleSearchRequest = UUID(); subtitleSearchCache = [:]; subtitleResultsProvider = ""; subtitleSearchError = nil; searching = false; makers = []
         chipTask?.cancel(); chipTask = nil; chipRequest = UUID(); pressedSource = nil; pressedFor = nil; pickedSheet = nil; sheetPicked = false
-        subtitleState = nil; selectedTrackURL = nil; selectedMaker = nil
+        subtitleState = nil; selectedTrackURL = nil; selectedMaker = nil; otherTracks = []; otherTracksTask = nil
         loadedSkip = false; lastSave = 0; lastSkipped = ""; systemPlayback = false; engine.clearViewerSeek()
         begin(library: library)
     }
@@ -588,10 +616,15 @@ final class EpisodePlayerModel: ObservableObject {
         automaticTask?.cancel()
         automaticTask = Task {
             do {
-                if let prepared = try await preparer.prepare(item, tracks: stream.subtitles, preferences: library.preferences, prefersAI: library.aiSubtitleSeries[item.anime.id] == true, stream: stream) {
+                if let prepared = try await preparer.prepare(item, tracks: stream.subtitles, preferences: library.preferences, prefersAI: library.aiSubtitleSeries[item.anime.id] == true, stream: stream, otherTracks: otherTracksTask) {
                     guard token == generation, request == subtitleRequest, subtitle == nil, !Task.isCancelled else { return }
                     subtitleFiles = [prepared.0]
                     selectSubtitle(prepared.0, library: library, provider: prepared.1, automatic: true)
+                    // Another site's Korean track: marked in the list, and said to be synced to this video's audio.
+                    if let track = preparer.crossSiteTrack(for: prepared.0) {
+                        selectedTrackURL = track.url
+                        notify(CrossSiteTrackPolicy.label(track, playing: item.anime.source) + "의 같은 회차 한국어 자막이에요. 이 영상에 싱크를 맞춰요.")
+                    }
                 } else if token == generation, request == subtitleRequest, subtitle == nil, !Task.isCancelled,
                           library.preferences.whisperAuto != false, WhisperModels.shared.folder(library.preferences.whisperModel ?? "base") != nil {
                     startWhisper(library: library, manual: false)
@@ -651,7 +684,7 @@ final class EpisodePlayerModel: ObservableObject {
             automaticTask?.cancel()
             automaticTask = Task {
                 do {
-                    let prepared = try await preparer.translationSource(item, tracks: active?.subtitles ?? [], preferences: configured, requireAutomatic: false)
+                    let prepared = try await preparer.translationSource(item, tracks: siteTracks, preferences: configured, requireAutomatic: false, later: otherTracksTask)
                     guard token == generation, request == subtitleRequest, !Task.isCancelled else { return }
                     guard let prepared else { error = "번역할 원문 자막을 찾지 못했습니다. 자막 파일을 직접 열거나 사이트 자막 트랙을 선택하세요."; return }
                     sourceSubtitle = prepared.0
@@ -747,9 +780,23 @@ final class EpisodePlayerModel: ObservableObject {
         if let known = koreanFiles[url] { return known }
         let value = await SubtitleFiles.isKorean(url); koreanFiles[url] = value; return value
     }
-    var siteTracks: [RemoteSubtitle] { active?.subtitles ?? resolver.subtitles }
-    /// Re:Anime / Miruro list their subtitle languages; Linkkf has its own Korean subtitle.
-    var trackSource: String? { ["reanime", "miruro", "linkkf"].contains(item.anime.source) && !siteTracks.isEmpty ? (item.anime.source == "linkkf" ? "linkkf" : "reanime") : nil }
+    /// The tracks the stream brought (a downloaded episode's include the other sites' kept with it).
+    var ownTracks: [RemoteSubtitle] { active?.subtitles ?? resolver.subtitles }
+    /// The tracks listed under the track chip: RE:Anime's / Miruro's own and the other sites' of the same episode
+    /// (CrossSiteTrackPolicy). Linkkf's, 애니24's and 링크애니's own subtitle is not among them (the Linkkf chip, or 자동).
+    var siteTracks: [RemoteSubtitle] { CrossSiteTrackPolicy.merged(own: CrossSiteTrackPolicy.listed(own: ownTracks, source: item.anime.source), other: otherTracks) }
+    /// Linkkf's own Korean subtitle, under its own chip.
+    var linkkfSubtitle: Bool { item.anime.source == "linkkf" && ownTracks.contains { !$0.crossSite } }
+    /// Whether the track chip shows: the site's tracks (Re:Anime / Miruro) or the other sites' of the episode.
+    var hasTrackList: Bool { !siteTracks.isEmpty }
+    /// The chip of the site's own subtitle on screen: Linkkf's, unless the subtitle is another site's track.
+    private var trackChip: String? {
+        let crossSite = selectedTrackURL.map { url in siteTracks.contains { $0.url == url && $0.crossSite } } ?? false
+        if linkkfSubtitle && !crossSite { return "linkkf" }
+        return hasTrackList ? "reanime" : nil
+    }
+    /// The sites the listed tracks come from ("Re:Anime", "Re:Anime·Miruro").
+    var trackSourceLabel: String { CrossSiteTrackPolicy.sourceLabel(playing: item.anime.source, tracks: siteTracks) }
     var currentSaved: SavedSubtitle? { subtitle.flatMap { file in EpisodeSubtitleStore.shared.list(item).first { $0.file == file } } }
     /// The chip lit: the one pressed last until the subtitle on screen changes, then the source of the subtitle on screen.
     var activeSubtitleSource: String {
@@ -757,7 +804,7 @@ final class EpisodePlayerModel: ObservableObject {
         if pressedSource == "ai" && translation.running { return "ai" }
         guard subtitle != nil else { return "" }
         if currentSaved?.translated == true { return "ai" }
-        return ["linkkf", "provider", "reanime"].contains(selectedProvider) ? (trackSource ?? selectedProvider) : selectedProvider
+        return ["linkkf", "provider", "reanime"].contains(selectedProvider) ? (trackChip ?? selectedProvider) : selectedProvider
     }
     /// The list open under the chips: the one picked last, else the one of the subtitle on screen.
     var openSheet: String? {
@@ -803,7 +850,7 @@ final class EpisodePlayerModel: ObservableObject {
         // track, else its best other track (Japanese, then the English dialogue), the rest listed under the chip. Pressing it
         // ends a series watched in machine translation (preferAI above), so its next episodes open with the site's track too.
         if source == "reanime" || source == "linkkf" {
-            let tracks = siteTracks
+            let tracks = source == "linkkf" ? ownTracks.filter { !$0.crossSite } : siteTracks
             if let korean = tracks.first(where: DesktopSubtitlePolicy.isKorean) { chooseTrack(korean, library: library); return }
             if let track = DesktopSubtitlePolicy.translationTrack(tracks) ?? tracks.first { chooseTrack(track, library: library) }
             else { subtitleState = "사이트 자막 트랙이 없습니다." }
@@ -823,7 +870,7 @@ final class EpisodePlayerModel: ObservableObject {
         }
     }
     func chooseTrack(_ track: RemoteSubtitle, library: LibraryStore, translate: Bool = false) {
-        if pressedSource == nil || pressedFor != subtitle { pressedSource = trackSource ?? "reanime"; pressedFor = subtitle }
+        if pressedSource == nil || pressedFor != subtitle { pressedSource = linkkfSubtitle && !track.crossSite ? "linkkf" : "reanime"; pressedFor = subtitle }
         selectedTrackURL = track.url
         importSubtitle(track.url, library: library, headers: track.headers ?? [:], translate: translate, provider: "reanime")
     }
@@ -952,7 +999,7 @@ final class EpisodePlayerModel: ObservableObject {
         let saved = EpisodeSubtitleStore.shared.list(item).first { $0.file == target }
         let timing = saved?.translated == true ? saved?.original : nil
         syncChecked.insert(target); if let timing { syncChecked.insert(timing) }
-        let token = generation, cancel = SyncCancel(), tracks = selectedProvider == "reanime" || trackSource != "reanime" ? [] : SubtitleAutoSync.referenceTracks(siteTracks)
+        let token = generation, cancel = SyncCancel(), tracks = selectedProvider == "reanime" ? [] : SubtitleAutoSync.referenceTracks(siteTracks)
         let chapters = self.chapters, provider = selectedProvider
         syncCancel = cancel; syncRunning = true; syncStatus = "자막 싱크 확인 중..."
         if !auto { dismissSyncNotice() }
@@ -1063,6 +1110,8 @@ final class EpisodePlayerModel: ObservableObject {
                 siteKorean: siteKorean, prefersAI: library.aiSubtitleSeries[item.anime.id] == true) ? preferences : nil
         }
         guard wantsVideo || wantsSubtitle || translating != nil else { return }
+        // The other sites' tracks of the next episode too (다른 사이트 자막 트랙도 찾기): a Korean one is what it opens with.
+        let nextOther = library.preferences.otherSiteTracks != false && next.anime.source != "local" ? CrossSiteTracks.shared.all(next) : nil
         prefetchTask = Task {
             defer { if token == generation { prefetchTask = nil } }
             // As this episode starts playing.
@@ -1073,7 +1122,7 @@ final class EpisodePlayerModel: ObservableObject {
             var raw = false
             let known = preparedStreams?.key == key ? preparedStreams?.streams ?? [] : []
             if !offline && known.isEmpty {
-                raw = await preparer.preferRaw(next, preferences: library.preferences)
+                raw = await preparer.preferRaw(next, preferences: library.preferences, otherTracks: nextOther)
                 guard !Task.isCancelled, token == generation else { return }
                 nextResolver.resolve(next, preferRaw: raw, preferred: library.preferences.preferredServers?[next.anime.source] ?? library.preferences.preferredStream)
                 let deadline = Date().addingTimeInterval(60)
@@ -1087,7 +1136,13 @@ final class EpisodePlayerModel: ObservableObject {
                 preparedStreams = (key, streams, nextResolver.subtitles, nextResolver.servers, nextResolver.serverLabel, raw)
             }
             var korean = false
-            if wantsSubtitle {
+            if wantsSubtitle || translating != nil, let nextOther, !tracks.contains(where: DesktopSubtitlePolicy.isKorean),
+               await CrossSiteTracks.value(nextOther, within: 15).contains(where: DesktopSubtitlePolicy.isKorean) {
+                // Another site's Korean track is what the next episode opens with (synced to its audio then): nothing to
+                // find or translate ahead.
+                guard token == generation, !Task.isCancelled else { return }
+                korean = true; prefetchStatus = "다음 화는 다른 사이트의 한국어 자막 트랙으로 열어요"
+            } else if wantsSubtitle {
                 if let found = try? await preparer.community(next, preferences: library.preferences), token == generation, !Task.isCancelled {
                     korean = true
                     EpisodeSubtitleStore.shared.save(found.0, item: next, provider: found.1, translated: false)
@@ -1106,7 +1161,7 @@ final class EpisodePlayerModel: ObservableObject {
             do {
                 try Task.checkCancellation()
                 guard token == generation else { return }
-                guard let prepared = try await preparer.prepare(next, tracks: tracks, preferences: preferences, prefersAI: false, stream: streams.first) else {
+                guard let prepared = try await preparer.prepare(next, tracks: tracks, preferences: preferences, prefersAI: false, stream: streams.first, otherTracks: nextOther) else {
                     if library.preferences.whisperAuto != false, let stream = streams.first { await prepareWhisper(next, stream: stream, preferences: preferences, translate: translating != nil, token: token) }
                     else { prefetchStatus = nil }
                     return
@@ -1500,7 +1555,7 @@ struct EpisodePlayerView: View {
             PSGroup("자막 가져올 곳")
             PSSourceGrid(options: subtitleSources, selection: model.activeSubtitleSource) { model.chooseSource($0, library: library) }
             if model.openSheet == "anissia" { makerBox }
-            if model.openSheet == "reanime" && model.trackSource == "reanime" { trackBox }
+            if model.openSheet == "reanime" && model.hasTrackList { trackBox }
             if model.openSheet == "jimaku" { jimakuBox }
         }
         PSGroup("자막이 없거나 안 맞을 때")
@@ -1514,6 +1569,8 @@ struct EpisodePlayerView: View {
         }
         PSSwitch(title: "싱크가 어긋나면 자동으로 맞추기", detail: "자막을 켜면 뒤에서 영상 음성(사이트 자막 트랙이 있으면 그 트랙)과 비교해, 확실히 어긋나 있을 때만 맞춰요. 확실하지 않으면 그대로 둬요. 잘못 맞으면 알림에서 되돌릴 수 있어요",
                  isOn: Binding(get: { library.preferences.subtitleSyncCheck ?? true }, set: { library.preferences.subtitleSyncCheck = $0 }), small: true)
+        PSSwitch(title: "다른 사이트 자막 트랙도 찾기", detail: "보는 사이트와 상관없이 RE:Anime · Miruro에서 같은 회차의 자막 트랙을 찾아 목록에 넣어요. 한국어 트랙이 있으면 블로그 자막보다 먼저 쓰고, 이 영상 음성에 맞춰 싱크를 맞춰요. 다운로드와 다음 화 미리 준비에도 써요",
+                 isOn: Binding(get: { library.preferences.otherSiteTracks != false }, set: { model.otherSiteTracksChanged($0, library: library) }), small: true)
         if let status = model.prefetchStatus { PSNote(status).padding(.top, 4) }
         if let error = model.error { PSNote(error, color: .red).padding(.top, 8) }
     }
@@ -1528,8 +1585,8 @@ struct EpisodePlayerView: View {
     /// The source cards; the site's own subtitle shows only on the source that has one.
     private var subtitleSources: [PSSource] {
         var sources: [PSSource] = []
-        if model.trackSource == "linkkf" { sources.append(PSSource(id: "linkkf", title: "Linkkf", detail: "사이트 자막")) }
-        if model.trackSource == "reanime" { sources.append(PSSource(id: "reanime", title: model.item.anime.source == "miruro" ? "Miruro" : "Re:Anime", detail: "사이트 트랙")) }
+        if model.linkkfSubtitle { sources.append(PSSource(id: "linkkf", title: "Linkkf", detail: "사이트 자막")) }
+        if model.hasTrackList { sources.append(PSSource(id: "reanime", title: model.trackSourceLabel, detail: "사이트 트랙")) }
         let korean = ["kairan": "Kairan", "csora": "Csora", "anissia": "Anissia"]
         for id in ["kairan", "csora", "anissia"] { sources.append(PSSource(id: id, title: korean[id] ?? id, detail: "한국어")) }
         sources.append(PSSource(id: "jimaku", title: "Jimaku", detail: "일본어 → 번역"))
@@ -1558,10 +1615,14 @@ struct EpisodePlayerView: View {
         }
     }
     private var trackBox: some View {
-        PSBox(title: (model.item.anime.source == "miruro" ? "Miruro" : "Re:Anime") + " 자막 트랙", state: "\(model.siteTracks.count)개 트랙",
-              note: "사이트의 언어별 자막 · 한국어가 없으면 골라서 번역") {
-            ForEach(SiteTrackOrder.sorted(model.siteTracks)) { track in
-                PSTrackOption(title: SiteTrackOrder.name(track), detail: SiteTrackOrder.detail(track), selected: model.selectedTrackURL == track.url) {
+        let tracks = model.siteTracks
+        return PSBox(title: model.trackSourceLabel + " 자막 트랙", state: "\(tracks.count)개 트랙",
+              note: tracks.contains(where: \.crossSite) ? "다른 사이트 트랙은 이 영상에 싱크를 맞춰 씁니다" : "사이트의 언어별 자막 · 한국어가 없으면 골라서 번역") {
+            ForEach(SiteTrackOrder.sorted(tracks)) { track in
+                // Another site's track says whose it is ("Miruro · Full Subtitles").
+                let detail = SiteTrackOrder.detail(track)
+                PSTrackOption(title: SiteTrackOrder.name(track), detail: track.crossSite ? [CrossSiteTrackPolicy.label(track, playing: model.item.anime.source), detail].filter { !$0.isEmpty }.joined(separator: " · ") : detail,
+                              selected: model.selectedTrackURL == track.url) {
                     model.chooseTrack(track, library: library)
                 }
             }

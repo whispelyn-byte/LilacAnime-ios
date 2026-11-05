@@ -35,7 +35,8 @@ enum SubtitleAutoSync {
     /// desktop syncReferences: the site's tracks to choose the reference from, up to four, the ones named as dialogue first
     /// and signs, songs, forced or dubbed ones (timed to the dub) left out.
     static func referenceTracks(_ tracks: [RemoteSubtitle]) -> [RemoteSubtitle] {
-        let usable = tracks.filter { ($0.label + " " + $0.language).range(of: #"signs|songs|s&s|forced|dubtitle|\(ai\)|\bai\b|commentary"#, options: [.regularExpression, .caseInsensitive]) == nil }
+        // Another site's track (crossSite) is timed for that site's video: no reference for this one (desktop 77e3d7e).
+        let usable = tracks.filter { !$0.crossSite && ($0.label + " " + $0.language).range(of: #"signs|songs|s&s|forced|dubtitle|\(ai\)|\bai\b|commentary"#, options: [.regularExpression, .caseInsensitive]) == nil }
         func named(_ track: RemoteSubtitle) -> Bool { (track.label + " " + track.language).range(of: "full|dialog", options: [.regularExpression, .caseInsensitive]) != nil }
         return Array((usable.filter(named) + usable.filter { !named($0) }).prefix(4))
     }

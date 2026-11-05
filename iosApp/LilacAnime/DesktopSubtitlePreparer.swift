@@ -27,11 +27,13 @@ final class DesktopSubtitlePreparer {
     private var contexts: [String: (String, Int32, [Int])] = [:]
     init(jimaku: DesktopJimakuCatalog? = nil) { self.jimaku = jimaku ?? DesktopJimakuCatalog() }
 
-    func preferRaw(_ item: PlaybackItem, preferences: AppPreferences, downloading: Bool = false) async -> Bool {
+    /// otherTracks: the other sites' tracks of the episode (CrossSiteTracks); a Korean one is a Korean subtitle for the
+    /// video server's choice, as a blog's is (desktop 77e3d7e firstFound(blogSearch, otherSiteKorean)).
+    func preferRaw(_ item: PlaybackItem, preferences: AppPreferences, downloading: Bool = false, otherTracks: Task<[RemoteSubtitle], Never>? = nil) async -> Bool {
         guard ["miruro", "animenosub"].contains(item.anime.source) else { return false }
         let known = UserDefaults.standard.stringArray(forKey: "desktop.korean-series") ?? []
         if known.contains(item.anime.id) || EpisodeSubtitleStore.shared.list(item).contains(where: { !["provider", "reanime"].contains($0.provider) }) { return true }
-        var finished = false
+        var finished = false, otherKorean = false, otherDone = otherTracks == nil
         let task = Task { @MainActor in
             defer { finished = true }
             let found = try? await self.community(item, preferences: preferences)
@@ -42,54 +44,87 @@ final class DesktopSubtitlePreparer {
             }
             return found != nil
         }
-        if downloading {
-            let found = await task.value
-            if found { return true }
-            return (try? await translationSource(item, tracks: [], preferences: preferences)) != nil
+        if let otherTracks {
+            Task { @MainActor in otherKorean = await otherTracks.value.contains(where: DesktopSubtitlePolicy.isKorean); otherDone = true }
         }
+        if downloading {
+            while !(finished && otherDone) && !otherKorean && !Task.isCancelled { try? await Task.sleep(nanoseconds: 100_000_000) }
+            if otherKorean { return true }
+            if await task.value { return true }
+            return (try? await translationSource(item, tracks: [], preferences: preferences, later: otherTracks)) != nil
+        }
+        // The first that finds a Korean subtitle decides, or both finding none.
         let deadline = Date().addingTimeInterval(8)
-        while !finished && Date() < deadline && !Task.isCancelled { try? await Task.sleep(nanoseconds: 100_000_000) }
+        while !otherKorean && !(finished && otherDone) && Date() < deadline && !Task.isCancelled { try? await Task.sleep(nanoseconds: 100_000_000) }
+        if otherKorean { return true }
         if finished { return await task.value }
         return false
     }
+    /// The other sites' Korean track put on for an episode (its prepared file → the track), so the player marks it in the
+    /// track list and says where it is from.
+    private var crossSitePicks: [URL: RemoteSubtitle] = [:]
+    func crossSiteTrack(for file: URL) -> RemoteSubtitle? { crossSitePicks[file] }
+    /// Another site's Korean track of this very episode (found by its AniList entry) comes before the blogs, whose posts
+    /// are matched by title. Waited for 12 s at most, the blogs searched meanwhile (desktop ensureSubtitle).
+    private func otherKorean(_ item: PlaybackItem, tracks: [RemoteSubtitle], otherTracks: Task<[RemoteSubtitle], Never>?, preferences: AppPreferences) async throws -> (URL, String)? {
+        guard otherTracks != nil || tracks.contains(where: \.crossSite), !tracks.contains(where: { !$0.crossSite && DesktopSubtitlePolicy.isKorean($0) }) else { return nil }
+        var found = tracks.filter(\.crossSite)
+        if let otherTracks {
+            if item.anime.source != "local" && item.anime.source != "linkkf" { Task { _ = try? await self.community(item, preferences: preferences) } }
+            // 16 s: the Korean sites' files take longer (their pages are read when RE:Anime and Miruro have no Korean track).
+            found += await CrossSiteTracks.value(otherTracks, within: 16)
+        }
+        try Task.checkCancellation()
+        for track in found where DesktopSubtitlePolicy.isKorean(track) {
+            if let files = try? await SubtitleFiles.prepare(track.url, headers: track.headers ?? [:]), let file = select(files, item: item, offsets: []) {
+                crossSitePicks[file] = track; return (file, "reanime")
+            }
+            try Task.checkCancellation()
+        }
+        return nil
+    }
 
-    /// koreanFirst: a download's subtitle (main.cjs findDownloadSubtitle, desktop 0.5.32).
-    func prepare(_ item: PlaybackItem, tracks: [RemoteSubtitle], preferences: AppPreferences, prefersAI: Bool = false, skipSaved: Bool = false, stream: ResolvedStream? = nil, koreanFirst: Bool = false) async throws -> (URL, String)? {
+    /// koreanFirst: a download's subtitle (main.cjs findDownloadSubtitle, desktop 0.5.32). otherTracks: the other sites'
+    /// tracks of the episode still loading (CrossSiteTracks; tracks may hold those already found).
+    func prepare(_ item: PlaybackItem, tracks: [RemoteSubtitle], preferences: AppPreferences, prefersAI: Bool = false, skipSaved: Bool = false, stream: ResolvedStream? = nil, koreanFirst: Bool = false, otherTracks: Task<[RemoteSubtitle], Never>? = nil) async throws -> (URL, String)? {
         guard preferences.subtitleProvider != "manual", !DesktopSubtitlePolicy.burnedKorean(source: item.anime.source, stream: stream) else { return nil }
         let saved = skipSaved ? [] : EpisodeSubtitleStore.shared.list(item)
-        if koreanFirst { return try await downloadSubtitle(item, saved: saved, tracks: tracks, preferences: preferences) }
+        if koreanFirst { return try await downloadSubtitle(item, saved: saved, tracks: tracks, preferences: preferences, otherTracks: otherTracks) }
         if prefersAI {
             if let translated = saved.first(where: \.translated), let file = translated.file { return (file, translated.provider) }
-            if let result = try await translationSource(item, tracks: tracks, preferences: preferences) { return result }
+            if let result = try await translationSource(item, tracks: tracks, preferences: preferences, later: otherTracks) { return result }
         }
         if let preferred = DesktopSubtitlePolicy.preferredSaved(saved, preferred: preferences.subtitleProvider), let file = preferred.file { return (file, preferred.provider) }
-        for track in tracks where DesktopSubtitlePolicy.isKorean(track) {
+        for track in tracks where !track.crossSite && DesktopSubtitlePolicy.isKorean(track) {
             try Task.checkCancellation()
             if let files = try? await SubtitleFiles.prepare(track.url, headers: track.headers ?? [:]), let file = select(files, item: item, offsets: []) { return (file, "reanime") }
         }
         if let first = saved.first, let file = first.file { return (file, first.provider) }
         for local in item.localSubtitles { if await SubtitleFiles.isKorean(local) { return (local, "download") } }
         if let local = item.localSubtitles.first { return (local, "download") }
+        if let found = try await otherKorean(item, tracks: tracks, otherTracks: otherTracks, preferences: preferences) { return found }
         guard item.anime.source != "local" && item.anime.source != "linkkf" else { return nil }
         if let found = try await community(item, preferences: preferences) { return found }
-        return try await translationSource(item, tracks: tracks, preferences: preferences)
+        return try await translationSource(item, tracks: tracks, preferences: preferences, later: otherTracks)
     }
 
     /// A Korean subtitle comes first for a download: one saved for the episode (the preferred source's, a machine
     /// translation standing for the site's subtitle it was made from when it was the last one put on), the site's Korean
-    /// track, then Kairan / Csora / Anissia. A saved subtitle in another language (a site's English track, Jimaku) is
-    /// used only when none of them has one, so a Korean fansub keeps the episode from being translated.
-    private func downloadSubtitle(_ item: PlaybackItem, saved: [SavedSubtitle], tracks: [RemoteSubtitle], preferences: AppPreferences) async throws -> (URL, String)? {
+    /// track, another site's Korean track of the episode, then Kairan / Csora / Anissia. A saved subtitle in another
+    /// language (a site's English track, Jimaku) is used only when none of them has one, so a Korean fansub keeps the
+    /// episode from being translated.
+    private func downloadSubtitle(_ item: PlaybackItem, saved: [SavedSubtitle], tracks: [RemoteSubtitle], preferences: AppPreferences, otherTracks: Task<[RemoteSubtitle], Never>?) async throws -> (URL, String)? {
         let preferred = DesktopSubtitlePolicy.preferredSaved(saved, preferred: preferences.subtitleProvider)
         if let preferred, DesktopSubtitlePolicy.downloadKorean(preferred), let file = preferred.file { return (file, preferred.provider) }
-        for track in tracks where DesktopSubtitlePolicy.isKorean(track) {
+        for track in tracks where !track.crossSite && DesktopSubtitlePolicy.isKorean(track) {
             try Task.checkCancellation()
             if let files = try? await SubtitleFiles.prepare(track.url, headers: track.headers ?? [:]), let file = select(files, item: item, offsets: []) { return (file, "reanime") }
         }
         if let korean = saved.first(where: DesktopSubtitlePolicy.downloadKorean), let file = korean.file { return (file, korean.provider) }
+        if let found = try await otherKorean(item, tracks: tracks, otherTracks: otherTracks, preferences: preferences) { return found }
         if item.anime.source != "local" && item.anime.source != "linkkf", let found = try await community(item, preferences: preferences) { return found }
         if let other = preferred ?? saved.first, let file = other.file { return (file, other.provider) }
-        return try await translationSource(item, tracks: tracks, preferences: preferences)
+        return try await translationSource(item, tracks: tracks, preferences: preferences, later: otherTracks)
     }
 
     /// Start all searches together, but consume in preference order.
@@ -183,10 +218,16 @@ final class DesktopSubtitlePreparer {
         return nil
     }
 
-    func translationSource(_ item: PlaybackItem, tracks: [RemoteSubtitle], preferences: AppPreferences, requireAutomatic: Bool = true) async throws -> (URL, String)? {
+    /// The subtitle to translate from (desktop subtitle-source.js resolve): the site's Japanese track, Jimaku's Japanese
+    /// file, another site's Japanese track, then the English tracks (the site's, another site's). later: the other sites'
+    /// tracks still loading, waited for (15 s at most) only after Jimaku.
+    func translationSource(_ item: PlaybackItem, tracks: [RemoteSubtitle], preferences: AppPreferences, requireAutomatic: Bool = true, later: Task<[RemoteSubtitle], Never>? = nil) async throws -> (URL, String)? {
         guard !requireAutomatic || preferences.translationPreferences(automatic: true) != nil else { return nil }
-        if let japanese = DesktopSubtitlePolicy.translationTrack(tracks, language: "ja"),
-           let files = try? await SubtitleFiles.prepare(japanese.url, headers: japanese.headers ?? [:]), let file = select(files, item: item, offsets: []) { return (file, "reanime") }
+        var tried = Set<URL>()
+        if let japanese = DesktopSubtitlePolicy.translationTrack(tracks.filter { !$0.crossSite }, language: "ja") {
+            tried.insert(japanese.url)
+            if let files = try? await SubtitleFiles.prepare(japanese.url, headers: japanese.headers ?? [:]), let file = select(files, item: item, offsets: []) { return (file, "reanime") }
+        }
         try Task.checkCancellation()
         if let saved = EpisodeSubtitleStore.shared.list(item).first(where: { !$0.translated && $0.provider == "jimaku" }), let file = saved.file { return (file, "jimaku") }
         if item.anime.source != "local" {
@@ -196,7 +237,17 @@ final class DesktopSubtitlePreparer {
                 if let url = URL(string: asset.url), let files = try? await SubtitleFiles.prepare(url, japanese: true, filename: asset.name), let file = files.first { return (file, "jimaku") }
             }
         }
-        if let track = DesktopSubtitlePolicy.translationTrack(tracks, language: "en"), let files = try? await SubtitleFiles.prepare(track.url, headers: track.headers ?? [:]), let file = select(files, item: item, offsets: []) { return (file, "reanime") }
+        // As listed in the player: the other sites' tracks all when the site has none, else only a Korean one beside its own.
+        var all = tracks
+        if let later {
+            let found = await CrossSiteTracks.value(later, within: 15)
+            try Task.checkCancellation()
+            all = CrossSiteTrackPolicy.merged(own: tracks, other: found)
+        }
+        for track in CrossSiteTrackPolicy.translationOrder(all) where tried.insert(track.url).inserted {
+            try Task.checkCancellation()
+            if let files = try? await SubtitleFiles.prepare(track.url, headers: track.headers ?? [:]), let file = select(files, item: item, offsets: []) { return (file, "reanime") }
+        }
         return nil
     }
 

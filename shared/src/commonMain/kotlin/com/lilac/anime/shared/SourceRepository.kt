@@ -216,6 +216,39 @@ class SourceRepository(private val client: HttpClient, private val details: Deta
     }
     suspend fun desktopStreams(source: String, animeId: String, number: Int, url: String) = desktop.streams(source, animeId, number, url)
     suspend fun desktopServers(source: String, url: String, number: Int, anilist: Int) = desktop.serverPages(source, url, number, anilist)
+    /** A Korean site as the cross-site lookup asks it: searched by the work's Korean titles (three at most), its show
+     *  page read for its original title, AniList id and episodes, and an episode's own Korean subtitle file. */
+    private fun koreanSite(site: String) = object : KoreanSiteSource {
+        override suspend fun search(titles: List<String>): List<KoreanSiteHit> = coroutineScope {
+            titles.distinct().take(3).map { title ->
+                async { try { browse(site, title) } catch (error: CancellationException) { throw error } catch (_: Exception) { emptyList() } }
+            }.awaitAll().flatten()
+        }.map { KoreanSiteHit(if (site == "linkkf") it.id else it.detailUrl, it.title) }.filter { it.ref.isNotBlank() }.distinctBy { it.ref }
+        override suspend fun detail(ref: String): KoreanSiteShow {
+            val found = this@SourceRepository.detail(if (site == "linkkf") Anime(id = ref, source = site) else Anime(id = ref, detailUrl = ref, source = site), site)
+            val episodes = found.servers.firstOrNull()?.episodes ?: found.anime.episodes
+            return KoreanSiteShow(found.anime.anilistId, found.anime.native, episodes.map(KoreanSiteRules::episode))
+        }
+        override suspend fun subtitle(episode: KoreanSiteEpisode): CrossSiteTrack? = when (site) {
+            "ohli24" -> desktop.ohliEpisodeSubtitle(episode.url)
+            "linkani" -> desktop.linkaniEpisodeSubtitle(episode.url)
+            else -> KoreanSiteBrowserRegistry.linkkfSubtitle(episode.url)
+        }
+    }
+    private val crossSite by lazy {
+        CrossSiteTrackLookup(object : CrossSiteSources {
+            override suspend fun searchAnilist(text: String) = desktop.searchAnilist(text)
+            override suspend fun reanimeTracks(anilistId: Int, number: Int) = desktop.reanimeSubtitleTracks(anilistId, number)
+            override suspend fun miruroId(anilistId: Int, titles: List<String>) = desktop.miruroIdByAnilist(anilistId, titles)
+            override suspend fun miruroTracks(miruroId: String, number: Int) = desktop.miruroSubtitleTracks(miruroId, number)
+        }, koreanSites = KoreanSiteSubtitles(listOf("ohli24", "linkani", "linkkf").associateWith(::koreanSite)))
+    }
+    /** The same episode's subtitle tracks on the other sites (RE:Anime, Miruro; never the one playing; desktop 77e3d7e). */
+    suspend fun crossSiteTracks(anime: Anime, provider: String, number: Int, special: Boolean, dub: Boolean) =
+        crossSite.tracks(CrossSiteWork.of(anime, provider), number, special, dub)
+    /** 애니24's, 링크애니's and Linkkf's Korean subtitle files of the same episode (slower; desktop d8f7978). */
+    suspend fun koreanSiteTracks(anime: Anime, provider: String, number: Int, special: Boolean, dub: Boolean, koreanTitles: List<String>) =
+        crossSite.koreanSiteTracks(CrossSiteWork.of(anime, provider), number, special, dub, koreanTitles)
     suspend fun top(period: String) = ReAnimeHarParser.parseTop(getText("https://reanime.to/api/v1/top/anime", mapOf("period" to period, "limit" to "20")))
     suspend fun schedule(week: Int) = ReAnimeHarParser.parseSchedule(getText("https://reanime.to/api/v1/schedule", mapOf("tz" to "Asia/Seoul", "week" to week.toString())))
     suspend fun facets() = ReAnimeHarParser.parseFacets(getText("https://reanime.to/api/v1/search", mapOf("facets" to "true", "limit" to "0")))

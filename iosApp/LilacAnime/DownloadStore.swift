@@ -15,6 +15,8 @@ struct DownloadSubtitleTrack: Codable, Equatable {
     var language: String
     var provider: String
     var translatedFile: String? = nil
+    /// Another site's track of the episode kept with it ("reanime", "miruro"; desktop crossSite/origin), nil for the site's own.
+    var origin: String? = nil
 }
 struct DownloadEntry: Codable, Identifiable {
     var id: String
@@ -81,7 +83,7 @@ struct DownloadEntry: Codable, Identifiable {
     }
     private var orderedSubtitles: [String] { primarySubtitle.map { [$0] + (subtitleFiles ?? []).filter { $0 != primarySubtitle } } ?? (subtitleFiles ?? []) }
     private var localTracks: [RemoteSubtitle] {
-        (subtitleTracks ?? []).map { track in RemoteSubtitle(label: track.label, url: DownloadStore.directory.appendingPathComponent(id).appendingPathComponent(track.translatedFile ?? track.file), language: track.translatedFile == nil ? track.language : "ko") }
+        (subtitleTracks ?? []).map { track in RemoteSubtitle(label: track.label, url: DownloadStore.directory.appendingPathComponent(id).appendingPathComponent(track.translatedFile ?? track.file), language: track.translatedFile == nil ? track.language : "ko", origin: track.origin) }
     }
 }
 @MainActor
@@ -231,7 +233,12 @@ final class DownloadStore: ObservableObject {
                 if entries.contains(where: { $0.id == id && ($0.localFile != nil || busy(id)) }) { pendingResolution -= 1; continue }
                 let preferRaw: Bool
                 if let prepareRaw { preferRaw = await prepareRaw(item) }
-                else { preferRaw = await subtitlePreparer.preferRaw(item, preferences: library?.preferences ?? AppPreferences(), downloading: true) }
+                else {
+                    // Another site's Korean track counts as a Korean subtitle for the clean video, as in the player.
+                    let preferences = library?.preferences ?? AppPreferences()
+                    let other = preferences.otherSiteTracks != false && ["miruro", "animenosub"].contains(item.anime.source) ? CrossSiteTracks.shared.all(item) : nil
+                    preferRaw = await subtitlePreparer.preferRaw(item, preferences: preferences, downloading: true, otherTracks: other)
+                }
                 if Task.isCancelled { return }
                 resolver.resolve(item, preferRaw: preferRaw, preferred: library?.preferences.preferredServers?[item.anime.source])
                 while resolver.loading && resolver.streams.isEmpty && !Task.isCancelled {
@@ -609,30 +616,46 @@ final class DownloadStore: ObservableObject {
         var primary = entry.primarySubtitle
         var scopedFonts: Set<URL> = []
         let siteKorean = DesktopSubtitlePolicy.siteKorean(source: entry.anime.source, tracks: entry.stream.subtitles, stream: entry.stream)
-        func copy(_ file: URL, label: String, language: String, provider: String) throws -> String {
+        func copy(_ file: URL, label: String, language: String, provider: String, origin: String? = nil) throws -> String {
             scopedFonts.formUnion(SubtitleFiles.fonts(for: file))
             let name = "subtitle-" + String(SubtitleFiles.key(file.path).prefix(16)) + "." + file.pathExtension
             let target = folder.appendingPathComponent(name)
             if file.standardizedFileURL != target.standardizedFileURL && !FileManager.default.fileExists(atPath: target.path) { try FileManager.default.copyItem(at: file, to: target) }
             if !files.contains(name) { files.append(name) }
-            if !tracks.contains(where: { $0.file == name }) { tracks.append(DownloadSubtitleTrack(file: name, label: label, language: language, provider: provider)) }
+            if let index = tracks.firstIndex(where: { $0.file == name }) { if tracks[index].origin == nil, let origin { tracks[index].origin = origin } }
+            else { tracks.append(DownloadSubtitleTrack(file: name, label: label, language: language, provider: provider, origin: origin)) }
             return name
         }
-        if preferences.downloadSubtitles != false && !DesktopSubtitlePolicy.burnedKorean(source: entry.anime.source, stream: entry.stream) {
-            if let prepared = try await subtitlePreparer.prepare(entry.playback, tracks: entry.stream.subtitles, preferences: preferences, stream: entry.stream, koreanFirst: true) {
+        // In a Korean-in-the-picture video (애니24, 링크애니) the other sites' tracks are still kept, but none is put on
+        // or translated (desktop attachSubtitle / queueTracks).
+        let burned = DesktopSubtitlePolicy.burnedKorean(source: entry.anime.source, stream: entry.stream)
+        if preferences.downloadSubtitles != false {
+            // The other sites' tracks of the episode (RE:Anime's, Miruro's): all of them when the site has no track list,
+            // else a Korean one beside the site's own (다른 사이트 자막 트랙도 찾기). Linkkf's, 애니24's and 링크애니's own
+            // Korean subtitle is the episode's subtitle, not a track: the other sites' tracks are all kept beside it.
+            // 애니24's, 링크애니's and Linkkf's Korean files are kept too, beside a site's own Korean track as well (d8f7978).
+            var episodeTracks = entry.stream.subtitles
+            let listed = CrossSiteTrackPolicy.listed(own: episodeTracks, source: entry.anime.source)
+            if preferences.otherSiteTracks != false, entry.anime.source != "local" {
+                let item = entry.playback
+                let other = await CrossSiteTracks.shared.tracks(item).value + (await CrossSiteTracks.shared.koreanTracks(item).value)
+                let merged = CrossSiteTrackPolicy.merged(own: listed, other: other)
+                episodeTracks = episodeTracks.filter { track in !merged.contains { $0.url == track.url } } + merged
+            }
+            if !burned, let prepared = try await subtitlePreparer.prepare(entry.playback, tracks: episodeTracks, preferences: preferences, stream: entry.stream, koreanFirst: true) {
                 let korean = await SubtitleFiles.isKorean(prepared.0)
                 primary = try copy(prepared.0, label: prepared.1, language: korean ? "ko" : prepared.1 == "jimaku" ? "ja" : "", provider: prepared.1)
                 EpisodeSubtitleStore.shared.save(prepared.0, item: entry.playback, provider: prepared.1, translated: EpisodeSubtitleStore.shared.list(entry.playback).contains { $0.file == prepared.0 && $0.translated })
             }
-            for track in entry.stream.subtitles {
+            for track in episodeTracks {
                 try Task.checkCancellation()
                 if let prepared = try? await SubtitleFiles.prepare(track.url, headers: track.headers ?? [:]) {
-                    for file in prepared { _ = try copy(file, label: track.label, language: track.language, provider: "reanime") }
+                    for file in prepared { _ = try copy(file, label: track.label, language: track.language, provider: "reanime", origin: track.origin) }
                 }
             }
             // Keep a separate translation source beside fansubs, never beside the site's own Korean track.
-            if !siteKorean, !(await hasKoreanSubtitle(files, folder: folder)), preferences.translationPreferences(automatic: true) != nil,
-               let source = try await subtitlePreparer.translationSource(entry.playback, tracks: entry.stream.subtitles, preferences: preferences) {
+            if !burned, !siteKorean, !(await hasKoreanSubtitle(files, folder: folder)), preferences.translationPreferences(automatic: true) != nil,
+               let source = try await subtitlePreparer.translationSource(entry.playback, tracks: episodeTracks, preferences: preferences) {
                 let name = try copy(source.0, label: source.1, language: source.1 == "jimaku" ? "ja" : "", provider: source.1)
                 EpisodeSubtitleStore.shared.save(source.0, item: entry.playback, provider: source.1, translated: false, behind: primary != nil)
                 if primary == nil && !entry.stream.label.hasPrefix("SUB") { primary = name }
@@ -694,8 +717,10 @@ final class DownloadStore: ObservableObject {
                       let preferences = library.preferences.translationPreferences() else { continue }
                 let tracks = entry.subtitleTracks ?? []
                 let jimaku = library.preferences.autoTranslation ? tracks.first { $0.provider == "jimaku" } : nil
-                let remote = tracks.map { RemoteSubtitle(label: $0.label, url: folder.appendingPathComponent($0.file), language: $0.language) }
-                var original = DesktopSubtitlePolicy.translationTrack(remote, language: "ja")?.url ?? jimaku.map({ folder.appendingPathComponent($0.file) }) ?? DesktopSubtitlePolicy.translationTrack(remote, language: "en")?.url
+                let remote = tracks.map { RemoteSubtitle(label: $0.label, url: folder.appendingPathComponent($0.file), language: $0.language, origin: $0.origin) }
+                // As in the player: the site's Japanese, Jimaku, another site's Japanese, the site's English, another site's English.
+                let own = remote.filter { !$0.crossSite }
+                var original = DesktopSubtitlePolicy.translationTrack(own, language: "ja")?.url ?? jimaku.map({ folder.appendingPathComponent($0.file) }) ?? CrossSiteTrackPolicy.translationOrder(remote).first?.url
                 if original == nil && tracks.isEmpty {
                     for file in files { if !(await SubtitleFiles.isKorean(file)) { original = file; break } }
                 }

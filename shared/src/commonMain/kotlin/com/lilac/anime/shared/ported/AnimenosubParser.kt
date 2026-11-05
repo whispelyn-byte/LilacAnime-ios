@@ -145,6 +145,15 @@ object AnimenosubParser {
         Log.d("AnimenosubParser", "DETAIL title=$title poster=$poster genres=${genres.size} descriptionLength=${description.length}")
         val parsedEpisodes = parseEpisodes(document, original.copy(title = title))
         val parsedDubEpisodes = parseDubEpisodes(document, original.copy(title = title))
+        // The other names line ("Siedmiu Rycerzy…, The Seven Knights…, マロニエ王国の七人の騎士") holds the Japanese title, and the
+        // info box the season ("Fall 2026") or release date: the AniList entry of the other sites' subtitle tracks is
+        // found by both (desktop 77e3d7e animenosubDetail).
+        val native = nativeName(document.selectFirst(".alter")?.text().orEmpty())
+        fun info(name: String) = document.select(".spe span").firstOrNull { span ->
+            span.selectFirst("b")?.text().orEmpty().replace(Regex("[:\\s]"), "").lowercase() == name
+        }?.text().orEmpty()
+        val yearPattern = Regex("(?:19|20)\\d{2}")
+        val year = (yearPattern.find(info("season")) ?: yearPattern.find(info("released")))?.value ?: original.year
         return original.copy(
             title = title,
             description = description,
@@ -152,9 +161,15 @@ object AnimenosubParser {
             poster = poster,
             backdrop = backdrop,
             episodes = parsedEpisodes,
-            dubEpisodes = parsedDubEpisodes
+            dubEpisodes = parsedDubEpisodes,
+            native = native.ifEmpty { original.native },
+            year = year
         )
     }
+
+    /** The Japanese name among an "other names" line's (the last one written in kana or kanji, never one in Hangul). */
+    fun nativeName(text: String): String = text.split(Regex("\\s*,\\s*")).map(String::trim)
+        .lastOrNull { Regex("[぀-ヿ㐀-鿿]").containsMatchIn(it) && !Regex("[가-힣]").containsMatchIn(it) }.orEmpty()
 
     fun parseEpisodes(document: Document, anime: Anime): List<Episode> =
         parseEpisodeLinks(document, anime, dub = false)

@@ -64,6 +64,14 @@ class IosServices internal constructor(private val worker: CoroutineDispatcher) 
     fun desktopServers(sourceKey: String, url: String, number: Int, anilist: Int, completion: (List<DesktopPlaybackServer>?, String?) -> Unit) {
         scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { source.desktopServers(sourceKey, url, number, anilist) } }
     }
+    /** 다른 사이트 자막 트랙 (desktop 77e3d7e): the episode's tracks on RE:Anime and Miruro, found by the work's AniList entry. */
+    fun crossSiteTracks(anime: Anime, provider: String, number: Int, special: Boolean, dub: Boolean, completion: (List<CrossSiteTrack>?, String?) -> Unit) {
+        scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { source.crossSiteTracks(anime, provider, number, special, dub) } }
+    }
+    /** 애니24's, 링크애니's and Linkkf's Korean subtitle files of the episode (desktop d8f7978), by the work's Korean titles. */
+    fun koreanSiteTracks(anime: Anime, provider: String, number: Int, special: Boolean, dub: Boolean, koreanTitles: List<String>, completion: (List<CrossSiteTrack>?, String?) -> Unit) {
+        scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { source.koreanSiteTracks(anime, provider, number, special, dub, koreanTitles) } }
+    }
     fun sourceSections(sourceKey: String, completion: (List<SourceSection>?, String?) -> Unit) { scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { source.sourceSections(sourceKey) } } }
     fun weeklySchedule(sourceKey: String, day: Int, date: String, monday: String, completion: (WeeklyScheduleResult?, String?) -> Unit) { scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { source.weeklySchedule(sourceKey, day, date, monday) } } }
     fun sourceSchedule(sourceKey: String, day: Int, completion: (List<Anime>?, String?) -> Unit) { scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { source.sourceSchedule(sourceKey, day) } } }

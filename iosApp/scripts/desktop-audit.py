@@ -21,6 +21,8 @@ mapping = {
  'src/watermark-learner.js': [ios+'Resources/watermark-learner.js',ios+'VideoCleanup.swift'],
  'electron/miruro-playback.cjs': [ios+'MiruroPlayback.swift',ios+'EpisodePlayerView.swift'],
  'src/subtitle-source.js': [ios+'DesktopSubtitlePolicy.swift',ios+'DesktopSubtitlePreparer.swift',ios+'DownloadStore.swift'],
+ 'electron/cross-site-tracks.cjs': [shared+'CrossSiteTracks.kt',ios+'CrossSiteTracks.swift'],
+ 'electron/korean-site-subtitles.cjs': [shared+'KoreanSiteSubtitles.kt',shared+'SourceRepository.kt',ios+'CrossSiteTracks.swift',ios+'PlaybackResolver.swift'],
  'electron/provider-schedule.cjs': [shared+'WeeklySchedule.kt'],
  'electron/weekly-schedule.cjs': [shared+'WeeklySchedule.kt'],
  'src/weekly-schedule.js': [ios+'WeeklyScheduleView.swift'],
@@ -87,6 +89,7 @@ groups.append(('prepareEpisodeStream useEpisodeStream streamAlive streamWarm', [
 groups.append(('weeklySchedule providerSchedule', [shared+'WeeklySchedule.kt',shared+'IosServices.kt',ios+'WeeklyScheduleView.swift']))
 groups.append(('animeArtwork', [ios+'TitleArtwork.swift',shared+'DesktopArtwork.kt']))
 groups.append(('episodeThumbnails', [shared+'EpisodeThumbnails.kt',shared+'IosServices.kt',ios+'EpisodePicker.swift']))
+groups.append(('crossSiteSubtitleTracks koreanSiteSubtitleTracks', [shared+'CrossSiteTracks.kt',shared+'IosServices.kt',ios+'CrossSiteTracks.swift',ios+'EpisodePlayerView.swift']))
 # llama.cpp is built into the app here (Metal); there is no runtime to download ahead of the first translation.
 groups.append(('localRuntimeStatus installLocalRuntime onLocalRuntimeProgress', [ios+'LocalModelsView.swift','iosApp/Native/Sources/LilacLocalAI/LocalAI.cpp']))
 groups.append(('whisperStatus whisperSelect whisperInstall whisperDownload whisperRemove whisperTranscribe whisperCancel whisperJump onWhisperProgress', [ios+'WhisperSubtitles.swift',ios+'EpisodePlayerView.swift']))

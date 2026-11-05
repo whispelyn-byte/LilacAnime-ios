@@ -65,7 +65,8 @@ enum DesktopDownloads {
                 entry.primarySubtitle = (job["subtitleAssPath"] as? String).flatMap { names[$0] } ?? (job["subtitlePath"] as? String).flatMap { names[$0] }
                 entry.subtitleTracks = (job["subtitleTracks"] as? [[String: Any]] ?? []).compactMap { track in
                     guard let file = (track["assPath"] as? String).flatMap({ names[$0] }) ?? (track["path"] as? String).flatMap({ names[$0] }) else { return nil }
-                    return DownloadSubtitleTrack(file: file, label: track["label"] as? String ?? "자막", language: track["language"] as? String ?? "", provider: "reanime", translatedFile: (track["translatedPath"] as? String).flatMap { names[$0] })
+                    return DownloadSubtitleTrack(file: file, label: track["label"] as? String ?? "자막", language: track["language"] as? String ?? "", provider: "reanime", translatedFile: (track["translatedPath"] as? String).flatMap { names[$0] },
+                                                 origin: track["crossSite"] as? Bool == true ? (track["origin"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "reanime" : nil)
                 }
                 entry.siteKorean = job["siteKorean"] as? Bool ?? ["ohli24", "linkani", "linkkf"].contains(source)
                 entry.subtitlesPrepared = true

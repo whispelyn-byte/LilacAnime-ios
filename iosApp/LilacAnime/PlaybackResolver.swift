@@ -21,6 +21,8 @@ struct RemoteSubtitle: Codable, Identifiable, Hashable {
     var url: URL
     var language: String
     var headers: [String: String]? = nil
+    /// Another site's track of the same episode ("reanime", "miruro"; see CrossSiteTracks), nil for the site's own.
+    var origin: String? = nil
 }
 struct PlaybackItem {
     let anime: SavedAnime
@@ -348,6 +350,19 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
         webView.stopLoading(); loading = false
     }
     func shutdown() { cancel(); webView.configuration.userContentController.removeScriptMessageHandler(forName: "lilacMedia"); webView.navigationDelegate = nil; webView.loadHTMLString("", baseURL: nil) }
+    /// The subtitle files a player page names as it plays, read in a hidden, muted resolver of its own (desktop d8f7978:
+    /// Linkkf's subtitle comes only with its player page, in a session apart from the player's). `seconds` at most.
+    static func pageSubtitles(_ page: URL, seconds: Double = 15) async -> [RemoteSubtitle] {
+        let resolver = PlaybackResolver()
+        defer { resolver.shutdown() }
+        resolver.silent = true; resolver.loading = true
+        resolver.loadPage(page, seconds: seconds)
+        let deadline = Date().addingTimeInterval(seconds)
+        while resolver.subtitles.isEmpty && resolver.error == nil && Date() < deadline && !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 150_000_000)
+        }
+        return resolver.subtitles
+    }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         guard !webPlaybackActive else { return }
         guard webView.url?.host?.contains("flixcloud") == true,

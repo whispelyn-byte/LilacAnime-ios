@@ -392,15 +392,87 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
             result
         } catch (error: CancellationException) { throw error } catch (_: Exception) { null }
     }
+    /** AniList's entries for a title (native, English or romaji), with what tells them apart; a 429 (its per-minute
+     *  limit) is waited out once (desktop 77e3d7e searchAnilist). */
+    internal suspend fun searchAnilist(search: String): List<AnilistMedia> {
+        suspend fun ask() = client.post("https://graphql.anilist.co") {
+            expectSuccess = false
+            contentType(ContentType.Application.Json)
+            setBody(buildJsonObject {
+                put("query", "query(\$search:String){Page(perPage:10){media(search:\$search,type:ANIME){id idMal format episodes seasonYear startDate{year} synonyms title{native english romaji}}}}")
+                put("variables", buildJsonObject { put("search", search.replace("…", "...")) })
+            }.toString())
+        }
+        var response = ask()
+        if (response.status.value == 429) {
+            delay(((response.headers[HttpHeaders.RetryAfter]?.toDoubleOrNull()?.takeIf { it > 0 } ?: 5.0).coerceAtMost(15.0) * 1000).toLong())
+            response = ask()
+        }
+        check(response.status.isSuccess()) { "AniList HTTP ${response.status.value}" }
+        return Json.parseToJsonElement(response.body<String>()).jsonObject.obj("data").obj("Page").list("media").filterIsInstance<JsonObject>().mapNotNull { row ->
+            val title = row.obj("title")
+            AnilistMedia(row.number("id") ?: return@mapNotNull null, row.number("episodes"), row.number("seasonYear"), row.obj("startDate").number("year"),
+                title.text("native"), title.text("english"), title.text("romaji"), row.list("synonyms").mapNotNull { (it as? JsonPrimitive)?.contentOrNull })
+        }
+    }
+    /** RE:Anime's subtitle tracks of an AniList entry's episode: its servers by /api/flix, and the list on the first
+     *  player page that has one (desktop reanimeSubtitleTracks for an episode without its own page). */
+    internal suspend fun reanimeSubtitleTracks(anilistId: Int, number: Int): List<CrossSiteTrack> {
+        for (server in serverPages("reanime", "", number, anilistId)) {
+            try {
+                val html = client.get(server.url) {
+                    header("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1")
+                    header("Referer", "https://reanime.to/")
+                }.body<String>()
+                val tracks = FlixSubtitleTracks.parse(html)
+                if (tracks.isNotEmpty()) return tracks.map { it.copy(headers = mapOf("Referer" to server.url)) }
+            } catch (error: CancellationException) { throw error } catch (_: Exception) { /* the next server */ }
+        }
+        return emptyList()
+    }
+    /** Miruro's show of an AniList entry, found by searching its titles (Miruro ids are its own) and taking the hit whose
+     *  AniList id is the one asked for. */
+    internal suspend fun miruroIdByAnilist(anilistId: Int, titles: List<String>): String? {
+        for (title in titles.filter(String::isNotBlank).distinct()) {
+            val hit = miruro("anime", mapOf("q" to title, "limit" to "15")).list("data").filterIsInstance<JsonObject>()
+                .firstOrNull { ((it.obj("external_ids").list("anilist").firstOrNull() as? JsonPrimitive)?.content?.toIntOrNull()) == anilistId }
+            if (hit != null) return hit.text("id")
+        }
+        return null
+    }
+    /** The subtitle files of a Miruro episode's SOFT servers (the steadiest provider first; one file per language and
+     *  name), each with the headers its server wants. */
+    internal suspend fun miruroSubtitleTracks(animeId: String, number: Int): List<CrossSiteTrack> {
+        val order = listOf("anikoto", "kickassanime", "icarus", "aniwaves")
+        fun rank(provider: JsonObject) = order.indexOf(provider.text("provider")).let { if (it < 0) order.size else it }
+        val tracks = mutableListOf<CrossSiteTrack>()
+        for (track in miruro("anime/$animeId/episodes/$number/play").list("tracks").filterIsInstance<JsonObject>().filter { it.text("track") == "ssub" }) {
+            for (provider in track.list("providers").filterIsInstance<JsonObject>().sortedBy(::rank)) {
+                val headers = ((provider.list("servers").firstOrNull() as? JsonObject)?.obj("headers") ?: JsonObject(emptyMap()))
+                    .mapValues { (_, value) -> (value as? JsonPrimitive)?.contentOrNull.orEmpty() }.toMutableMap()
+                val referer = headers["Referer"].orEmpty()
+                if (referer.startsWith("https://") && "Origin" !in headers) runCatching { Url(referer).let { headers["Origin"] = it.protocol.name + "://" + it.host } }
+                for (item in provider.list("subtitles").filterIsInstance<JsonObject>()) {
+                    val file = item.text("file"); if (!file.startsWith("https://")) continue
+                    val language = item.text("language").ifBlank { "und" }
+                    val label = item.text("label").ifBlank { item.text("language") }.replace(Regex("\\.(?:vtt|srt|ass)$", RegexOption.IGNORE_CASE), "").trim().ifBlank { "자막" }
+                    if (tracks.any { it.url == file || (it.language == language && it.label == label) }) continue
+                    tracks += CrossSiteTrack(label, file, language, item.text("format").ifBlank { "vtt" }.lowercase(), "miruro", headers.toMap())
+                }
+            }
+        }
+        return tracks
+    }
     suspend fun serverPages(source: String, url: String, number: Int, anilist: Int): List<DesktopPlaybackServer> {
         if (source == "animenosub") return DesktopSourceParser.animenosubServers(text(url), url)
         if (source != "reanime") return emptyList()
-        val slug = Url(url).encodedPath.trimEnd('/').substringAfterLast('/')
+        // url blank: another site's episode (CrossSiteTrackLookup), asked by its AniList entry only.
+        val slug = if (url.isBlank()) "" else Url(url).encodedPath.trimEnd('/').substringAfterLast('/')
         // The current API often serves streams only from /api/flix: both are asked at once (an empty /api/watch cost a
         // whole request first). Only links matching the requested audio count toward the watch result.
         return coroutineScope {
             val flix = if (anilist > 0) async { runCatching { DesktopSourceParser.reanimeServers(Json.parseToJsonElement(text("https://reanime.to/api/flix/$anilist/$number")).jsonObject) } } else null
-            val links = try { DesktopSourceParser.reanimeServers(Json.parseToJsonElement(text("https://reanime.to/api/watch/$slug/$number")).jsonObject) }
+            val links = if (slug.isBlank()) emptyList() else try { DesktopSourceParser.reanimeServers(Json.parseToJsonElement(text("https://reanime.to/api/watch/$slug/$number")).jsonObject) }
                 catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
             if (links.isNotEmpty() || flix == null) { flix?.cancel(); links } else flix.await().getOrThrow()
         }
@@ -657,6 +729,32 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
         val manifest = client.get(variant) { header("User-Agent", userAgent) }.body<String>()
         OhliDirectStream(variant, manifest, DesktopSourceParser.ohliSubtitleFiles(page.await()))
     } }
+    /** Whether a subtitle file answers as one (WebVTT, ASS, SAMI or SRT, not a web page; desktop ohliSubtitleFile). */
+    private suspend fun subtitleFileAnswers(url: String, headers: Map<String, String>): Boolean = try {
+        val response = client.get(url) { expectSuccess = false; headers.forEach { (key, value) -> header(key, value) } }
+        val head = if (response.status.isSuccess()) response.body<String>().take(4096).removePrefix("﻿").trimStart() else ""
+        head.isNotEmpty() && !Regex("^<(?:!doctype|html|head)", RegexOption.IGNORE_CASE).containsMatchIn(head) &&
+            (Regex("^webvtt", RegexOption.IGNORE_CASE).containsMatchIn(head) || Regex("\\[script info]|<sami", RegexOption.IGNORE_CASE).containsMatchIn(head) || head.contains("-->"))
+    } catch (error: CancellationException) { throw error } catch (_: Exception) { false }
+    /** An 애니24 episode's Korean subtitle file alone, for another site's episode (desktop d8f7978 ohliEpisodeSubtitle):
+     *  the first file its player page names that answers as a subtitle. None for a video with the subtitle in the picture. */
+    internal suspend fun ohliEpisodeSubtitle(url: String): CrossSiteTrack? {
+        val agent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1"
+        val player = ohliPlayer(url)
+        val html = client.get(player) { header("User-Agent", agent); header("Referer", DesktopSourceParser.OHLI24_WEB + "/") }.body<String>()
+        val headers = mapOf("User-Agent" to agent, "Referer" to player)
+        for (file in DesktopSourceParser.ohliSubtitleFiles(html)) {
+            if (subtitleFileAnswers(file, headers)) return CrossSiteTrack("한국어", file, "ko", "vtt", "ohli24", headers)
+        }
+        return null
+    }
+    /** A 링크애니 episode's own Korean subtitle file alone (its page's player_aaaa subtitle_url, when the file is the
+     *  video's own; desktop d8f7978 linkaniEpisodeSubtitle). */
+    internal suspend fun linkaniEpisodeSubtitle(url: String): CrossSiteTrack? {
+        val track = DesktopSourceParser.linkaniStreams(text(url)).firstOrNull()?.subtitles?.firstOrNull() ?: return null
+        val headers = mapOf("Referer" to "https://linkani.tv/")
+        return if (subtitleFileAnswers(track.url, headers)) CrossSiteTrack("한국어", track.url, "ko", "vtt", "linkani", headers) else null
+    }
     /** An episode's player page, from its page data (desktop resolveOhliEpisode). */
     suspend fun ohliPlayer(url: String): String =
         DesktopSourceParser.ohliProps(text(url)).obj("playing").obj("body").text("url").takeIf { it.startsWith("http") }

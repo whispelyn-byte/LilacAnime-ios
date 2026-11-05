@@ -79,6 +79,9 @@ struct AppPreferences: Codable, Equatable {
     var prepareNextSubtitle: Bool? = true
     /// 자막 탭 > 싱크가 어긋나면 자동으로 맞추기 (desktop subtitleSyncCheck).
     var subtitleSyncCheck: Bool? = true
+    /// 자막 탭 > 다른 사이트 자막 트랙도 찾기 (desktop otherSiteTracks): RE:Anime · Miruro's tracks of the same episode on
+    /// every site, in the player, downloads and the next episode made ready.
+    var otherSiteTracks: Bool? = true
     /// 효과음·화자 이름 빼고 번역 (desktop dropCaptions).
     var dropCaptions: Bool? = false
     /// 번역 프롬프트: the user's rules after the app's (promptExtra) or in their place (promptRules), 4000 characters each.

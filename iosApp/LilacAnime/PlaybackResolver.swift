@@ -573,4 +573,5 @@ private final class WeakScriptHandler: NSObject, WKScriptMessageHandler {
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) { target?.userContentController(userContentController, didReceive: message) }
 }
 
-private extension String { var nilIfEmpty: String? { isEmpty ? nil : self } }
+// Internal, not private: CrossSiteTracks.swift uses it too.
+extension String { var nilIfEmpty: String? { isEmpty ? nil : self } }

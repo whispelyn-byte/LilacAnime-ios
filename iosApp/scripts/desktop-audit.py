@@ -23,6 +23,9 @@ mapping = {
  'src/subtitle-source.js': [ios+'DesktopSubtitlePolicy.swift',ios+'DesktopSubtitlePreparer.swift',ios+'DownloadStore.swift'],
  'electron/cross-site-tracks.cjs': [shared+'CrossSiteTracks.kt',ios+'CrossSiteTracks.swift'],
  'electron/korean-site-subtitles.cjs': [shared+'KoreanSiteSubtitles.kt',shared+'SourceRepository.kt',ios+'CrossSiteTracks.swift',ios+'PlaybackResolver.swift'],
+ # 설정 > 연결 (WireGuard): not ported; the port note says why (no child process for wireproxy on iOS).
+ 'electron/wireguard-proxy.cjs': ['docs/desktop-254753c-port.md'],
+ 'electron/app-routing.cjs': ['docs/desktop-254753c-port.md'],
  'electron/provider-schedule.cjs': [shared+'WeeklySchedule.kt'],
  'electron/weekly-schedule.cjs': [shared+'WeeklySchedule.kt'],
  'src/weekly-schedule.js': [ios+'WeeklyScheduleView.swift'],
@@ -93,6 +96,7 @@ groups.append(('crossSiteSubtitleTracks koreanSiteSubtitleTracks', [shared+'Cros
 # llama.cpp is built into the app here (Metal); there is no runtime to download ahead of the first translation.
 groups.append(('localRuntimeStatus installLocalRuntime onLocalRuntimeProgress', [ios+'LocalModelsView.swift','iosApp/Native/Sources/LilacLocalAI/LocalAI.cpp']))
 groups.append(('whisperStatus whisperSelect whisperInstall whisperDownload whisperRemove whisperTranscribe whisperCancel whisperJump onWhisperProgress', [ios+'WhisperSubtitles.swift',ios+'EpisodePlayerView.swift']))
+groups.append(('wireguardStatus wireguardChoose wireguardEnable wireguardRemove onWireguardState', ['docs/desktop-254753c-port.md']))
 api_map = {name: targets for names,targets in groups for name in names.split()}
 apis = re.findall(r'^  (\w+):', (desktop/'electron/preload.cjs').read_text(encoding='utf-8'), re.M)
 assert apis, 'No preload APIs found'

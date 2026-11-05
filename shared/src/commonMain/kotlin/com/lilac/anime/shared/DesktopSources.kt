@@ -468,10 +468,16 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
         if (source != "reanime") return emptyList()
         // url blank: another site's episode (CrossSiteTrackLookup), asked by its AniList entry only.
         val slug = if (url.isBlank()) "" else Url(url).encodedPath.trimEnd('/').substringAfterLast('/')
+        // /api/flix is asked by the work's AniList id. An episode from the phone (기기 동기화) comes without it when this
+        // device never opened the work: it is read from the series route by the episode's slug, as /api/watch answers with
+        // the site's page at present and nothing played (desktop 466e6cb).
+        val anilistId = if (anilist > 0 || slug.isBlank()) anilist else try {
+            Json.parseToJsonElement(text("https://reanime.to/api/v1/anime/$slug")).jsonObject.number("anilist_id") ?: 0
+        } catch (e: CancellationException) { throw e } catch (_: Exception) { 0 }
         // The current API often serves streams only from /api/flix: both are asked at once (an empty /api/watch cost a
         // whole request first). Only links matching the requested audio count toward the watch result.
         return coroutineScope {
-            val flix = if (anilist > 0) async { runCatching { DesktopSourceParser.reanimeServers(Json.parseToJsonElement(text("https://reanime.to/api/flix/$anilist/$number")).jsonObject) } } else null
+            val flix = if (anilistId > 0) async { runCatching { DesktopSourceParser.reanimeServers(Json.parseToJsonElement(text("https://reanime.to/api/flix/$anilistId/$number")).jsonObject) } } else null
             val links = if (slug.isBlank()) emptyList() else try { DesktopSourceParser.reanimeServers(Json.parseToJsonElement(text("https://reanime.to/api/watch/$slug/$number")).jsonObject) }
                 catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
             if (links.isNotEmpty() || flix == null) { flix?.cancel(); links } else flix.await().getOrThrow()

@@ -89,4 +89,26 @@ final class EpisodePickerTests: XCTestCase {
         XCTAssertEqual(library.history.map(\.episodeID), ["animenosub:bleach_ep_6"])
         XCTAssertFalse(library.history[0].byNumber)
     }
+
+    // desktop 466e6cb: a phone entry with its address (Re:Anime, Miruro) plays the work's listed episode first, which then
+    // takes its place; this device's own entries are untouched.
+    @MainActor func testAPhoneEntryWithItsAddressPlaysTheListedEpisodeFirst() throws {
+        let saved = anime(3, id: "test-slug", source: "reanime")
+        var phone = WatchEntry(id: saved.id + "#phone-3", anime: saved, episodeID: "phone-3", episodeTitle: "3화", number: 3,
+                               watchURL: "https://reanime.to/watch/test-slug?ep=3", directURL: nil, position: 0, duration: 0, updatedAt: Date(timeIntervalSince1970: 3))
+        phone.androidEpisodeKey = "reanime:test-slug:ep-3"; phone.displayNumber = "3"
+        XCTAssertTrue(phone.listedFirst); XCTAssertFalse(phone.byNumber)
+        XCTAssertTrue(PlaybackItem(entry: phone).listedFirst); XCTAssertFalse(PlaybackItem(entry: phone).byNumber)
+        let mine = WatchEntry(id: saved.id + "#own-3", anime: saved, episodeID: "own-3", episodeTitle: "3화", number: 3,
+                              watchURL: "https://reanime.to/watch/test-slug?ep=3", directURL: nil, position: 10, duration: 1200, updatedAt: Date(timeIntervalSince1970: 3))
+        XCTAssertFalse(mine.listedFirst); XCTAssertFalse(PlaybackItem(entry: mine).listedFirst)
+
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let library = LibraryStore(file: file)
+        library.replaceFromSync(favorites: [], history: [phone])
+        library.progress(anime: saved, episodeID: "listed-3", title: "3화", number: 3, watchURL: "https://reanime.to/watch/test-slug?ep=3",
+                         directURL: nil, position: 30, duration: 1200, displayNumber: "3")
+        XCTAssertEqual(library.history.map(\.episodeID), ["listed-3"])
+    }
 }

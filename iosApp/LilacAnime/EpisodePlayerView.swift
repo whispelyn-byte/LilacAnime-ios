@@ -185,7 +185,7 @@ final class EpisodePlayerModel: ObservableObject {
         lifecycleLibrary = library; suspended = nil; holdProgress = false
         active = nil; loadedSkip = false; systemPlayback = false; engine.error = nil
         let token = generation
-        if item.byNumber { openByNumber(library: library, token: token); return }
+        if item.byNumber || item.listedFirst { openByNumber(library: library, token: token); return }
         subtitleOffset = library.subtitleChoice(animeID: item.anime.id, episodeID: item.episodeID)?.offset ?? library.preferences.subtitleOffset
         pendingFraction = library.resume(item.anime, episodeID: item.episodeID) > 0 ? nil : library.resumeFraction(item.anime, episodeID: item.episodeID)
         if library.preferences.subtitleProvider == "manual", let choice = library.subtitleChoice(animeID: item.anime.id, episodeID: item.episodeID), let relative = choice.relativeFile {
@@ -294,6 +294,11 @@ final class EpisodePlayerModel: ObservableObject {
                     if let index = EpisodeMatch.index(server.episodes, id: opening.episodeID, label: opening.displayNumber, number: opening.number) { found = (server.episodes, index); break }
                 }
                 guard let detail, let found else {
+                    // An Android entry with its own address plays that address when the list cannot be read or lacks it.
+                    if opening.listedFirst {
+                        var own = opening; own.listedFirst = false
+                        self.item = own; self.begin(library: library); return
+                    }
                     self.error = detail == nil ? (failure ?? "회차 목록을 불러오지 못했습니다.") : EpisodeMatch.title(opening.displayNumber) + "를 이 작품의 회차 목록에서 찾지 못했어요."
                     return
                 }

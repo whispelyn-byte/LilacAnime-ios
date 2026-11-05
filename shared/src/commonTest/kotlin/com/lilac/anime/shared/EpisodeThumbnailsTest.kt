@@ -3,6 +3,8 @@ package com.lilac.anime.shared
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.*
 import io.ktor.http.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
 
@@ -31,14 +33,17 @@ class EpisodeThumbnailsTest {
         client.close()
     }
     @Test fun aLongSeriesIsReadPageByPageUpTo600Episodes() = runTest {
+        // Five pages are asked at once and MockEngine answers them on its own threads, so the list is guarded:
+        // unguarded, this test's process died with signal 11 on the iOS simulator (77820c4).
         val offsets = mutableListOf<Int>()
+        val offsetsLock = Mutex()
         val client = HttpClient(MockEngine) { engine { addHandler { request ->
             val url = request.url.toString().decodeURLQueryComponent()
             when {
                 request.url.host == "graphql.anilist.co" -> respond("""{"data":{"Media":null}}""", headers = json)
                 "mappings" in url -> respond("""{"included":[{"type":"anime","id":"12"}]}""", headers = json)
                 "/episodes" in url -> {
-                    val offset = Regex("page\\[offset]=(\\d+)").find(url)!!.groupValues[1].toInt(); offsets += offset
+                    val offset = Regex("page\\[offset]=(\\d+)").find(url)!!.groupValues[1].toInt(); offsetsLock.withLock { offsets += offset }
                     respond("""{"meta":{"count":1100},"data":[{"attributes":{"number":${offset + 1},"thumbnail":{"original":"https://kitsu/${offset + 1}.jpg"}}}]}""", headers = json)
                 }
                 else -> respond("", HttpStatusCode.NotFound)

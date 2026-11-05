@@ -54,6 +54,9 @@ struct WatchEntry: Codable, Identifiable {
     var androidAnimeID: String? = nil
     var androidEpisodeKey: String? = nil
     var byNumber: Bool { androidEpisodeKey != nil && !watchURL.hasPrefix("http") }
+    /// One whose address it could tell (Re:Anime, Miruro) also plays the work's own listed episode, as the phone's carries no
+    /// AniList id and none of the list's other fields; its own address stays the fallback (desktop 466e6cb playHistoryItem).
+    var listedFirst: Bool { androidEpisodeKey != nil && watchURL.hasPrefix("http") }
     var episodeLabel: String {
         displayNumber ?? anime.anime.episodes.first(where: { $0.id == episodeID })?.displayNumber ?? String(number)
     }
@@ -209,7 +212,7 @@ final class LibraryStore: ObservableObject {
                   directURL: String?, position: Double, duration: Double, displayNumber: String? = nil) {
         guard position.isFinite, duration.isFinite, position >= 0 else { return }
         let id = anime.id + "#" + episodeID
-        history.removeAll { $0.id == id || ($0.byNumber && $0.anime.id == anime.id && $0.episodeLabel == (displayNumber ?? String(number))) }
+        history.removeAll { $0.id == id || ($0.androidEpisodeKey != nil && $0.anime.id == anime.id && $0.episodeLabel == (displayNumber ?? String(number))) }
         // Only the newest entry of a series keeps its episode list: the same long list in every watched episode's entry
         // made library.json grow without end. An older entry asks for the list again when it is played.
         for index in history.indices where history[index].anime.id == anime.id && !history[index].anime.snapshot.contains("\"episodes\":[]") {

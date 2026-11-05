@@ -1,6 +1,6 @@
 {
-  "desktopCommit": "d8f797840aa38c5d1a0e146203a4fb16caeb52c8",
-  "desktopVersion": "0.5.58",
+  "desktopCommit": "d16a9a568e4e4e8bd0216ebe7aead8d2daba5ee8",
+  "desktopVersion": "0.5.60",
   "files": [
     {
       "desktop": ".github/workflows/build.yml",
@@ -56,6 +56,15 @@
         "shared/src/commonMain/kotlin/com/lilac/anime/shared/CloudTranslator.kt",
         "shared/src/commonMain/kotlin/com/lilac/anime/shared/CloudModelRules.kt",
         "shared/src/commonMain/kotlin/com/lilac/anime/shared/CloudCooldown.kt"
+      ]
+    },
+    {
+      "desktop": "electron/app-routing.cjs",
+      "sha256": "69475ab30fe6a882a9d8c0c24a2a8ff9b7d3240218766984ed5a7c39bb9524ee",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "docs/desktop-254753c-port.md"
       ]
     },
     {
@@ -177,7 +186,7 @@
     },
     {
       "desktop": "electron/main.cjs",
-      "sha256": "e2fa257ff231df796ea4a414ea8f3f1089be978adcb948a7541ec30f1db39e9b",
+      "sha256": "b6d431620b0e14b101a8aaaf5f5a962dce6cadb9cca7e6cd11a123d70f327640",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -232,7 +241,7 @@
     },
     {
       "desktop": "electron/preload.cjs",
-      "sha256": "7048865ac8a992a6eb6ae887bfd466c1b13a7a7136b7fa0ff273a9e2d37b62f9",
+      "sha256": "71c1c4d615203035f96833399caccb6b0e7ba0e99b60c047a02ce9bdeee8833d",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -331,8 +340,17 @@
       ]
     },
     {
+      "desktop": "electron/wireguard-proxy.cjs",
+      "sha256": "0b0663d6a234a3b1a564673a9d5aa61f6e1f88b08aa1a476c2fa17db0841168f",
+      "uncommitted": false,
+      "category": "runtime",
+      "ios": [
+        "docs/desktop-254753c-port.md"
+      ]
+    },
+    {
       "desktop": "package-lock.json",
-      "sha256": "cccc0f4148e3e91e3fe0945a2c59ac9984225b3aaeb444847e1b1c87d7e766c7",
+      "sha256": "fa8c1e10d3bed2a55e386fb78fd8ff68d5460accc56c701ce9b832b06e40de8c",
       "uncommitted": false,
       "category": "platform-build",
       "ios": [
@@ -344,7 +362,7 @@
     },
     {
       "desktop": "package.json",
-      "sha256": "a3bad90790d726c6c0e5a95fed2a891b10f2dd6e164cbd909469cfbc358050a7",
+      "sha256": "cf55a7648b943fbdca028cbb17e9be750598452dffaf35df18f201d36d8aa3eb",
       "uncommitted": false,
       "category": "platform-build",
       "ios": [
@@ -414,7 +432,7 @@
     },
     {
       "desktop": "src/app.js",
-      "sha256": "8461749b9329141b925779d4c43a756baa7763d76b8cf1d6d7adc5c1b075c45d",
+      "sha256": "2e8bd2357911de92d329bbd171f810e122cf837921b0ae6b4b665a274f39a45d",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -507,7 +525,7 @@
     },
     {
       "desktop": "src/index.html",
-      "sha256": "ea6b69dace5e06f2a9202b23b95e08117de7fae8ca5fd05ce21d81ab2c6d65e8",
+      "sha256": "853d237a629cf590813545b231861ea4cc45b7a66f96f9bd0f9c87a22e0f55b6",
       "uncommitted": false,
       "category": "runtime",
       "ios": [
@@ -1220,7 +1238,7 @@
     },
     {
       "desktop": "tests/reanime-audio.test.cjs",
-      "sha256": "cf3a7a50b3df7c37340f50be74e4c522350fd10b18b2840ae83a3df4a126b72d",
+      "sha256": "af3a2de7f2da83b7ca626730282e71ab3e8e649422789bea6ff3b7bc232803c8",
       "uncommitted": false,
       "category": "validation",
       "ios": [
@@ -1397,6 +1415,17 @@
     {
       "desktop": "tests/window-buttons.test.cjs",
       "sha256": "5a4243804a5a3437b63baa784e1019492c334ba5448b6b46941d5d149200896c",
+      "uncommitted": false,
+      "category": "validation",
+      "ios": [
+        "iosApp/LilacAnimeTests",
+        "iosApp/LilacAnimeUITests",
+        "shared/src/commonTest"
+      ]
+    },
+    {
+      "desktop": "tests/wireguard-proxy.test.cjs",
+      "sha256": "ee5ef24aff60c2125a0f42e6ba38636bef8690dffed4097dfd58380e973ef397",
       "uncommitted": false,
       "category": "validation",
       "ios": [
@@ -1975,6 +2004,36 @@
         "iosApp/LilacAnime/DesktopCatalog.swift",
         "shared/src/commonMain/kotlin/com/lilac/anime/shared/DesktopMetadata.kt",
         "shared/src/commonMain/kotlin/com/lilac/anime/shared/TmdbTitleResolver.kt"
+      ]
+    },
+    {
+      "name": "wireguardStatus",
+      "ios": [
+        "docs/desktop-254753c-port.md"
+      ]
+    },
+    {
+      "name": "wireguardChoose",
+      "ios": [
+        "docs/desktop-254753c-port.md"
+      ]
+    },
+    {
+      "name": "wireguardEnable",
+      "ios": [
+        "docs/desktop-254753c-port.md"
+      ]
+    },
+    {
+      "name": "wireguardRemove",
+      "ios": [
+        "docs/desktop-254753c-port.md"
+      ]
+    },
+    {
+      "name": "onWireguardState",
+      "ios": [
+        "docs/desktop-254753c-port.md"
       ]
     },
     {

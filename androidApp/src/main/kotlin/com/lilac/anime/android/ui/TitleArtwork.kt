@@ -20,6 +20,7 @@ import com.lilac.anime.android.data.DesktopCatalog
 import com.lilac.anime.android.data.SecureKeys
 import com.lilac.anime.android.data.await
 import com.lilac.anime.android.player.HlsData
+import com.lilac.anime.android.player.await as awaitCall
 import com.lilac.anime.shared.Anime
 import com.lilac.anime.shared.IosServices
 import com.lilac.anime.shared.TitleArtwork
@@ -95,7 +96,7 @@ object TitleArtworkStore {
         images.get(url)?.let { return it }
         if (!url.startsWith("http")) return null
         val bitmap = withContext(Dispatchers.IO) {
-            runCatching { HlsData.client.newCall(Request.Builder().url(url).build()).await { if (it.code in 200..299) it.body?.bytes() else null } }.getOrNull()
+            runCatching { HlsData.client.newCall(Request.Builder().url(url).build()).awaitCall { if (it.code in 200..299) it.body?.bytes() else null } }.getOrNull()
                 ?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
         } ?: return null
         images.put(url, bitmap)

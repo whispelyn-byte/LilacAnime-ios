@@ -373,6 +373,7 @@ final class EpisodePlayerModel: ObservableObject {
         subtitleSearchRequest = UUID(); subtitleSearchCache = [:]; subtitleResultsProvider = ""; subtitleSearchError = nil; searching = false; makers = []
         chipTask?.cancel(); chipTask = nil; chipRequest = UUID(); pressedSource = nil; pressedFor = nil; pickedSheet = nil; sheetPicked = false
         subtitleState = nil; selectedTrackURL = nil; selectedMaker = nil; otherTracks = []; otherTracksTask = nil
+        lateKorean?.cancel(); lateKorean = nil; manualPick = false
         loadedSkip = false; lastSave = 0; lastSkipped = ""; systemPlayback = false; engine.clearViewerSeek()
         begin(library: library)
     }
@@ -567,8 +568,44 @@ final class EpisodePlayerModel: ObservableObject {
             } catch { if token == generation, request == subtitleRequest { self.error = error.localizedDescription } }
         }
     }
+    private var lateKorean: Task<Void, Never>?
+    /// A subtitle picked by hand in this episode: a Korean subtitle found late no longer replaces anything.
+    private var manualPick = false
+    /// What a Korean subtitle found late may replace (desktop lateKoreanReplaces): none, a machine translation, a Whisper
+    /// subtitle, a Japanese or English file or track. Not one the user picked or a series watched in machine translation.
+    private func lateKoreanReplaces(library: LibraryStore) -> Bool {
+        if manualPick || pressedSource != nil || library.aiSubtitleSeries[item.anime.id] == true { return false }
+        guard subtitle != nil else { return true }
+        if translation.running || currentSaved?.translated == true || ["jimaku", "whisper"].contains(selectedProvider) { return true }
+        if selectedProvider == "reanime", let track = siteTracks.first(where: { $0.url == selectedTrackURL }) { return !DesktopSubtitlePolicy.isKorean(track) }
+        return false
+    }
+    /// desktop upgradeToLateKorean: the Korean subtitle came after the episode's subtitle went on, so it takes its place
+    /// (the translation or Whisper run stops), told under the player with 되돌리기.
+    private func upgradeToLateKorean(_ korean: KoreanSearch, library: LibraryStore, token: UUID) {
+        lateKorean?.cancel()
+        lateKorean = Task { [weak self, weak library] in
+            guard let pick = await korean.wait(180) else { return }
+            guard let self, let library, !Task.isCancelled, token == self.generation, self.lateKoreanReplaces(library: library) else { return }
+            let before = self.subtitle, beforeProvider = self.selectedProvider, beforeTrack = self.selectedTrackURL
+            self.selectSubtitle(pick.file, library: library, provider: pick.provider, automatic: true)
+            if let track = pick.track { self.selectedTrackURL = track.url }
+            self.preparer.rememberKoreanSource(pick, item: self.item)
+            self.subtitleState = nil
+            let after = self.subtitle
+            let name = pick.track.map { CrossSiteTrackPolicy.label($0, playing: self.item.anime.source) + " " + $0.label } ?? SubtitleLabels.provider(pick.provider)
+            self.showSyncDone("한국어 자막(\(name))을 찾아서 바꿨어요.") { [weak self, weak library] in
+                guard let self, let library, token == self.generation, self.subtitle == after else { return false }
+                self.manualPick = true
+                if let before { self.selectSubtitle(before, library: library, provider: beforeProvider, automatic: true); self.selectedTrackURL = beforeTrack }
+                else { self.subtitle = nil; self.sourceSubtitle = nil; self.selectedProvider = ""; self.selectedTrackURL = nil; self.engine.disableSubtitles() }
+                return true
+            }
+        }
+    }
     func selectSubtitle(_ url: URL, library: LibraryStore, translate: Bool = true, provider: String? = nil, automatic: Bool = false) {
         subtitleClassification?.cancel()
+        if !automatic { manualPick = true }
         whisper.cancel(); whisperLive.cancel(); whisperStartTask?.cancel(); whisperStatus = ""
         subtitleRequest = UUID(); translation.cancel()
         stopPrefetch(); cancelSubtitleBackground()
@@ -621,7 +658,10 @@ final class EpisodePlayerModel: ObservableObject {
         automaticTask?.cancel()
         automaticTask = Task {
             do {
-                if let prepared = try await preparer.prepare(item, tracks: stream.subtitles, preferences: library.preferences, prefersAI: library.aiSubtitleSeries[item.anime.id] == true, stream: stream, otherTracks: otherTracksTask) {
+                let korean = preparer.koreanSearch(item, preferences: library.preferences, others: { [weak self] in self?.otherTracks ?? [] }, othersDone: otherTracksTask)
+                defer { if token == generation, korean.asked, !korean.settled { upgradeToLateKorean(korean, library: library, token: token) } }
+                if let prepared = try await preparer.prepare(item, tracks: stream.subtitles, preferences: library.preferences, prefersAI: library.aiSubtitleSeries[item.anime.id] == true, stream: stream, otherTracks: otherTracksTask,
+                    korean: korean, status: { [weak self] text in if let self, token == self.generation, request == self.subtitleRequest, self.subtitle == nil { self.subtitleState = text } }) {
                     guard token == generation, request == subtitleRequest, subtitle == nil, !Task.isCancelled else { return }
                     subtitleFiles = [prepared.0]
                     selectSubtitle(prepared.0, library: library, provider: prepared.1, automatic: true)

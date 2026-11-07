@@ -70,12 +70,16 @@ class CatalogModel {
                 englishOnly(source, typed) -> Result.success(emptyList())
                 else -> service.await { browse(source, query, requestPage, AnimeSnapshot.sortedFilter(genre, year, season, format, status, studio, sort), it) }
             }
+            // The names index (all of the source's works with their Korean titles) answers first on the first page.
+            val indexed = if (requestPage == 1 && mode == "browse" && typed.isNotEmpty() && listOf(genre, year, format, status, season, studio).all { it.isEmpty() })
+                DesktopCatalog.search(typed, source) else emptyList()
+            if (indexed.isNotEmpty()) { val known = items.map { it.id }.toMutableSet(); items = items + indexed.filter { known.add(it.id) } }
             loading = false
             result.onSuccess { values ->
                 val known = items.map { it.id }.toMutableSet()
                 items = items + values.filter { known.add(it.id) }
                 canLoadMore = values.isNotEmpty() && mode in listOf("browse", "top", "season", "pv", "movie", "adult"); page += 1
-            }.onFailure { error = it.message }
+            }.onFailure { if (items.isEmpty()) error = it.message }
             if (requestPage == 1 && typed.isNotEmpty() && mode == "browse" && listOf(genre, year, format, status, season, studio).all { it.isEmpty() }) {
                 searchVariants(typed)
             }
@@ -86,11 +90,10 @@ class CatalogModel {
      *  The names index (DesktopCatalog) comes with stage 4. */
     private suspend fun searchVariants(typed: String) {
         val credential = SecureKeys.load("tmdb")
-        if (credential.isEmpty()) return
         if (items.isEmpty()) searchNote = "다른 언어 제목으로 찾는 중..."
         val korean = TitleCandidates.isKorean(typed)
-        val remote = service.await<List<String>> { titleVariants(typed, credential, it) }.getOrNull().orEmpty()
-        val usable = remote.filter { TitleCandidates.isKorean(it) != korean && !englishOnly(source, it) }.distinct().take(30)
+        val remote = DesktopCatalog.variants(typed) + if (credential.isEmpty()) emptyList() else service.await<List<String>> { titleVariants(typed, credential, it) }.getOrNull().orEmpty()
+        val usable = remote.filter { TitleKeys.key(it) != TitleKeys.key(typed) }.filter { TitleCandidates.isKorean(it) != korean && !englishOnly(source, it) }.distinct().take(30)
         if (usable.isEmpty()) { searchNote = null; return }
         var added = 0
         for (chunk in usable.chunked(6)) {

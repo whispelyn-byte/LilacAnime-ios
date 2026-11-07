@@ -140,7 +140,7 @@ fun AnimePosterCard(anime: Anime, modifier: Modifier = Modifier, width: Dp? = nu
                     modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 3.dp))
             }
         }
-        Text(anime.title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = LilacStyle.text, maxLines = 2, overflow = TextOverflow.Ellipsis,
+        Text(com.lilac.anime.android.data.displayTitle(anime), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = LilacStyle.text, maxLines = 2, overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 9.dp).heightIn(min = 36.dp))
         val facts = listOf(anime.year, anime.format, anime.genres.firstOrNull() ?: "").filter { it.isNotEmpty() }.joinToString(" · ")
         Text(facts, fontSize = 12.sp, color = LilacStyle.muted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))

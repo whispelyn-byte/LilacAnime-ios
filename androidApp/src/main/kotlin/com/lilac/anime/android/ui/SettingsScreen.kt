@@ -156,6 +156,9 @@ private fun GeneralSettings() {
     val library = app.library; val navigation = app.navigation
     val prefs = library.preferences
     PageTitle("일반")
+    SettingBlock("작품 제목 표시", "한국어 제목은 Anissia, TMDB, AniList, Wikidata에서 찾습니다. 찾지 못한 작품은 원래 제목으로 표시합니다.") {
+        SettingChoices(listOf("ko" to "한국어", "en" to "영어", "original" to "사이트 원래 제목"), prefs.titleLanguage) { v -> library.update { it.copy(titleLanguage = v) } }
+    }
     var start by remember { mutableStateOf(navigation.startSection) }
     SettingBlock("시작 화면", "앱을 켰을 때 처음 보이는 화면입니다.") { SettingChoices(Navigation.startSections, start) { start = it; navigation.startSection = it } }
     SettingBlock("테마") { SettingChoices(listOf("dark" to "다크", "light" to "라이트", "system" to "시스템"), prefs.theme) { v -> library.update { it.copy(theme = v) } } }
@@ -251,7 +254,7 @@ private fun TitleSettings() {
     var key by remember { mutableStateOf(SecureKeys.load("tmdb")) }
     var status by remember { mutableStateOf<String?>(null) }
     var testing by remember { mutableStateOf(false) }
-    PageTitle("한국어 제목 검색", "Re:Anime·Animenosub·Miruro의 원제를 한국어로 찾아 자막을 검색합니다. TMDB·AniList를 함께 사용하며, TMDB만 별도 API 키가 필요합니다. 한국어 전체 카탈로그는 다음 단계에서 옮겨집니다.")
+    PageTitle("한국어 제목 검색", "Re:Anime·Animenosub·Miruro의 원제를 한국어로 찾아 자막을 검색합니다. TMDB·AniList·Wikidata를 함께 사용하며, TMDB만 별도 API 키가 필요합니다.")
     SettingBlock("TMDB API 키", status ?: "themoviedb.org 설정 > API에서 발급한 API 키(v3) 또는 읽기 액세스 토큰을 넣을 수 있습니다. 키는 이 기기에만 암호화해 저장하고, 빈 키를 저장하면 삭제됩니다.") {
         SettingField(key, { key = it }, "TMDB API 키 또는 읽기 액세스 토큰", secret = true)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -261,6 +264,19 @@ private fun TitleSettings() {
                 scope.launch { status = service.await<String> { testTmdb(key.trim(), it) }.fold({ it }, { it.message }); testing = false }
             }
             LilacOutlineButton("TMDB API 설정") { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.themoviedb.org/settings/api"))) } }
+        }
+    }
+    val library = LocalApp.current.library
+    val catalog = com.lilac.anime.android.data.DesktopCatalog
+    val source = library.preferences.source
+    SettingBlock("한국어 전체 카탈로그 · 인덱스", "소스의 전체 목록을 받아 Wikidata → TMDB → AniList 순서로 한국어 제목을 찾아 둡니다. 모으는 중에도 검색할 수 있고, 앱을 다시 열면 저장한 목록을 씁니다.") {
+        SettingChoices(ContentSources.keys.map { it to ContentSources.name(it) }, source) { v -> library.update { it.copy(source = v) } }
+        SettingNote(catalog.progress(source), LilacStyle.text)
+        catalog.failure(source)?.let { SettingNote(it, Color.Red) }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            LilacOutlineButton(if (catalog.running) "일시 중지" else "이어서 모으기") { if (catalog.running) catalog.stop() else catalog.start(source) }
+            LilacOutlineButton("새로 모으기") { catalog.start(source, refresh = true) }
+            LilacOutlineButton("인덱스 지우기", tint = Color.Red) { catalog.clear() }
         }
     }
     SettingNote("This product uses the TMDB API but is not endorsed or certified by TMDB.")

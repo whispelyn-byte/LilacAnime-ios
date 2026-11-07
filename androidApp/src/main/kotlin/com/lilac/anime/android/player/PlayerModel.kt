@@ -137,7 +137,9 @@ class PlayerModel(private val context: Context, start: PlaybackItem, private val
         }
     }
 
-    fun change(next: PlaybackItem, remember: Boolean = true) {
+    fun change(target: PlaybackItem, remember: Boolean = true) {
+        // The next episode, when saved, plays from its file too.
+        val next = com.lilac.anime.android.download.DownloadStore.offline(target)?.copy(next = target.next, preceding = target.preceding) ?: target
         selectionJob?.cancel()
         if (remember) previous = previous + item
         save(); engine.pause(); proxy?.stop(); proxy = null

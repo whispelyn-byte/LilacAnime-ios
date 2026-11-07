@@ -349,7 +349,7 @@ private fun PlayerControls(model: PlayerModel, close: () -> Unit, settings: () -
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         ControlButton(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") { close() }
                         Column(Modifier.background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(14.dp)).padding(horizontal = 12.dp, vertical = 8.dp)) {
-                            Text(model.item.anime.title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(com.lilac.anime.android.data.displayTitle(model.item.anime.anime, model.item.anime.source), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             val origin = if (model.active?.url?.let(::isFileURL) == true) "다운로드" else ContentSources.name(model.item.anime.source)
                             Text(model.item.title.ifEmpty { model.item.displayNumber + "화" } + " · " + origin, color = Color.White.copy(alpha = 0.65f), fontSize = 11.sp, maxLines = 1)
                         }

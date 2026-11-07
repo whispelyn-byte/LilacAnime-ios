@@ -108,14 +108,35 @@ fun FullCatalogScreen() {
         else -> listOf("popular", "year", "updated", "score")
     }
     var sort by remember { mutableStateOf(navigation.string("allSort:$source")?.takeIf { it in sorts } ?: sorts.first()) }
+    // Miruro, Animenosub and 링크애니, a filter or 회차 업데이트순 list from the site; the rest from the gathered index.
+    val remoteSource = (applied.active && !(source == "reanime" && sort == "year" && applied.extras.values.all { it.isEmpty() })) ||
+        sort == "updated" || source in listOf("miruro", "animenosub", "linkani")
+    val catalog = com.lilac.anime.android.data.DesktopCatalog
+    val gathered = catalog.catalogs[source].orEmpty()
+    val names = if (query.isNotBlank()) catalog.names else emptyMap()
+    val local by produceState(emptyList<Anime>(), gathered, names, query, sort, remoteSource) {
+        if (remoteSource) { value = emptyList(); return@produceState }
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            val wanted = com.lilac.anime.android.data.TitleKeys.key(query)
+            val filtered = gathered.filter { item ->
+                wanted.isEmpty() || (listOf(item.title, catalog.names[item.id]?.korean ?: "", catalog.names[item.id]?.english ?: "") + catalog.names[item.id]?.aliases.orEmpty())
+                    .any { com.lilac.anime.android.data.TitleKeys.key(it).contains(wanted) }
+            }.map { it.anime }
+            val today = java.util.Calendar.getInstance().let { it.get(java.util.Calendar.YEAR) * 10000 + (it.get(java.util.Calendar.MONTH) + 1) * 100 + it.get(java.util.Calendar.DAY_OF_MONTH) }
+            if (sort == "default") filtered else DesktopAnimeMetadata.sortedCatalog(filtered, sort, today)
+        }
+    }
+    LaunchedEffect(source) { if (!catalog.running && (catalog.catalogs[source].isNullOrEmpty() || catalog.needsRefresh(source))) catalog.start(source) }
+    val values = if (remoteSource) model.items else local
     fun reload() {
+        if (!remoteSource) return
         model.source = source; model.query = query; model.mode = "catalog"
         model.sort = if (sort == "default") "" else sort
         model.genre = applied.genre; model.format = applied.format; model.year = applied.year; model.season = applied.season; model.extras = applied.extras
         model.load()
     }
     LaunchedEffect(Unit) { model.source = source; model.loadFilters() }
-    LaunchedEffect(sort, applied) { navigation.putString("allSort:$source", sort); reload() }
+    LaunchedEffect(sort, applied, remoteSource) { navigation.putString("allSort:$source", sort); reload() }
     fun applyFilters() {
         val facets = model.filters ?: run { model.loadFilters(); return }
         var next = draft.copy(year = draft.year.trim(), extras = draft.extras.mapValues { it.value.trim() }.filterValues { it.isNotEmpty() })
@@ -130,12 +151,12 @@ fun FullCatalogScreen() {
         }.onFailure { validationError = it.message; return }
         draft = next; applied = next; validationError = null; sort = nextSort
     }
-    PosterGrid(model.items, source, onEnd = { if (model.canLoadMore && !model.loading && model.items.isNotEmpty()) model.load(reset = false) }, header = {
+    PosterGrid(values, source, onEnd = { if (remoteSource && model.canLoadMore && !model.loading && model.items.isNotEmpty()) model.load(reset = false) }, header = {
         full {
             Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("전체 애니메이션", fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = LilacStyle.text)
-                    Text("선택한 콘텐츠 소스의 작품입니다.", fontSize = 13.sp, color = LilacStyle.muted)
+                    Text(if (remoteSource) "선택한 콘텐츠 소스의 작품입니다." else catalog.progress(source), fontSize = 13.sp, color = LilacStyle.muted)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     CatalogSourceMenu(source) { value -> library.update { it.copy(source = value) } }
@@ -153,8 +174,9 @@ fun FullCatalogScreen() {
                 FilterPanel(model, draft, { draft = it }, validationError,
                     reset = { draft = CatalogSelection(); applied = draft; validationError = null; if (sort !in sorts) sort = sorts.first() },
                     apply = { applyFilters() })
-                Text("${model.items.size}개", fontSize = 13.sp, color = LilacStyle.muted)
-                model.error?.let { error ->
+                Text("${values.size}개", fontSize = 13.sp, color = LilacStyle.muted)
+                if (!remoteSource) catalog.failure(source)?.let { Text(it, fontSize = 13.sp, color = Color.Red) }
+                model.error?.takeIf { remoteSource }?.let { error ->
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(error, fontSize = 13.sp, color = Color.Red)
                         LilacGhostButton("다시 시도") { reload() }
@@ -165,6 +187,7 @@ fun FullCatalogScreen() {
     }, footer = {
         full {
             when {
+                !remoteSource -> if (values.isEmpty()) { if (catalog.running) LilacProgress(catalog.status) else LilacEmptyState(Icons.Filled.GridView, "선택한 조건의 작품이 없습니다", "필터를 바꾸거나 초기화해 보세요.") }
                 model.loading -> LilacProgress()
                 model.canLoadMore && model.items.isNotEmpty() -> Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { LilacGhostButton("더 불러오기") { model.load(reset = false) } }
                 model.items.isEmpty() && model.error == null -> LilacEmptyState(Icons.Filled.GridView, "선택한 조건의 작품이 없습니다", "필터를 바꾸거나 초기화해 보세요.")

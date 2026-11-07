@@ -69,6 +69,19 @@ fun Workspace() {
             }
         }
     }
+    // A download started or refused: said once, with a way to the list (iOS DesktopWorkspace alert).
+    val notice = com.lilac.anime.android.download.DownloadStore.notice
+    if (notice != null && navigation.playing == null) AlertDialog(onDismissRequest = { com.lilac.anime.android.download.DownloadStore.notice = null }, containerColor = LilacStyle.card,
+        title = { Text("다운로드", color = LilacStyle.text) }, text = { Text(notice, color = LilacStyle.muted) },
+        confirmButton = { TextButton({ com.lilac.anime.android.download.DownloadStore.notice = null }) { Text("확인", color = LilacStyle.accent) } },
+        dismissButton = { TextButton({ com.lilac.anime.android.download.DownloadStore.notice = null; navigation.showDownloads = true; navigation.go("favorites") }) { Text("다운로드 보기", color = LilacStyle.accent) } })
+    // The saved catalog of the chosen source is gathered when empty or a day old (desktop catalog refresh).
+    LaunchedEffect(source) {
+        val catalog = com.lilac.anime.android.data.DesktopCatalog
+        catalog.load()
+        if (catalog.source.isNotEmpty() && catalog.source != source) catalog.stop()
+        if (!catalog.running && (catalog.catalogs[source].isNullOrEmpty() || catalog.needsRefresh(source))) catalog.start(source)
+    }
     // The player covers everything (iOS fullScreenCover), the page kept under it; a new episode starts it again.
     navigation.playing?.let { item ->
         key(item.anime.id + "#" + item.episodeID) {

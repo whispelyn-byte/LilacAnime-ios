@@ -37,6 +37,7 @@ import com.lilac.anime.android.LocalApp
 import com.lilac.anime.android.data.SavedAnime
 import com.lilac.anime.android.data.WatchEntry
 import com.lilac.anime.android.data.await
+import com.lilac.anime.android.download.DownloadStore
 import com.lilac.anime.shared.*
 import kotlinx.coroutines.delay
 
@@ -63,6 +64,7 @@ fun DetailScreen(summary: Anime, source: String) {
         service.await<SourceDetail> { detail(summary, source, it) }
             .onSuccess { value ->
                 detail = value.anime; servers = value.servers
+                launch { com.lilac.anime.android.data.DesktopCatalog.enrich(value.anime, source, cast = true) }
                 if (source == "linkkf") service.await<SourceExtras> { sourceExtras(value.anime, it) }.onSuccess { extras = it }
             }.onFailure { error = it.message }
         loading = false
@@ -105,7 +107,7 @@ fun DetailScreen(summary: Anime, source: String) {
     val ordered = server?.let { if (newestFirst) it.episodes.reversed() else it.episodes }.orEmpty()
     val pages = maxOf(1, (ordered.size + pageSize - 1) / pageSize)
     val current = minOf(page, pages - 1)
-    val overview = DisplayText.plain(anime.description)
+    val overview = DisplayText.plain(com.lilac.anime.android.data.DesktopCatalog.record(anime, source)?.overview?.ifEmpty { null } ?: anime.description)
 
     Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 30.dp)) {
@@ -121,7 +123,7 @@ fun DetailScreen(summary: Anime, source: String) {
                         AnimeArtwork(anime.poster, Modifier.size(if (wide) 170.dp else 108.dp, if (wide) 255.dp else 162.dp)
                             .shadow(16.dp, RoundedCornerShape(LilacStyle.radius)).clip(RoundedCornerShape(LilacStyle.radius)))
                         Column(Modifier.padding(bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(anime.title, fontSize = if (wide) 40.sp else 25.sp, lineHeight = if (wide) 44.sp else 29.sp, fontWeight = FontWeight.Black,
+                            Text(com.lilac.anime.android.data.displayTitle(anime, source), fontSize = if (wide) 40.sp else 25.sp, lineHeight = if (wide) 44.sp else 29.sp, fontWeight = FontWeight.Black,
                                 color = LilacStyle.text, maxLines = 3, overflow = TextOverflow.Ellipsis)
                             if (anime.native.isNotEmpty()) Text(anime.native, fontSize = 14.sp, color = LilacStyle.muted, maxLines = 1)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -192,6 +194,13 @@ fun DetailScreen(summary: Anime, source: String) {
                                 }
                             }
                             LilacOutlineButton(if (newestFirst) "최신화순" else "오래된화순") { newestFirst = !newestFirst; navigation.putBool(sortKey, newestFirst); page = 0 }
+                            // 전체 저장: every playable episode not saved yet (app.js batch download).
+                            LilacOutlineButton("전체 저장", icon = Icons.Filled.CloudDownload) {
+                                val saved = SavedAnime.of(AnimeSnapshot.withEpisodes(anime, server.episodes), source)
+                                val targets = server.episodes.indices.filter { server.episodes[it].playable }.map { com.lilac.anime.android.player.PlaybackItem.inSeries(saved, server.episodes, it) }
+                                    .filter { DownloadStore.state(it) == DownloadStore.EpisodeState.Idle }
+                                DownloadStore.enqueue(targets)
+                            }
                         }
                         if (pages > 1) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             repeat(pages) { index ->
@@ -225,6 +234,17 @@ fun DetailScreen(summary: Anime, source: String) {
                                 episode.airedDate.substringBefore("T"), if (episode.playable) "" else "재생 불가").filter { it.isNotEmpty() }
                             if (badges.isNotEmpty()) Text(badges.joinToString(" · "), fontSize = 11.sp, color = LilacStyle.muted)
                         }
+                        // The episode's download, inside its card: save, stop, resume or delete.
+                        val target = com.lilac.anime.android.player.PlaybackItem.of(SavedAnime.of(AnimeSnapshot.withEpisodes(anime, server.episodes), source), episode)
+                        val state = DownloadStore.state(target)
+                        Icon(when (state) {
+                            DownloadStore.EpisodeState.Completed -> Icons.Filled.Delete; DownloadStore.EpisodeState.Active -> Icons.Filled.Cancel
+                            DownloadStore.EpisodeState.Stopped -> Icons.Filled.Refresh; DownloadStore.EpisodeState.Idle -> Icons.Filled.Download
+                        }, when (state) {
+                            DownloadStore.EpisodeState.Completed -> "다운로드 삭제"; DownloadStore.EpisodeState.Active -> "다운로드 취소"
+                            DownloadStore.EpisodeState.Stopped -> "다운로드 다시 시작"; DownloadStore.EpisodeState.Idle -> "다운로드"
+                        }, tint = if (state == DownloadStore.EpisodeState.Completed) LilacStyle.accent else LilacStyle.muted,
+                            modifier = Modifier.size(38.dp).clip(CircleShape).clickable(enabled = episode.playable) { DownloadStore.toggle(target) }.padding(9.dp))
                     }
                 }
             }

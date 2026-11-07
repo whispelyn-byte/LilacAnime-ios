@@ -22,7 +22,12 @@ class MainActivity : ComponentActivity() {
         val app = application as LilacApp
         setContent {
             var restored by remember { mutableStateOf(false) }
-            LaunchedEffect(Unit) { app.library.load(); restored = true }
+            LaunchedEffect(Unit) {
+                app.library.load()
+                com.lilac.anime.android.download.DownloadStore.attach { app.library.preferences }
+                com.lilac.anime.android.download.DownloadStore.load()
+                restored = true
+            }
             val theme = app.library.preferences.theme
             val dark = if (theme == "system") isSystemInDarkTheme() else theme != "light"
             LaunchedEffect(dark) {

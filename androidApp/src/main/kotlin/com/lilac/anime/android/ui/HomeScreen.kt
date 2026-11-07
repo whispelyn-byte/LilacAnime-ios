@@ -150,7 +150,22 @@ fun HomeScreen() {
                     }
                 }
             }
-            sections.forEach { section ->
+            // 이번 시즌 신작 / 최근 업데이트, kept across launches; a source without update lists shows 이번 시즌.
+            var savedOrder by remember { mutableStateOf(navigation.string("homeOrder") ?: "season") }
+            val homeOrder = if (savedOrder == "updated" && source in RecentUpdates.supported) "updated" else "season"
+            LaunchedEffect(source, homeOrder) { if (homeOrder == "updated") RecentUpdates.loadHome(source) }
+            if (source in RecentUpdates.supported) {
+                LilacChipTray(Modifier.padding(horizontal = gutter)) {
+                    listOf("season" to "이번 시즌 신작", "updated" to "최근 업데이트").forEach { (value, title) ->
+                        LilacChip(title, homeOrder == value) { savedOrder = value; navigation.putString("homeOrder", value) }
+                    }
+                }
+                if (homeOrder == "updated") {
+                    Text(RecentUpdates.homeNote, fontSize = 12.sp, color = LilacStyle.muted, modifier = Modifier.padding(horizontal = gutter))
+                    AnimeRail("최근 업데이트", RecentUpdates.home, source) { navigation.putString("allSort:$source", "updated"); navigation.go("catalog") }
+                }
+            }
+            sections.filter { !(homeOrder == "updated" && it.name == "이번 시즌") }.forEach { section ->
                 if (section.items.isNotEmpty()) AnimeRail(section.name, section.items, source) {
                     navigation.browse(when (section.name) { "인기 작품" -> "top"; "이번 시즌" -> "season"; "PV" -> "pv"; "극장판" -> "movie"; else -> "adult" })
                 }
@@ -176,6 +191,9 @@ fun HomeScreen() {
             } else if (items.isEmpty() && sections.isEmpty() && !model.loading) {
                 LilacEmptyState(Icons.Outlined.AutoAwesome, "새로운 작품을 찾아보세요", "다른 영상 소스를 선택하거나 탐색에서 검색해 보세요.")
             }
+            // The weekly schedule last, under the rails.
+            val scheduleKnown = items + airing + sections.flatMap { it.items } + library.favorites.filter { it.source == source }.map { it.anime }
+            WeeklyScheduleView(source, scheduleKnown, reload, Modifier.padding(horizontal = gutter))
             LilacOutlineButton("전체 작품 둘러보기", Modifier.padding(horizontal = gutter).fillMaxWidth(), icon = Icons.Filled.GridView) { navigation.go("search") }
         }
     }
@@ -193,7 +211,7 @@ fun ContinueCard(entry: WatchEntry, width: Int, onClick: () -> Unit) {
             }
             StillProgress(progress, Modifier.align(Alignment.BottomCenter))
         }
-        Text(entry.anime.title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = LilacStyle.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
+        Text(com.lilac.anime.android.data.displayTitle(entry.anime.anime, entry.anime.source), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = LilacStyle.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
         val origin = if (entry.directURL?.startsWith("file:") == true) "다운로드" else ContentSources.name(entry.anime.source)
         Text(listOf(entry.episodeTitle, "${Math.round(progress * 100)}%", origin).joinToString(" · "), fontSize = 12.sp, color = LilacStyle.accent,
             maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 3.dp))
@@ -255,7 +273,7 @@ private fun HomeHero(picks: List<HomeSpotlight.Pick>, index: Int, source: String
                         Text("%02d / %02d".format(current + 1, picks.size), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = ink.copy(alpha = 0.6f))
                     }
                 }
-                Text(anime.title, fontSize = if (wide) 52.sp else 30.sp, fontWeight = FontWeight.Black, color = ink, maxLines = 3, overflow = TextOverflow.Ellipsis,
+                Text(com.lilac.anime.android.data.displayTitle(anime, detailSource), fontSize = if (wide) 52.sp else 30.sp, fontWeight = FontWeight.Black, color = ink, maxLines = 3, overflow = TextOverflow.Ellipsis,
                     lineHeight = if (wide) 56.sp else 34.sp, modifier = Modifier.padding(bottom = 12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 12.dp)) {
                     if (anime.score > 0) Text(scoreText(anime.score), color = LilacStyle.score, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
@@ -265,7 +283,7 @@ private fun HomeHero(picks: List<HomeSpotlight.Pick>, index: Int, source: String
                     val episodes = DesktopAnimeMetadata.episodeLabel(anime)
                     if (episodes.isNotEmpty()) Text(episodes, color = ink.copy(alpha = 0.85f), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                 }
-                val overview = DisplayText.plain(anime.description)
+                val overview = DisplayText.plain(com.lilac.anime.android.data.DesktopCatalog.record(anime, detailSource)?.overview?.ifEmpty { null } ?: anime.description)
                 if (overview.isNotEmpty()) Text(overview, fontSize = 15.sp, lineHeight = 21.sp, maxLines = 3, overflow = TextOverflow.Ellipsis, color = ink.copy(alpha = 0.9f), modifier = Modifier.padding(bottom = 20.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     LilacPrimaryButton("자세히 보기", icon = Icons.Outlined.Info) { app.navigation.open(anime, detailSource) }

@@ -47,6 +47,8 @@ data class PlaybackItem(
     val directURL: String? = null,
     val next: List<PlaybackItem> = emptyList(),
     val preceding: List<PlaybackItem> = emptyList(),
+    /** A downloaded episode's subtitle files (absolute paths), the first the one chosen when it was saved. */
+    val localSubtitles: List<String> = emptyList(),
 ) {
     companion object {
         fun of(anime: SavedAnime, episode: Episode) = PlaybackItem(anime, episode.id, episode.title, episode.number, episode.displayNumber,

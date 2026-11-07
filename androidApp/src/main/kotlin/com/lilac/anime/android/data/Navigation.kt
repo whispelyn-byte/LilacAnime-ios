@@ -28,7 +28,8 @@ class Navigation(context: Context) {
     val details = mutableStateListOf<DetailRoute>()
     /** The episode open in the full-screen player (iOS PlaybackRouter). */
     var playing by mutableStateOf<com.lilac.anime.android.player.PlaybackItem?>(null)
-    fun play(item: com.lilac.anime.android.player.PlaybackItem) { playing = item }
+    /** desktop resolveIntoPlayer: an episode saved on this device plays from its files, wherever it is opened from. */
+    fun play(item: com.lilac.anime.android.player.PlaybackItem) { playing = com.lilac.anime.android.download.DownloadStore.offline(item) ?: item }
 
     fun go(value: String) { details.clear(); section = value }
     fun search(value: String) { query = value; listMode = "browse"; go("search") }

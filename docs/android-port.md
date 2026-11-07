@@ -44,10 +44,12 @@ iOS 파일 이름을 기준으로 옮길 범위를 나눴습니다. 체크된 �
 - [ ] 한국어 제목 카탈로그로 블로그 검색 제목 찾기 — 4단계 (지금은 작품의 한국어 제목, 없으면 TMDB 키로 찾음)
 
 ### 4단계 — 다운로드 · 카탈로그
-- [ ] 다운로드 (`DownloadStore.swift`, `DownloadTransfer.swift`, `BackgroundDownloads.swift`, `DesktopDownloads.swift`, `DownloadStreamSelector.swift`) — 백그라운드는 포그라운드 서비스로
-- [ ] 한국어 제목 카탈로그 · 인덱스 (`DesktopCatalog.swift`, `TitleLookup.swift`, `DesktopRecentUpdates.swift`), 타이틀 로고 (`TitleArtwork.swift`)
-- [ ] 주간 편성표 (`WeeklyScheduleView.swift`)
-- [ ] 로컬 영상 열기
+- [x] 다운로드 (`DownloadStore.swift`, `HLSPlanBuilder` in `BackgroundDownloads.swift`, `DownloadsView`) — iOS의 백그라운드 URLSession 대신 데이터 동기화 포그라운드 서비스, 위장 조각은 받으면서 풀어 저장, 받은 회차는 어디서 열어도 파일로 재생, 자막도 함께 저장
+- [x] 한국어 제목 카탈로그 · 인덱스 (`DesktopCatalog.swift`: 전체 목록 수집, Wikidata 일괄 → TMDB, 검색 · 다른 언어 제목, 작품 제목 표시 언어), 전체 목록을 인덱스로 보여 주기, 블로그 자막 검색 제목
+- [x] 최근 업데이트 (`DesktopRecentUpdates.swift`: 홈 최근 업데이트 줄, 내 목록 회차 업데이트순)
+- [x] 주간 편성표 (`WeeklyScheduleView.swift`)
+- [x] 로컬 영상 열기
+- [ ] 타이틀 로고 · 배너 (`TitleArtwork.swift`), 다운로드 폴더 내보내기·가져오기 (`DownloadTransfer.swift`), 다운로드 자막 번역 — 다음에
 
 ### 5단계 — 기기 안 AI · 영상 처리
 - [ ] 로컬 AI 번역 (`LocalModelsView.swift`, `LocalModelInput.swift`, `HuggingFaceSearchView.swift`, `DesktopModelInstaller.swift`; llama.cpp를 Android NDK로)

@@ -119,6 +119,10 @@ class SubtitlePreparer(private val context: Context) {
             runCatching { SubtitleFiles.prepare(track.url, track.headers ?: emptyMap()) }.getOrNull()?.let { files -> select(files, item)?.let { return Found(it, "reanime") } }
         }
         saved.firstOrNull()?.let { record -> record.file?.let { return Found(it, record.provider) } }
+        // A downloaded episode's own subtitles: a Korean one first.
+        val local = item.localSubtitles.map(::File).filter { it.isFile }
+        local.firstOrNull { SubtitleFiles.isKorean(it) }?.let { return Found(it, "download") }
+        local.firstOrNull()?.let { return Found(it, "download") }
         if (item.anime.source == "local" || item.anime.source == "linkkf") return null
         community(item, preferences)?.let { rememberKorean(item); return it }
         return translationSource(item, tracks, preferences)
@@ -235,13 +239,16 @@ class SubtitlePreparer(private val context: Context) {
     private suspend fun context(item: PlaybackItem): Triple<String, Int, List<Int>> {
         contexts[item.anime.id]?.let { return it }
         val anime = item.anime.anime
-        var title = listOf(anime.title, anime.native, anime.romaji, anime.english).firstOrNull { TitleCandidates.isKorean(it) } ?: item.anime.title
+        com.lilac.anime.android.data.DesktopCatalog.enrich(anime, item.anime.source)
+        val metadata = com.lilac.anime.android.data.DesktopCatalog.record(item.anime)
+        var title = metadata?.korean?.takeIf { it.isNotEmpty() }
+            ?: listOf(anime.title, anime.native, anime.romaji, anime.english).firstOrNull { TitleCandidates.isKorean(it) } ?: item.anime.title
         if (!TitleCandidates.isKorean(title)) {
             val credential = SecureKeys.load("tmdb")
             if (credential.isNotEmpty()) service.await<String> { koreanTitle(listOf(anime.title, anime.english, anime.romaji, anime.native).filter { t -> t.isNotBlank() }, credential, it) }
                 .getOrNull()?.takeIf { it.isNotBlank() }?.let { title = it }
         }
-        val anilist = anime.anilistId ?: 0
+        val anilist = anime.anilistId ?: metadata?.anilist ?: 0
         val offsets = service.await<List<Int>> { episodeOffsets(anilist, title, it) }.getOrDefault(emptyList())
         val result = Triple(title, anilist, offsets)
         if (offsets.isNotEmpty() || DesktopTitleRules.season(title) < 2) contexts[item.anime.id] = result
@@ -250,11 +257,16 @@ class SubtitlePreparer(private val context: Context) {
     suspend fun searchTitle(item: PlaybackItem) = context(item).first
 
     private suspend fun find(provider: String, item: PlaybackItem, context: Triple<String, Int, List<Int>>, fresh: Boolean): List<SubtitleAsset> {
-        val answer = service.await<List<SubtitleAsset>> {
-            if (fresh) refreshSubtitles(provider, context.first, item.number, item.subtitleEpisodeKey, context.second, it)
-            else findSubtitles(provider, context.first, item.number, item.subtitleEpisodeKey, context.second, it)
+        val aliases = if (provider == "jimaku") emptyList() else com.lilac.anime.android.data.DesktopCatalog.record(item.anime)?.aliases.orEmpty().filter { TitleCandidates.isKorean(it) }
+        for (title in (listOf(context.first) + aliases).distinct().take(8)) {
+            currentCoroutineContext().ensureActive()
+            val answer = service.await<List<SubtitleAsset>> {
+                if (fresh) refreshSubtitles(provider, title, item.number, item.subtitleEpisodeKey, context.second, it)
+                else findSubtitles(provider, title, item.number, item.subtitleEpisodeKey, context.second, it)
+            }.getOrDefault(emptyList())
+            if (answer.isNotEmpty()) return answer
         }
-        return answer.getOrDefault(emptyList())
+        return emptyList()
     }
 
     fun communitySelect(files: List<File>, item: PlaybackItem, episode: Double?, strict: Boolean, bundle: Boolean, exact: Boolean, fileSeason: Int): File? {

@@ -232,7 +232,9 @@ class SourceRepository(private val client: HttpClient, private val details: Deta
         override suspend fun subtitle(episode: KoreanSiteEpisode): CrossSiteTrack? = when (site) {
             "ohli24" -> desktop.ohliEpisodeSubtitle(episode.url)
             "linkani" -> desktop.linkaniEpisodeSubtitle(episode.url)
-            else -> KoreanSiteBrowserRegistry.linkkfSubtitle(episode.url)
+            else -> KoreanSiteBrowserRegistry.linkkfSubtitle(episode.url)?.let { track ->
+                desktop.verifiedProviderSubtitle(track.url, track.headers, site)
+            }
         }
     }
     private val crossSite by lazy {

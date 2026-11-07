@@ -119,10 +119,17 @@ final class CrossSiteTracks {
             let found: [CrossSiteTrack] = await withCheckedContinuation { continuation in
                 service.koreanSiteTracks(anime: anime, provider: source, number: Int32(number), special: special, dub: dub, koreanTitles: titles) { values, _ in continuation.resume(returning: values ?? []) }
             }
-            return found.compactMap { track in
-                guard let url = URL(string: track.url) else { return nil }
-                return RemoteSubtitle(label: track.label, url: url, language: track.language, headers: track.headers.isEmpty ? nil : track.headers, origin: track.origin)
+            var tracks: [RemoteSubtitle] = []
+            for track in found {
+                if let content = track.contentBase64 {
+                    if let file = try? await SubtitleFiles.providerFile(content, source: track.url, format: track.format) {
+                        tracks.append(RemoteSubtitle(label: track.label, url: file, language: track.language, origin: track.origin))
+                    }
+                } else if let url = URL(string: track.url) {
+                    tracks.append(RemoteSubtitle(label: track.label, url: url, language: track.language, headers: track.headers.isEmpty ? nil : track.headers, origin: track.origin))
+                }
             }
+            return tracks
         }
         koreanRequests[key] = (Date(), task)
         if koreanRequests.count > 20, let oldest = koreanRequests.min(by: { $0.value.at < $1.value.at })?.key { koreanRequests[oldest] = nil }

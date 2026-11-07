@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
   push:
     branches: ['main', 'android-port']
-    paths: ['androidApp/**', 'shared/**', 'iosApp/Native/**', 'iosApp/LilacAnime/Resources/**', '*gradle*', 'gradle/**', '.github/workflows/android.yml']
+    paths: ['androidApp/**', 'androidWhisper/**', 'shared/**', 'iosApp/Native/**', 'iosApp/LilacAnime/Resources/**', '*gradle*', 'gradle/**', '.github/workflows/android.yml']
   pull_request:
-    paths: ['androidApp/**', 'shared/**', 'iosApp/Native/**', 'iosApp/LilacAnime/Resources/**', '*gradle*', 'gradle/**', '.github/workflows/android.yml']
+    paths: ['androidApp/**', 'androidWhisper/**', 'shared/**', 'iosApp/Native/**', 'iosApp/LilacAnime/Resources/**', '*gradle*', 'gradle/**', '.github/workflows/android.yml']
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -25,6 +25,8 @@ jobs:
         run: |
           git clone --depth 1 --branch b11490 https://github.com/ggml-org/llama.cpp.git androidApp/build/llama.cpp
           test "$(git -C androidApp/build/llama.cpp rev-parse HEAD)" = 9c2e0e491a822adae1f0b1c831adb4160057d24f
+      - name: Get whisper.cpp v1.7.4
+        run: git clone --depth 1 --branch v1.7.4 https://github.com/ggml-org/whisper.cpp.git androidWhisper/build/whisper.cpp
       - name: Build debug APK
         run: sh ./gradlew --no-daemon -PincludeAndroid=true :androidApp:assembleDebug
       - name: Name the APK

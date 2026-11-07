@@ -103,6 +103,13 @@ fun DetailScreen(summary: Anime, source: String) {
         server?.let { s -> s.episodes.indexOfFirst { it.playable }.takeIf { it >= 0 }?.let { Triple(s, it, false) } }
     }
     val heroHeight = if (wide) 460.dp else 300.dp
+    // The wide header picture and the Korean title logo, asked from the card first, then with the details (iOS loadArtwork).
+    var art by remember { mutableStateOf(TitleArtworkStore.cached(summary, source)) }
+    LaunchedEffect(detail == null) {
+        var found = TitleArtworkStore.artwork(summary, source)
+        if (!found.complete) detail?.let { found = TitleArtworkStore.artwork(it, source) }
+        if (found.complete || art?.complete != true) art = found
+    }
     val background = LilacStyle.background
     val pageSize = if (source == "reanime") 100 else 50
     val ordered = server?.let { if (newestFirst) it.episodes.reversed() else it.episodes }.orEmpty()
@@ -114,7 +121,8 @@ fun DetailScreen(summary: Anime, source: String) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 30.dp)) {
             item {
                 Box(Modifier.fillMaxWidth().height(heroHeight)) {
-                    AnimeArtwork(anime.backdrop.ifEmpty { anime.poster }, Modifier.matchParentSize(), PosterFocus)
+                    art?.banner?.takeIf { it.isNotEmpty() }?.let { AnimeArtwork(it, Modifier.matchParentSize()) }
+                        ?: AnimeArtwork(anime.backdrop.ifEmpty { anime.poster }, Modifier.matchParentSize(), PosterFocus)
                     Box(Modifier.matchParentSize().background(Brush.verticalGradient(0.3f to Color.Transparent, 0.68f to background.copy(alpha = 0.55f), 1f to background)))
                 }
             }
@@ -124,7 +132,11 @@ fun DetailScreen(summary: Anime, source: String) {
                         AnimeArtwork(anime.poster, Modifier.size(if (wide) 170.dp else 108.dp, if (wide) 255.dp else 162.dp)
                             .shadow(16.dp, RoundedCornerShape(LilacStyle.radius)).clip(RoundedCornerShape(LilacStyle.radius)))
                         Column(Modifier.padding(bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(com.lilac.anime.android.data.displayTitle(anime, source), fontSize = if (wide) 40.sp else 25.sp, lineHeight = if (wide) 44.sp else 29.sp, fontWeight = FontWeight.Black,
+                            val logo = art?.takeIf { a -> a.logo(LilacStyle.palette.dark)?.let { TitleArtworkStore.image(it.first) } != null }
+                            if (logo != null) {
+                                TitleLogo(logo, if (wide) 440.dp else 230.dp, if (wide) 150.dp else 90.dp, Modifier.padding(bottom = 4.dp))
+                                Text(com.lilac.anime.android.data.displayTitle(anime, source), fontSize = if (wide) 16.sp else 14.sp, fontWeight = FontWeight.Bold, color = LilacStyle.muted, maxLines = 2)
+                            } else Text(com.lilac.anime.android.data.displayTitle(anime, source), fontSize = if (wide) 40.sp else 25.sp, lineHeight = if (wide) 44.sp else 29.sp, fontWeight = FontWeight.Black,
                                 color = LilacStyle.text, maxLines = 3, overflow = TextOverflow.Ellipsis)
                             if (anime.native.isNotEmpty()) Text(anime.native, fontSize = 14.sp, color = LilacStyle.muted, maxLines = 1)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

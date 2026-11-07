@@ -170,6 +170,10 @@ class LibraryStore(context: Context) {
     var aiSubtitleSeries by mutableStateOf(emptyMap<String, Boolean>()); private set
     var persistenceError by mutableStateOf<String?>(null)
 
+    /** Called when 내 목록 (true) or 시청 기록 (false) changes here, for 기기 동기화. */
+    var onChange: ((Boolean) -> Unit)? = null
+    /** 기기 동기화 writes both lists at once. */
+    fun replaceFromSync(favorites: List<SavedAnime>, history: List<WatchEntry>) { this.favorites = favorites; this.history = history.take(500); persist() }
     fun subtitleChoice(animeID: String, episodeID: String) = subtitleChoices["$animeID#$episodeID"]
     fun preferAI(value: Boolean, animeID: String) { aiSubtitleSeries = if (value) aiSubtitleSeries + (animeID to true) else aiSubtitleSeries - animeID; persist() }
     fun saveSubtitle(animeID: String, episodeID: String, file: java.io.File?, offset: Double) {
@@ -196,7 +200,7 @@ class LibraryStore(context: Context) {
         val id = source + ":" + anime.id
         favorites = if (favorites.any { it.id == id }) favorites.filterNot { it.id == id }
         else favorites + SavedAnime.of(anime, source, System.currentTimeMillis())
-        persist()
+        persist(); onChange?.invoke(true)
     }
 
     fun progress(anime: SavedAnime, episodeID: String, title: String, number: Int, watchURL: String, directURL: String?,
@@ -210,13 +214,13 @@ class LibraryStore(context: Context) {
                 anime = SavedAnime.of(AnimeSnapshot.withEpisodes(entry.anime.anime, emptyList()), entry.anime.source, entry.anime.savedAt))
         }
         history = (listOf(WatchEntry(id, anime, episodeID, title, number, watchURL, directURL, position, duration, System.currentTimeMillis(), displayNumber = displayNumber)) + older).take(500)
-        persist()
+        persist(); onChange?.invoke(false)
     }
     fun resume(anime: SavedAnime, episodeID: String): Double =
         history.firstOrNull { it.anime.id == anime.id && it.episodeID == episodeID }?.let { if (it.duration > 0 && it.position / it.duration > 0.95) 0.0 else it.position } ?: 0.0
 
-    fun deleteHistory(ids: Set<String>) { history = history.filterNot { it.id in ids }; persist() }
-    fun clearHistory() { history = emptyList(); persist() }
+    fun deleteHistory(ids: Set<String>) { history = history.filterNot { it.id in ids }; persist(); onChange?.invoke(false) }
+    fun clearHistory() { history = emptyList(); persist(); onChange?.invoke(false) }
 
     private fun persist() {
         if (!ready) return

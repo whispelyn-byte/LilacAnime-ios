@@ -18,9 +18,13 @@ class LilacApp : Application() {
         com.lilac.anime.android.localai.LocalModelFiles.init(this)
         com.lilac.anime.android.audio.WhisperModels.init(this)
         com.lilac.anime.android.audio.OfflineAnalyzer.init(this)
+        com.lilac.anime.android.ui.TitleArtworkStore.init(this)
+        com.lilac.anime.android.data.DeviceSync.init(this)
         com.lilac.anime.android.download.DownloadStore.init(this)
         // Miruro's API answers inside its own page (iOS MiruroTransportRegistry.transport = MiruroBrowser.shared).
         com.lilac.anime.shared.MiruroTransportRegistry.transport = com.lilac.anime.android.player.MiruroBrowser(this)
+        com.lilac.anime.shared.KoreanSiteBrowserRegistry.browser = com.lilac.anime.android.player.KoreanSiteBrowser(this)
+        com.lilac.anime.shared.CrossSiteCacheRegistry.store = com.lilac.anime.android.player.CrossSiteDiskCache(this)
         library = LibraryStore(this)
         navigation = Navigation(this)
     }

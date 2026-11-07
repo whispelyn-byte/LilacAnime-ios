@@ -95,7 +95,7 @@ fun SettingSlider(value: Double, range: ClosedFloatingPointRange<Float>, step: F
 fun SettingsScreen() {
     val app = LocalApp.current
     val library = app.library
-    val categories = listOf("general" to "일반", "playback" to "재생", "subtitle" to "자막", "titles" to "한국어 제목 검색", "translate" to "자막 자동 번역", "local" to "로컬 AI 모델", "storage" to "저장 자막·캐시")
+    val categories = listOf("general" to "일반", "playback" to "재생", "subtitle" to "자막", "titles" to "한국어 제목 검색", "translate" to "자막 자동 번역", "local" to "로컬 AI 모델", "storage" to "저장 자막·캐시", "sync" to "기기 동기화")
     var category by rememberSaveable { mutableStateOf("general") }
     val gutter = LilacStyle.gutter
     @Composable fun page() {
@@ -108,6 +108,7 @@ fun SettingsScreen() {
                 "translate" -> TranslateSettings()
                 "storage" -> StorageSettings()
                 "local" -> LocalModelSettings()
+                "sync" -> SyncSettings()
                 else -> GeneralSettings()
             }
             library.persistenceError?.let { SettingNote(it, Color.Red) }
@@ -372,6 +373,43 @@ private fun TranslateSettings() {
     SettingBlock("이름·용어 표기", "한 줄에 하나씩 원문=한국어로 적으면 번역에서 그대로 씁니다.") {
         SettingField(prefs.translationGlossary, { v -> library.update { it.copy(translationGlossary = v) } }, "例: 竈門炭治郎=카마도 탄지로", lines = 4)
     }
+}
+
+/** 기기 동기화 (iOS DeviceSyncView, the desktop's data-settings-pane="sync"): the server, the password, where it stands. */
+@Composable
+private fun SyncSettings() {
+    val sync = com.lilac.anime.android.data.DeviceSync
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var address by remember { mutableStateOf(sync.server) }
+    var password by remember { mutableStateOf("") }
+    var working by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    fun connect() {
+        working = true; message = null
+        scope.launch {
+            runCatching { sync.connect(address, password) }.onSuccess { password = "" }.onFailure { if (it !is kotlinx.coroutines.CancellationException) message = it.message }
+            working = false
+        }
+    }
+    PageTitle("기기 동기화", "직접 만든 LilacAnime 서버(Vercel)를 거쳐 내 목록과 시청 기록을 데스크탑 앱·iPhone과 맞춥니다. 서버는 lilacanimeserver를 Vercel에 배포하고 Upstash Redis와 비밀번호(LILAC_PASSWORD)를 설정해 만듭니다.")
+    SettingBlock("서버 주소") {
+        SettingField(address, { address = it }, "https://내-서버.vercel.app")
+        Text("비밀번호", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = LilacStyle.text, modifier = Modifier.padding(top = 6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            SettingField(password, { password = it }, "Vercel에 설정한 LILAC_PASSWORD", secret = true, modifier = Modifier.weight(1f))
+            LilacOutlineButton(if (working) "연결 중…" else if (sync.connected) "다시 연결" else "연결", enabled = !working) { connect() }
+        }
+        message?.let { SettingNote(it, Color.Red) }
+        SettingNote(sync.state, LilacStyle.text)
+        if (sync.connected) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            LilacOutlineButton(if (sync.running) "동기화 중…" else "지금 동기화", enabled = !sync.running) { scope.launch { sync.run() } }
+            LilacOutlineButton("연결 끊기", tint = Color.Red) { sync.disconnect() }
+        }
+    }
+    SettingNote("비밀번호는 연결할 때 한 번만 보내고, 서버가 준 토큰만 이 기기에 암호화해 둡니다. 이 기기의 파일로 본 기록은 보내지 않습니다. 같은 항목을 두 기기에서 바꾸면 나중에 바꾼 쪽이 남습니다.")
+    Text("서버 만드는 방법 →", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = LilacStyle.accent,
+        modifier = Modifier.clickable { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/whispelyn-byte/LilacAnime-server"))) } })
 }
 
 /** 저장 자막·캐시 (iOS SubtitleStorageView): the subtitle folder's size, cleaning, and each episode's kept subtitles. */

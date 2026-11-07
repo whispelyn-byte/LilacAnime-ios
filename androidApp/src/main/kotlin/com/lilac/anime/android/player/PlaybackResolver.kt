@@ -260,6 +260,7 @@ class PlaybackResolver(private val context: Context) {
         }
     }
 
+    internal fun loadPageForSubtitles(url: String, seconds: Int) { silent = true; loading = true; loadPage(url, seconds) }
     private fun loadPage(url: String, seconds: Int) {
         flixKey = null; webPlaybackActive = false
         val token = generation
@@ -507,6 +508,42 @@ class PlaybackResolver(private val context: Context) {
             })();
         """.trimIndent()
     }
+}
+
+/** The subtitle files a player page names as it plays, read in a hidden, muted resolver of its own (iOS
+ *  PlaybackResolver.pageSubtitles; Linkkf's subtitle comes only with its player page). */
+suspend fun pageSubtitles(context: Context, page: String, seconds: Int = 15): List<RemoteSubtitle> {
+    val resolver = PlaybackResolver(context)
+    try {
+        resolver.loadPageForSubtitles(page, seconds)
+        val deadline = System.currentTimeMillis() + seconds * 1000L
+        while (resolver.subtitles.isEmpty() && resolver.error == null && System.currentTimeMillis() < deadline) delay(150)
+        return resolver.subtitles
+    } finally { resolver.shutdown() }
+}
+
+/** iOS KoreanSiteBrowserBridge: Linkkf's Korean subtitle read from its player page for the shared Korean-site lookup. */
+class KoreanSiteBrowser(private val context: Context) : com.lilac.anime.shared.KoreanSiteBrowser {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val jobs = mutableMapOf<String, Job>()
+    override fun linkkfSubtitle(id: String, url: String, completion: (String?, String?) -> Unit) {
+        jobs[id] = scope.launch {
+            try {
+                if (!url.startsWith("http")) { completion(null, null); return@launch }
+                val found = pageSubtitles(context, url)
+                val track = found.firstOrNull(SubtitlePolicy::isKorean) ?: found.firstOrNull() ?: run { completion(null, null); return@launch }
+                completion(JSONObject().put("url", track.url).put("headers", JSONObject(track.headers ?: mapOf("Referer" to url))).toString(), null)
+            } finally { jobs.remove(id) }
+        }
+    }
+    override fun cancel(id: String) { jobs.remove(id)?.cancel() }
+}
+
+/** The AniList and Miruro matches kept between launches (iOS CrossSiteDiskCache). */
+class CrossSiteDiskCache(context: Context) : com.lilac.anime.shared.CrossSiteCacheStore {
+    private val file = java.io.File(context.cacheDir, "cross-site-anilist.json")
+    @Synchronized override fun read(): String? = runCatching { file.readText() }.getOrNull()
+    @Synchronized override fun write(value: String) { runCatching { file.writeText(value) } }
 }
 
 /** Miruro's API answers only inside its own page: requests run in a hidden WebView on the site (iOS MiruroBrowser). */

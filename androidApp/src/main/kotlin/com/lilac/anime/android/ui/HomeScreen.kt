@@ -247,6 +247,12 @@ private fun HomeHero(picks: List<HomeSpotlight.Pick>, index: Int, source: String
     val height = if (wide) 520.dp else 420.dp
     val background = LilacStyle.background
     val ink = if (LilacStyle.palette.dark) Color.White else LilacStyle.text
+    // Every pick's artwork is asked ahead, so a pick switched to shows its banner and logo at once (iOS HomeHero).
+    var ready by remember { mutableStateOf(emptySet<String>()) }
+    LaunchedEffect(picks.map { it.anime.id }) {
+        for (candidate in picks) { TitleArtworkStore.artwork(candidate.anime, if (candidate.anime.source == "jikan") "jikan" else source); ready = ready + candidate.anime.id }
+    }
+    val art = if (anime.id in ready) TitleArtworkStore.cached(anime, detailSource) else null
     Box(
         Modifier.fillMaxWidth().height(height).pointerInput(picks.size) {
             var total = 0f
@@ -257,7 +263,8 @@ private fun HomeHero(picks: List<HomeSpotlight.Pick>, index: Int, source: String
     ) {
         AnimatedContent(anime.id, transitionSpec = { fadeIn(LilacMotion.spec(280)) togetherWith fadeOut(LilacMotion.spec(280)) }, label = "hero") { _ ->
             Box(Modifier.fillMaxSize()) {
-                AnimeArtwork(anime.backdrop.ifEmpty { anime.poster }, Modifier.fillMaxSize(), PosterFocus)
+                art?.banner?.takeIf { it.isNotEmpty() }?.let { AnimeArtwork(it, Modifier.fillMaxSize()) }
+                    ?: AnimeArtwork(anime.backdrop.ifEmpty { anime.poster }, Modifier.fillMaxSize(), PosterFocus)
                 Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to background, 0.26f to background.copy(alpha = 0.8f), 0.55f to background.copy(alpha = 0.25f), 0.75f to Color.Transparent)))
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.55f to Color.Transparent, 0.78f to background.copy(alpha = 0.4f), 1f to background)))
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to background.copy(alpha = 0.6f), 0.2f to Color.Transparent)))
@@ -273,7 +280,11 @@ private fun HomeHero(picks: List<HomeSpotlight.Pick>, index: Int, source: String
                         Text("%02d / %02d".format(current + 1, picks.size), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = ink.copy(alpha = 0.6f))
                     }
                 }
-                Text(com.lilac.anime.android.data.displayTitle(anime, detailSource), fontSize = if (wide) 52.sp else 30.sp, fontWeight = FontWeight.Black, color = ink, maxLines = 3, overflow = TextOverflow.Ellipsis,
+                // The Korean title logo, with the text title kept small under it (it tells the season).
+                if (art != null && art.logo(LilacStyle.palette.dark) != null && TitleArtworkStore.image(art.logo(LilacStyle.palette.dark)!!.first) != null) {
+                    TitleLogo(art, if (wide) 480.dp else 300.dp, if (wide) 170.dp else 96.dp, Modifier.padding(bottom = 10.dp))
+                    Text(com.lilac.anime.android.data.displayTitle(anime, detailSource), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = ink, maxLines = 1, modifier = Modifier.padding(bottom = 10.dp))
+                } else Text(com.lilac.anime.android.data.displayTitle(anime, detailSource), fontSize = if (wide) 52.sp else 30.sp, fontWeight = FontWeight.Black, color = ink, maxLines = 3, overflow = TextOverflow.Ellipsis,
                     lineHeight = if (wide) 56.sp else 34.sp, modifier = Modifier.padding(bottom = 12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 12.dp)) {
                     if (anime.score > 0) Text(scoreText(anime.score), color = LilacStyle.score, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)

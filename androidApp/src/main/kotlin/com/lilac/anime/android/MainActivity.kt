@@ -17,6 +17,7 @@ import com.lilac.anime.android.ui.*
 val LocalApp = staticCompositionLocalOf<LilacApp> { error("LilacApp not provided") }
 
 class MainActivity : ComponentActivity() {
+    override fun onResume() { super.onResume(); com.lilac.anime.android.data.DeviceSync.becameActive() }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val app = application as LilacApp
@@ -27,6 +28,7 @@ class MainActivity : ComponentActivity() {
                 com.lilac.anime.android.download.DownloadStore.attach { app.library.preferences }
                 com.lilac.anime.android.download.DownloadStore.load()
                 restored = true
+                com.lilac.anime.android.data.DeviceSync.start(app.library)
             }
             val theme = app.library.preferences.theme
             val dark = if (theme == "system") isSystemInDarkTheme() else theme != "light"

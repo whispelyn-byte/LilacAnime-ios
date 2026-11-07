@@ -167,7 +167,7 @@ class PlayerSubtitles(
         subtitle = null; sourceSubtitle = null; selectedProvider = ""; selectedTrackURL = null; selectedMaker = null; selectedJimakuURL = null
         subtitleState = null; makers = emptyList(); searching = false; searchError = null; pressedSource = null; pressedFor = null; pickedSheet = null; sheetPicked = false
         whisper.cancel(); whisperLive.cancel(); whisperStatus = ""; syncJob?.cancel(); syncRunning = false; syncStatus = null; dismissSync()
-        koreanFound = false; error = null; clearOther()
+        koreanFound = false; error = null; clearOther(); lateJob?.cancel(); lateJob = null; manualPick = false
     }
 
     suspend fun isKorean(file: File): Boolean = koreanFiles[file.path] ?: SubtitleFiles.isKorean(file).also { koreanFiles[file.path] = it }
@@ -186,20 +186,12 @@ class PlayerSubtitles(
             try {
                 // desktop ensureSubtitle: the other sites' tracks are waited for (16 s at most) only once nothing saved
                 // and no subtitle of the stream's own is there, so those go on at once.
-                val job = otherJob
-                var waited: List<RemoteSubtitle>? = null
-                // Waited for once: the translation step asks again and takes what came.
-                val later: (suspend () -> List<RemoteSubtitle>)? = if (job == null || stream.subtitles.any(SubtitlePolicy::isKorean)) null else suspend {
-                    waited ?: try {
-                        withTimeoutOrNull(16_000) { job.await() } ?: otherTracks
-                    } catch (cancelled: CancellationException) {
-                        currentCoroutineContext().ensureActive()
-                        otherTracks
-                    }.also { waited = it }
-                }
+                val korean = preparer.KoreanSearch(opening, prefs, { otherTracks }, otherJob)
                 val current = { at == token() && requested == request && subtitle == null }
                 val found = preparer.prepare(opening, merged(stream.subtitles, otherTracks), library.preferences, library.aiSubtitleSeries[opening.anime.id] == true,
-                    stream = stream, later = later, status = { if (current()) subtitleState = it })
+                    stream = stream, korean = korean, status = { if (current()) subtitleState = it })
+                // A Korean subtitle still to come takes the place of a translation, a Whisper subtitle or none.
+                if (at == token() && korean.asked && !korean.settled()) upgradeToLateKorean(korean, at)
                 if (found != null && current()) {
                     subtitleState = null
                     select(found.file, found.provider, automatic = true)
@@ -221,6 +213,46 @@ class PlayerSubtitles(
         }
     }
 
+    private var lateJob: Job? = null
+    /** A subtitle picked by hand in this episode: a Korean subtitle found late no longer replaces anything. */
+    private var manualPick = false
+    /** What a Korean subtitle found late may replace (desktop lateKoreanReplaces): none, a machine translation, a Whisper
+     *  subtitle, a Japanese or English file or track. Not one the user picked or a series watched in machine translation. */
+    private fun lateKoreanReplaces(): Boolean {
+        if (manualPick || pressedSource != null || library.aiSubtitleSeries[item().anime.id] == true) return false
+        val current = subtitle ?: return true
+        if (translation.running || currentSaved?.translated == true || selectedProvider in setOf("jimaku", "whisper")) return true
+        if (selectedProvider == "reanime") return siteTracks.firstOrNull { it.url == selectedTrackURL }?.let { !SubtitlePolicy.isKorean(it) } ?: (koreanFiles[current.path] == false)
+        return false
+    }
+    /** desktop upgradeToLateKorean: the Korean subtitle came after the episode's subtitle went on, so it takes its place
+     *  (the translation or Whisper run stops), told under the player with 되돌리기. */
+    private fun upgradeToLateKorean(korean: SubtitlePreparer.KoreanSearch, at: Long) {
+        lateJob?.cancel()
+        lateJob = scope.launch {
+            val found = korean.wait(180_000) ?: return@launch
+            if (at != token() || !lateKoreanReplaces()) return@launch
+            val before = subtitle; val beforeProvider = selectedProvider; val beforeTrack = selectedTrackURL
+            translation.cancel(); whisper.cancel(); whisperLive.cancel(); whisperStatus = ""
+            select(found.file, found.provider, automatic = true)
+            found.track?.let { selectedTrackURL = it.url }
+            preparer.rememberKoreanSource(item(), found)
+            val after = subtitle
+            val name = found.track?.let { originLabel(it) + " " + it.label } ?: SubtitleLabels.provider(found.provider)
+            subtitleState = null
+            syncNotice = "한국어 자막($name)을 찾아서 바꿨어요."
+            syncUndo = {
+                if (at == token() && subtitle == after) {
+                    manualPick = true
+                    if (before != null) { select(before, beforeProvider, automatic = true); selectedTrackURL = beforeTrack }
+                    else { subtitle = null; sourceSubtitle = null; selectedProvider = ""; selectedTrackURL = null; engine.clearSubtitle() }
+                }
+            }
+            delay(20_000)
+            if (subtitle == after && syncNotice?.startsWith("한국어 자막(") == true) dismissSync()
+        }
+    }
+
     /** A subtitle put on (iOS selectSubtitle): saved for the episode, remembered when chosen by hand, translated when it is
      *  not Korean and 자동 번역 is set up, and a Korean one looked for to offer when it was chosen automatically. */
     fun select(file: File, provider: String? = null, translate: Boolean = true, automatic: Boolean = false) {
@@ -238,6 +270,7 @@ class PlayerSubtitles(
         if (selectedProvider != "reanime") selectedTrackURL = null
         if (selectedProvider != "anissia") selectedMaker = null
         if (!automatic) {
+            manualPick = true
             library.saveSubtitle(item.anime.id, item.episodeID, file, offset)
             if (saved?.translated == true) library.preferAI(true, item.anime.id)
             // Jimaku is picked per episode and never kept as the default source; the site's tracks are 자동.

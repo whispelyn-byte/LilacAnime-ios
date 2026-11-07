@@ -21,6 +21,9 @@ val PlaybackItem.subtitleEpisodeKey: String
     get() = if (Regex("^\\d+(?:\\.\\d+)?[a-z]?$", RegexOption.IGNORE_CASE).matches(displayNumber)) displayNumber else number.toString()
 
 /** A subtitle found: its file and where it came from (kairan, reanime, jimaku, …). */
+/** The sites whose Korean subtitle file is read from their pages (slow): a work known to have one there waits for it. */
+val KOREAN_SLOW_SITES = setOf("ohli24", "linkani", "linkkf")
+
 /** track: another site's track it came from (put on, it is synced to this video's audio). */
 data class Found(val file: File, val provider: String, val track: RemoteSubtitle? = null)
 
@@ -109,13 +112,16 @@ class SubtitlePreparer(private val context: Context) {
 
     /**
      * desktop app.js ensureSubtitle, step for step: the preferred source's saved file, the stream's own subtitle, any
-     * saved file, then — only now — another site's Korean track of this very episode (waited for, 16 s at most, with
-     * the blogs searched meanwhile), the blogs (Kairan / Csora / Anissia), then a source to translate.
-     * tracks: the stream's own and the other sites' tracks found so far; later: the other sites' tracks still loading.
+     * saved file, then the other site's Korean track and the blogs' (Kairan / Csora / Anissia) asked at once, then a
+     * source to translate.
+     * tracks: the stream's own and the other sites' tracks found so far. korean: the player's search for the episode
+     * (KoreanSearch), whose Korean subtitle can still come after this returns; without it (a download, the next episode)
+     * the other sites' tracks found so far and the blogs are taken in turn.
      * status: what the player says it is doing (desktop #subtitleState).
      */
     suspend fun prepare(item: PlaybackItem, tracks: List<RemoteSubtitle>, preferences: AppPreferences, prefersAI: Boolean = false, skipSaved: Boolean = false,
-                        stream: ResolvedStream? = null, later: (suspend () -> List<RemoteSubtitle>)? = null, status: (String?) -> Unit = {}): Found? {
+                        stream: ResolvedStream? = null, korean: KoreanSearch? = null, status: (String?) -> Unit = {}): Found? {
+        val later: (suspend () -> List<RemoteSubtitle>)? = korean?.let { search -> suspend { search.othersAfter() } }
         if (preferences.subtitleProvider == "manual" || DesktopSubtitlePolicy.burnedKorean(item.anime.source, stream)) return null
         val source = item.anime.source
         val saved = if (skipSaved) emptyList() else EpisodeSubtitleStore.list(item)
@@ -139,23 +145,82 @@ class SubtitlePreparer(private val context: Context) {
         local.firstOrNull()?.let { return Found(it, "download") }
         saved.firstOrNull()?.let { record -> record.file?.let { return Found(it, record.provider) } }
         val searchable = source != "local"
-        // Another site's Korean track of this very episode, before the blogs (matched only by title); the blogs are
-        // searched meanwhile all the same.
-        var found = others
-        if (later != null) {
-            if (searchable) for (provider in DesktopSubtitlePolicy.providers(preferences.subtitleProvider)) communityTask(provider, item, context(item))
-            status("다른 사이트의 한국어 자막 트랙을 찾는 중...")
-            found = (found + later()).distinctBy { it.url }
+        if (korean == null) {
+            // Another site's Korean track of this very episode, before the blogs (matched only by title).
+            for (track in others.filter(SubtitlePolicy::isKorean)) {
+                currentCoroutineContext().ensureActive()
+                runCatching { SubtitleFiles.prepare(track.url, track.headers ?: emptyMap()) }.getOrNull()?.let { files -> select(files, item)?.let { return Found(it, "reanime", track) } }
+            }
+            if (searchable) community(item, preferences)?.let { rememberKorean(item); return it }
+            return translationSource(item, tracks, preferences)
         }
-        for (track in found.filter(SubtitlePolicy::isKorean)) {
-            currentCoroutineContext().ensureActive()
-            runCatching { SubtitleFiles.prepare(track.url, track.headers ?: emptyMap()) }.getOrNull()?.let { files -> select(files, item)?.let { return Found(it, "reanime", track) } }
+        // desktop: the other site's Korean track and the blogs' are asked at once, and whatever Korean one is there after
+        // a short wait (2.5 s) goes on, the other site's first. A work whose Korean subtitle came last time from a slow
+        // site (애니24, 링크애니, Linkkf: their pages are read) waits for it 16 s. The cloud translation costs a request,
+        // so it waits until both have answered (16 s at most); the local AI and Whisper start at once. A Korean subtitle
+        // coming after this returns takes the place of the translation, the Whisper subtitle or none (the player's
+        // upgradeToLateKorean).
+        status("다른 사이트·블로그에서 한국어 자막을 찾는 중...")
+        var found = korean.wait(if (koreanSourceOf(item) in KOREAN_SLOW_SITES) 16_000 else 2_500)
+        if (found == null && !korean.settled() && !prefersAI && preferences.translationPreferences(automatic = true)?.translationProvider.let { it != null && it != "local" }) {
+            status("한국어 자막을 조금 더 찾아본 뒤 번역해요...")
+            found = korean.wait(16_000 - korean.elapsed())
         }
-        if (searchable) {
-            status("온라인 자막을 찾는 중...")
-            community(item, preferences)?.let { rememberKorean(item); return it }
+        if (found != null) { rememberKoreanSource(item, found); return found }
+        return translationSource(item, tracks, preferences, later = later)
+    }
+
+    /** The other site's Korean track and the blogs' Korean subtitle of an episode, asked at once (desktop koreanSearchFor):
+     *  what is there now (the other site's track first), whether both have answered, and a wait for it.
+     *  others: the other sites' tracks as they come; othersDone: done once they are all in. */
+    inner class KoreanSearch(private val item: PlaybackItem, private val preferences: AppPreferences,
+                             private val others: () -> List<RemoteSubtitle>, private val othersDone: Deferred<*>?) {
+        private val started = System.currentTimeMillis()
+        private var blogs: Deferred<Found?>? = null
+        private val read = mutableMapOf<String, Found?>()
+        /** The blogs are asked once the search is waited for (a saved or own subtitle needs none). */
+        private fun blogs(): Deferred<Found?> = blogs ?: scope.async {
+            if (item.anime.source == "local") null else try { community(item, preferences) } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { null }
+        }.also { blogs = it }
+        /** Waited for at least once (the blogs asked). */
+        val asked: Boolean get() = blogs != null
+        /** The other site's Korean track, one whose file could not be read passed over. */
+        private fun track() = others().firstOrNull { it.origin != null && it.origin != item.anime.source && SubtitlePolicy.isKorean(it) && !(read.containsKey(it.url) && read[it.url] == null) }
+        private fun blog(): Found? = blogs?.takeIf { it.isCompleted && !it.isCancelled }?.let { runCatching { it.getCompleted() }.getOrNull() }
+        private val othersFinished get() = othersDone == null || othersDone.isCompleted
+        fun settled() = blogs?.isCompleted == true && othersFinished
+        // The wait ends on the other site's Korean track, or the blogs' once the other sites have answered (theirs comes first).
+        private fun best() = track() != null || (blog() != null && othersFinished) || settled()
+        fun elapsed() = System.currentTimeMillis() - started
+        suspend fun wait(ms: Long): Found? {
+            blogs()
+            if (ms > 0) withTimeoutOrNull(ms) { while (!best()) delay(200) }
+            return now()
         }
-        return translationSource(item, own + found, preferences, later = later)
+        /** What is there now, as a file: the other site's Korean track (read once), else the blogs' subtitle. */
+        private suspend fun now(): Found? {
+            while (true) {
+                val track = track() ?: break
+                read[track.url]?.let { return it }
+                val file = runCatching { SubtitleFiles.prepare(track.url, track.headers ?: emptyMap()) }.getOrNull()?.let { select(it, item) }
+                read[track.url] = file?.let { Found(it, "reanime", track) }
+                read[track.url]?.let { return it }
+            }
+            return blog()
+        }
+        /** The other sites' tracks once they are all in (16 s from the start at most), for a translation's source. */
+        suspend fun othersAfter(): List<RemoteSubtitle> {
+            withTimeoutOrNull(maxOf(0L, 16_000 - elapsed())) { runCatching { othersDone?.await() } }
+            return others()
+        }
+    }
+
+    /** Which Korean source the series had last time (a site's origin, or "blog"): a slow site's file is waited for longer. */
+    private fun koreanSourceOf(item: PlaybackItem) = defaults.getString("korean-source." + item.anime.id, "").orEmpty()
+    fun rememberKoreanSource(item: PlaybackItem, found: Found) {
+        val source = found.track?.origin ?: if (found.provider in listOf("kairan", "csora", "anissia")) "blog" else return
+        defaults.edit().putString("korean-source." + item.anime.id, source).apply()
+        if (source == "blog") rememberKorean(item)
     }
 
     /** A work known to have Korean subtitles: Animenosub's and Miruro's clean video is chosen for it next time. */

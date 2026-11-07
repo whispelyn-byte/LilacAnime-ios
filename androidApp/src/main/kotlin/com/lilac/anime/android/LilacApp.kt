@@ -12,6 +12,8 @@ class LilacApp : Application() {
         super.onCreate()
         AndroidPlatform.cacheDirectory = cacheDir.absolutePath
         com.lilac.anime.android.data.SecureKeys.init(this)
+        // Miruro's API answers inside its own page (iOS MiruroTransportRegistry.transport = MiruroBrowser.shared).
+        com.lilac.anime.shared.MiruroTransportRegistry.transport = com.lilac.anime.android.player.MiruroBrowser(this)
         library = LibraryStore(this)
         navigation = Navigation(this)
     }

@@ -28,10 +28,11 @@ iOS 파일 이름을 기준으로 옮길 범위를 나눴습니다. 체크된 �
 - [x] 보관함 저장 (`LibraryStore.swift`: 내 목록 · 시청 기록 · 설정을 `library.json`으로)
 
 ### 2단계 — 재생
-- [ ] mpv 플레이어 (`MPVEngine.swift` → libmpv Android), 플레이어 화면 (`EpisodePlayerView.swift`, `PlayerSettingsPanel.swift`, `PlayerInteraction.swift`, `PlayerSeekHint.swift`)
-- [ ] 재생 주소 찾기 (`PlaybackResolver.swift`, `MiruroPlayback.swift` · `MiruroBrowser.swift` · `MiruroWebView.swift`, `OhliPlayback.swift`, `HLSProxy.swift`, `StaggeredResolver.swift`, `DesktopStreamPolicy.swift`, `DesktopFlixReadiness.swift`)
-- [ ] 이어보기 · 다음 화 자동 재생 · OP/ED 건너뛰기 (`PlaybackCompletion.swift`, `OfflineAnalyzer.swift`)
-- [ ] 백그라운드 재생 · PiP (`PlayerPictureInPicture.swift`) · 스크린샷 (`PlayerScreenshot.swift`) · 화면 켜두기 · 외부 키보드
+- [x] mpv 플레이어 (`MPVEngine.swift` → `dev.jdtech.mpv:libmpv`), 플레이어 화면 (`EpisodePlayerView.swift`의 재생 부분, `PlayerSettingsPanel.swift` 재생 탭, `PlayerInteraction.swift`, `PlayerSeekHint.swift`, `EpisodePicker.swift` 회차 패널)
+- [x] 재생 주소 찾기 (`PlaybackResolver.swift` → Android WebView + 문서 시작 스크립트, `MiruroPlayback.swift` · `MiruroBrowser.swift`, `OhliPlayback.swift`, `HLSProxy.swift` → OkHttp + 로컬 소켓, `StaggeredResolver.swift`, `DesktopStreamPolicy.swift`, `DesktopFlixReadiness.swift`)
+- [x] 이어보기 · 다음 화 자동 재생 · OP/ED 건너뛰기 (AniSkip 구간; 기기 안 오디오 분석 `OfflineAnalyzer.swift`는 5단계)
+- [x] 백그라운드 재생(미디어 포그라운드 서비스) · PiP(Android PiP) · 스크린샷(사진 > LilacAnime) · 화면 켜두기 · 외부 키보드
+- [ ] 다음 화 미리 준비, 탐색 바 미리보기, 2배속 Space 길게 누르기 — 3단계 이후
 
 ### 3단계 — 자막 · 번역
 - [ ] 자막 찾기 · 고르기 · 저장 (`EpisodeSubtitleStore.swift`, `SubtitleFiles.swift`, `SubtitleArchive.swift`, `SubtitleNames.swift`, `DesktopSubtitlePreparer.swift`, `DesktopSubtitlePolicy.swift`, `DesktopJimakuCatalog.swift`, 다른 사이트 자막 트랙)

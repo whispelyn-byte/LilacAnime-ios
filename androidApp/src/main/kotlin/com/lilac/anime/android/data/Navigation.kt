@@ -26,6 +26,9 @@ class Navigation(context: Context) {
     var showDownloads by mutableStateOf(false)
     /** The works opened from the page (iOS NavigationStack inside each page): the last one is shown. */
     val details = mutableStateListOf<DetailRoute>()
+    /** The episode open in the full-screen player (iOS PlaybackRouter). */
+    var playing by mutableStateOf<com.lilac.anime.android.player.PlaybackItem?>(null)
+    fun play(item: com.lilac.anime.android.player.PlaybackItem) { playing = item }
 
     fun go(value: String) { details.clear(); section = value }
     fun search(value: String) { query = value; listMode = "browse"; go("search") }

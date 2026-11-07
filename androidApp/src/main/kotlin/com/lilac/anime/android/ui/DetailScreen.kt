@@ -81,14 +81,13 @@ fun DetailScreen(summary: Anime, source: String) {
     val sortKey = "episodeNewestFirst:$source:${anime.id}"
     var newestFirst by remember { mutableStateOf(navigation.bool(sortKey)) }
     var page by remember { mutableIntStateOf(0) }
-    val playback = rememberPlayback()
     val savedID = "$source:${anime.id}"
 
     fun episodeName(episode: Episode) = episode.displayNumber.ifEmpty { episode.number.toString() }
-    fun entryFor(episodes: List<Episode>, episode: Episode): WatchEntry {
+    /** The episode with the ones after and before it, to step through in the player (iOS DetailView.playback). */
+    fun play(episodes: List<Episode>, episode: Episode) {
         val saved = SavedAnime.of(AnimeSnapshot.withEpisodes(anime, episodes), source)
-        return WatchEntry(saved.id + "#" + episode.id, saved, episode.id, episode.title.ifEmpty { episodeName(episode) + "화" }, episode.number,
-            episode.videoUrl ?: anime.detailUrl, null, library.resume(saved, episode.id), 0.0, System.currentTimeMillis(), displayNumber = episode.displayNumber)
+        navigation.play(com.lilac.anime.android.player.PlaybackItem.inSeries(saved, episodes, episodes.indexOf(episode).coerceAtLeast(0)))
     }
     /** Detail 재생 (app.js resumeEpisode): the last played episode, resumed below 95%; without one, the first playable. */
     val resume: Triple<EpisodeServer, Int, Boolean>? = run {
@@ -141,7 +140,7 @@ fun DetailScreen(summary: Anime, source: String) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         resume?.let { (s, index, again) ->
                             LilacPrimaryButton(episodeName(s.episodes[index]) + "화 " + (if (again) "이어보기" else "재생"), icon = Icons.Filled.PlayArrow) {
-                                playback(entryFor(s.episodes, s.episodes[index]))
+                                play(s.episodes, s.episodes[index])
                             }
                         }
                         val saved = library.contains(anime, source)
@@ -213,7 +212,7 @@ fun DetailScreen(summary: Anime, source: String) {
                     Row(
                         Modifier.padding(horizontal = gutter).offset(y = if (wide) (-200).dp else (-130).dp).padding(bottom = 8.dp).fillMaxWidth()
                             .background(LilacStyle.card2, RoundedCornerShape(LilacStyle.radius)).border(1.dp, LilacStyle.line, RoundedCornerShape(LilacStyle.radius))
-                            .clip(RoundedCornerShape(LilacStyle.radius)).clickable(enabled = episode.playable) { playback(entryFor(server.episodes, episode)) }
+                            .clip(RoundedCornerShape(LilacStyle.radius)).clickable(enabled = episode.playable) { play(server.episodes, episode) }
                             .graphicsLayer { alpha = if (episode.playable) 1f else 0.5f }.padding(vertical = 12.dp).padding(start = 8.dp, end = 8.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
                     ) {

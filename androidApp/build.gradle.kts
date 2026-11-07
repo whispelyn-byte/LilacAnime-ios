@@ -15,7 +15,11 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = file("../iosApp/version.txt").readText().trim()
+        // Phones and tablets (arm) and the emulator (x86_64).
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }
+    // The iOS app's page scripts (flix-*.js, ohli-capture.js) and shaders, shared as assets.
+    sourceSets["main"].assets.srcDirs("src/main/assets", "../iosApp/LilacAnime/Resources")
     buildTypes {
         release { isMinifyEnabled = false }
     }
@@ -41,5 +45,10 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
     implementation("io.coil-kt.coil3:coil-compose:3.3.0")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.3.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("androidx.webkit:webkit:1.12.1")
+    implementation("androidx.core:core-ktx:1.16.0")
+    // mpv for Android (the iOS app plays with mpv too).
+    implementation("dev.jdtech.mpv:libmpv:1.0.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

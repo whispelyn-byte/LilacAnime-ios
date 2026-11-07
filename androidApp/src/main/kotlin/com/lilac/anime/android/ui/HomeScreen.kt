@@ -86,11 +86,11 @@ object HomeSpotlight {
     }
 }
 
-/** Opens an episode in the player; the player is ported in stage 2 (docs/android-port.md). */
+/** Opens a watched episode in the player (iOS PlaybackButton with PlaybackItem(entry:)). */
 @Composable
 fun rememberPlayback(): (WatchEntry) -> Unit {
-    val context = LocalContext.current
-    return remember { { _: WatchEntry -> Toast.makeText(context, "플레이어는 다음 단계에서 옮겨집니다.", Toast.LENGTH_SHORT).show() } }
+    val navigation = LocalApp.current.navigation
+    return remember { { entry: WatchEntry -> navigation.play(com.lilac.anime.android.player.PlaybackItem.of(entry)) } }
 }
 
 /** The desktop home (ott.css #homeView), as iOS HomeView: the spotlight across the top, then rows of posters. */

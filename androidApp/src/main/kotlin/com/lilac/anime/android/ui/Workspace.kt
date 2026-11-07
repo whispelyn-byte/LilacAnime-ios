@@ -43,6 +43,7 @@ fun Workspace() {
     BackHandler(enabled = navigation.details.isNotEmpty() || navigation.section != "home") {
         if (!navigation.back()) navigation.go("home")
     }
+    Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().background(LilacStyle.background).windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
         WorkspaceHeader()
         Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))) {
@@ -67,6 +68,13 @@ fun Workspace() {
                 }
             }
         }
+    }
+    // The player covers everything (iOS fullScreenCover), the page kept under it; a new episode starts it again.
+    navigation.playing?.let { item ->
+        key(item.anime.id + "#" + item.episodeID) {
+            com.lilac.anime.android.player.PlayerScreen(item) { navigation.playing = null }
+        }
+    }
     }
 }
 

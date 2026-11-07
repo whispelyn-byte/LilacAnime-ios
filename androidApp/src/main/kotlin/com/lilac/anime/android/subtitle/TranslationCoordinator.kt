@@ -9,6 +9,7 @@ import com.lilac.anime.android.data.SavedAnime
 import com.lilac.anime.android.data.SecureKeys
 import com.lilac.anime.android.data.await
 import com.lilac.anime.android.player.PlaybackFailure
+import com.lilac.anime.android.localai.*
 import com.lilac.anime.shared.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
@@ -34,7 +35,7 @@ class TranslationCoordinator {
     private val workingFiles = mutableSetOf<File>()
     private val json = Json
 
-    fun translate(file: File, preferences: AppPreferences, position: () -> Double, seekRevision: () -> Long, anime: SavedAnime?, fresh: Boolean = false, completion: (File) -> Unit) {
+    fun translate(file: File, preferences: AppPreferences, position: () -> Double, seekRevision: () -> Long, anime: SavedAnime?, fresh: Boolean = false, localOnly: Boolean = false, completion: (File) -> Unit) {
         cancel(); if (fresh) service.clearTranslationCache()
         running = true; error = null; status = null; progress = 0.0
         val token = ++generation
@@ -57,6 +58,10 @@ class TranslationCoordinator {
                     put("models", JSONObject(preferences.translationModels.toSortedMap() as Map<*, *>)); put("cloudFallback", preferences.cloudFallback)
                     put("credentials", JSONArray((listOf("gemini", "openai", "qwen", "deepl") + if (SecureKeys.load("claude").isEmpty()) emptyList() else listOf("claude")).map { SubtitleFiles.key(SecureKeys.load(it)) }))
                     put("region", preferences.qwenRegion); put("glossary", preferences.translationGlossary); put("fallback", preferences.translationFallback)
+                    put("localOnly", localOnly); put("local", preferences.selectedGGUF); put("context", preferences.contextSize); put("maxTokens", preferences.maxTokens)
+                    put("temperature", preferences.temperature); put("topP", preferences.topP); put("topK", preferences.topK); put("repetition", preferences.repetitionPenalty)
+                    put("before", preferences.contextCues); put("after", preferences.prefetchAhead); put("modelSampling", preferences.modelSampling); put("thinking", preferences.thinking)
+                    put("prompt", preferences.prompt); put("localInput", "input-1:" + preferences.selectedLocalInput.toString())
                     if (dropCaptions) put("dropCaptions", "drop-captions-1")
                     if (preferences.rulesExtra.isNotEmpty() || preferences.rulesCustom.isNotEmpty()) put("rules", JSONArray(listOf(preferences.rulesExtra, preferences.rulesCustom)))
                 }
@@ -100,9 +105,59 @@ class TranslationCoordinator {
                     }
                     add(AnimeGlossary.hints(lines.joinToString("\n"), emptyList(), preferences.translationGlossary))
                 }.filter { it.isNotBlank() }.joinToString("\n")
+                // The local model's state (iOS: localKind, localLines, attemptedLocal).
+                var localKind: String? = null
+                var localLines = emptyList<String>()
+                var languageInput = false
+                val attemptedLocal = mutableSetOf<String>()
+                var localFailure: Throwable? = null
+                val input = preferences.selectedLocalInput
                 while (lines.any { kept[it] == null }) {
                     ensureActive()
                     try {
+                        if (provider == "local") {
+                            LocalInput.validate(input)
+                            if (preferences.selectedGGUF.isEmpty()) throw PlaybackFailure("설정에서 GGUF 모델을 선택하세요.")
+                            if (localKind == null) {
+                                val seen = mutableSetOf<String>()
+                                localLines = lines.filter { kept[it] == null && seen.add(it) }
+                                val template = LocalInference.chatTemplate(preferences)
+                                languageInput = LocalInput.usesTranslationInput(input, template)
+                                localKind = if (input.inputMode == "chat") "chat" else DesktopTranslationPrompt.kind(preferences.selectedGGUF, template)
+                            }
+                            val attempted = kept + attemptedLocal.filter { it !in kept }.associateWith { "" }
+                            val first = priority(cues, lines, attempted, position(), 1).firstOrNull()
+                                ?: throw (localFailure ?: PlaybackFailure("로컬 모델이 일부 자막을 번역하지 못했습니다."))
+                            val source = lines[first]
+                            val at = localLines.indexOf(source).coerceAtLeast(0)
+                            val before = if (!preferences.modelSampling) lines.subList(maxOf(0, first - preferences.contextCues), first).joinToString("\n")
+                                else localLines.subList(maxOf(0, at - 2), at).joinToString("\n")
+                            val after = lines.drop(first + 1).take(preferences.prefetchAhead).joinToString("\n")
+                            val terms = AnimeGlossary.hints(source, emptyList(), preferences.translationGlossary)
+                            val plain = LocalTranslationPrompt.build(preferences.selectedGGUF, preferences.prompt, source, before, after, preferences.thinking) +
+                                (if (terms.isEmpty()) "" else "\n표기 기준:\n" + terms)
+                            val desktop = DesktopTranslationPrompt.request(localKind ?: "chat", source, before, AnimeGlossary.localTerms(source, emptyList(), preferences.translationGlossary),
+                                AnimeGlossary.localCast(emptyList()), preferences.rulesExtra, preferences.rulesCustom)
+                            val useDesktop = preferences.modelSampling || languageInput || input.customPrompt.isNotEmpty() || input.inputMode == "chat"
+                            val prompt = when { languageInput -> source; input.customPrompt.isNotEmpty() -> LocalInput.prompt(input, source); useDesktop -> desktop.prompt; else -> plain }
+                            var settings = preferences
+                            if (useDesktop) settings = settings.copy(temperature = desktop.temperature, topP = desktop.topP, topK = desktop.topK, repetitionPenalty = desktop.repetition,
+                                maxTokens = DesktopTranslationPrompt.maxTokens(source), thinking = "off")
+                            if (languageInput) settings = settings.copy(temperature = 0.0) else if (input.customPrompt.isNotEmpty()) settings = settings.copy(temperature = 0.3)
+                            attemptedLocal += source
+                            try {
+                                var cleaned = ""
+                                for (attempt in 0 until if (useDesktop) 3 else 1) {
+                                    if (attempt > 0 && localKind == "jako" && !languageInput) settings = settings.copy(temperature = 0.5)
+                                    val response = LocalInference.generate(prompt, settings, if (languageInput) LocalInput.language(input, source) else null)
+                                    cleaned = if (useDesktop) DesktopTranslationPrompt.clean(response, source) else LocalTranslationPrompt.clean(response)
+                                    if (languageInput && !LocalInput.acceptsTranslation(cleaned)) cleaned = ""
+                                    if (!DesktopTranslationPrompt.needsRetry(cleaned)) break
+                                }
+                                if (cleaned.isNotEmpty()) kept[source] = cleaned else localFailure = PlaybackFailure("로컬 모델이 빈 번역을 반환했습니다.")
+                            } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { localFailure = failure }
+                            publish(); continue
+                        }
                         val config = TranslationConfig(provider, SecureKeys.load(provider),
                             preferences.translationModels[provider] ?: if (provider == preferences.translationProvider) preferences.translationModel else "",
                             preferences.qwenRegion, context, preferences.rulesExtra, preferences.rulesCustom)
@@ -110,8 +165,15 @@ class TranslationCoordinator {
                         publish()
                     } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) {
                         val next = listOf("gemini", "openai", "deepl", "qwen", "claude").firstOrNull { it !in tried && SecureKeys.load(it).isNotEmpty() }
-                        if (preferences.cloudFallback && next != null) {
+                        val localReady = preferences.selectedGGUF.isNotEmpty() && LocalAI.available && File(LocalModelFiles.directory, preferences.selectedGGUF).isFile
+                        if (provider != "local" && preferences.cloudFallback && next != null) {
                             status = "$provider 번역 실패 · ${next}로 이어서 번역합니다."
+                            provider = next; tried += next
+                        } else if (provider != "local" && "local" !in tried && preferences.translationFallback && localReady) {
+                            status = "$provider 번역을 계속할 수 없어 로컬 AI로 이어서 번역합니다."
+                            provider = "local"; tried += "local"
+                        } else if (provider == "local" && !localOnly && preferences.translationFallback && next != null) {
+                            status = "로컬 AI 번역 실패 · ${next}로 이어서 번역합니다."
                             provider = next; tried += next
                         } else { terminal = failure; break }
                     }
@@ -210,6 +272,6 @@ class TranslationCoordinator {
         return candidates.sortedWith(compareBy({ score(it) }, { it })).take(limit)
     }
 
-    fun cancel() { if (running) service.cancel(); generation++; job?.cancel(); job = null; running = false }
+    fun cancel() { if (running) { service.cancel(); LocalInference.cancel() }; generation++; job?.cancel(); job = null; running = false }
     fun shutdown() { cancel(); workingFiles.forEach { it.delete() }; workingFiles.clear(); scope.cancel(); service.close() }
 }

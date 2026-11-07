@@ -1,0 +1,33 @@
+cmake_minimum_required(VERSION 3.22.1)
+project(lilac_local_ai CXX C)
+
+# The same llama.cpp release the iOS app is built with (iosApp/scripts/build-native.sh): b11490.
+# CI clones it into androidApp/build/llama.cpp first; a local build fetches it here.
+set(LLAMA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../build/llama.cpp")
+set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_COMMON OFF CACHE BOOL "" FORCE)
+set(LLAMA_CURL OFF CACHE BOOL "" FORCE)
+set(LLAMA_OPENSSL OFF CACHE BOOL "" FORCE)
+set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
+set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
+set(GGML_BACKEND_DL OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+if (EXISTS "${LLAMA_DIR}/CMakeLists.txt")
+    add_subdirectory("${LLAMA_DIR}" "${CMAKE_BINARY_DIR}/llama")
+else()
+    include(FetchContent)
+    FetchContent_Declare(llama GIT_REPOSITORY https://github.com/ggml-org/llama.cpp.git GIT_TAG b11490 GIT_SHALLOW TRUE)
+    FetchContent_MakeAvailable(llama)
+endif()
+
+# iOS's own wrapper (iosApp/Native/Sources/LilacLocalAI): the model, chat templates (Jinja) and generation.
+set(NATIVE "${CMAKE_CURRENT_SOURCE_DIR}/../../../../iosApp/Native/Sources/LilacLocalAI")
+file(GLOB JINJA_SOURCES "${NATIVE}/Jinja/*.cpp")
+add_library(lilac_local_ai SHARED lilac_jni.cpp "${NATIVE}/LocalAI.cpp" ${JINJA_SOURCES})
+set_target_properties(lilac_local_ai PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+target_include_directories(lilac_local_ai PRIVATE "${NATIVE}/include" "${NATIVE}" "${CMAKE_CURRENT_SOURCE_DIR}/shim")
+target_compile_options(lilac_local_ai PRIVATE -O3)
+target_link_libraries(lilac_local_ai PRIVATE llama android log)

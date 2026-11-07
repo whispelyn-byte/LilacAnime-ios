@@ -95,7 +95,7 @@ fun SettingSlider(value: Double, range: ClosedFloatingPointRange<Float>, step: F
 fun SettingsScreen() {
     val app = LocalApp.current
     val library = app.library
-    val categories = listOf("general" to "일반", "playback" to "재생", "subtitle" to "자막", "titles" to "한국어 제목 검색", "translate" to "자막 자동 번역", "storage" to "저장 자막·캐시")
+    val categories = listOf("general" to "일반", "playback" to "재생", "subtitle" to "자막", "titles" to "한국어 제목 검색", "translate" to "자막 자동 번역", "local" to "로컬 AI 모델", "storage" to "저장 자막·캐시")
     var category by rememberSaveable { mutableStateOf("general") }
     val gutter = LilacStyle.gutter
     @Composable fun page() {
@@ -107,6 +107,7 @@ fun SettingsScreen() {
                 "titles" -> TitleSettings()
                 "translate" -> TranslateSettings()
                 "storage" -> StorageSettings()
+                "local" -> LocalModelSettings()
                 else -> GeneralSettings()
             }
             library.persistenceError?.let { SettingNote(it, Color.Red) }
@@ -314,20 +315,21 @@ private fun TranslateSettings() {
         }
     }
     PageTitle("자막 자동 번역", "Re:Anime·Miruro 자막 트랙과 Jimaku 일본어 자막을 한국어로 번역합니다. 플레이어 설정의 번역 버튼으로 번역하고, 번역한 자막은 저장되어 다시 볼 때 바로 적용됩니다. 한쪽을 쓸 수 없으면 키를 등록한 다른 쪽이 이어서 번역합니다.")
-    SettingBlock("번역 엔진", "Gemini · OpenAI · Qwen · Claude는 작품 정보와 이름 표기를 함께 보내 대사 흐름에 맞게 번역하고, DeepL은 줄마다 그대로 번역합니다. 로컬 AI와 Whisper는 다음 단계에서 옮겨집니다.") {
-        SettingChoices(listOf("gemini", "openai", "deepl", "qwen", "claude").map { it to SubtitleLabels.engine(it) }, provider) { v ->
+    SettingBlock("번역 엔진", "Gemini · OpenAI · Qwen · Claude는 작품 정보와 이름 표기를 함께 보내 대사 흐름에 맞게 번역하고, DeepL은 줄마다 그대로 번역합니다. 로컬 AI는 인터넷 없이 이 기기에서 번역합니다 (설정 > 로컬 AI 모델).") {
+        SettingChoices(listOf("gemini", "openai", "deepl", "qwen", "claude", "local").map { it to SubtitleLabels.engine(it) }, provider) { v ->
             library.update { it.copy(translationModels = it.translationModels + (it.translationProvider to it.translationModel), translationProvider = v, translationModel = it.translationModels[v] ?: "") }
         }
     }
+    if (provider == "local") SettingNote("로컬 AI는 설정 > 로컬 AI 모델에서 모델을 받거나 고릅니다.")
     if (provider == "qwen") SettingBlock("Qwen 지역", "API 키를 만든 지역을 고르세요. 키는 그 지역에서만 쓸 수 있습니다.") {
         SettingChoices(listOf("international" to "국제 (싱가포르)", "china" to "중국 (베이징)"), region) { region = it }
     }
-    SettingBlock((if (provider == "claude") "Anthropic" else SubtitleLabels.engine(provider)) + " API 키",
+    if (provider != "local") SettingBlock((if (provider == "claude") "Anthropic" else SubtitleLabels.engine(provider)) + " API 키",
         status ?: if (provider == "claude") "console.anthropic.com에서 발급한 Anthropic API 키를 넣어 주세요. Claude 구독과 별개로 API 크레딧 충전이 필요합니다." else null) {
         SettingField(apiKey, { apiKey = it }, SubtitleLabels.engine(provider) + " API 키", secret = true)
         LilacOutlineButton(if (testing) "확인하는 중…" else "저장", enabled = !testing) { fetch(true) }
     }
-    if (provider != "deepl") SettingBlock(SubtitleLabels.engine(provider) + " 모델", if (provider == "claude") "키를 저장하면 그 키로 쓸 수 있는 모델을 불러와 Claude Opus 5.5(claude-opus-5-5)를 고릅니다. Haiku는 훨씬 싸고 빠르며, Opus는 번역이 가장 자연스럽습니다." else "키를 저장하면 쓸 수 있는 모델을 불러와 알맞은 모델을 고릅니다. 비워 두면 기본 모델을 씁니다.") {
+    if (provider != "deepl" && provider != "local") SettingBlock(SubtitleLabels.engine(provider) + " 모델", if (provider == "claude") "키를 저장하면 그 키로 쓸 수 있는 모델을 불러와 Claude Opus 5.5(claude-opus-5-5)를 고릅니다. Haiku는 훨씬 싸고 빠르며, Opus는 번역이 가장 자연스럽습니다." else "키를 저장하면 쓸 수 있는 모델을 불러와 알맞은 모델을 고릅니다. 비워 두면 기본 모델을 씁니다.") {
         if (models.isNotEmpty()) SettingChoices(listOf("" to "자동") + models.map { it to it }, prefs.translationModel) { v -> library.update { it.copy(translationModel = v, translationModels = it.translationModels + (provider to v)) } }
         else SettingField(prefs.translationModel, { v -> library.update { it.copy(translationModel = v, translationModels = it.translationModels + (provider to v)) } }, "모델 ID (빈칸: 기본값)")
         LilacOutlineButton(if (testing) "불러오는 중…" else "연결 테스트 · 모델 목록", enabled = !testing && apiKey.isNotBlank()) { fetch(false) }
@@ -335,6 +337,7 @@ private fun TranslateSettings() {
     SettingSwitch("자막 자동 번역", "한국어 자막이 없으면 그 회차의 Jimaku 일본어 자막을, 없으면 영상 사이트의 일본어 트랙을, 그것도 없으면 영어 트랙을 알아서 번역해 띄웁니다. 보고 있는 장면부터 번역합니다.", prefs.autoTranslation) { on -> library.update { it.copy(autoTranslation = on) } }
     SettingSwitch("효과음·화자 이름 빼고 번역", "（ため息）·[laughs] 같은 효과음 설명, 웃음소리만 있는 줄은 지우고, 줄 앞의 화자 이름을 떼고 번역합니다.", prefs.dropCaptions) { on -> library.update { it.copy(dropCaptions = on) } }
     SettingSwitch("실패하면 다른 번역 API로", "키를 등록한 다른 번역 API로 이어서 번역합니다.", prefs.cloudFallback) { on -> library.update { it.copy(cloudFallback = on) } }
+    SettingSwitch("번역 API가 안 되면 로컬 AI로", "사용량을 다 썼거나 연결이 끊기면 로컬 AI가 이어서 번역합니다.", prefs.translationFallback) { on -> library.update { it.copy(translationFallback = on) } }
     SettingBlock("번역 프롬프트", "추가 지시사항은 앱의 기본 규칙 뒤에 붙고(겹치면 이쪽이 먼저), 고급: 번역 규칙 전체 교체는 기본 규칙 대신 쓰입니다. 작품 정보 · 이름 · 용어집 · 앞 대사와 답변 형식은 어느 쪽이든 앱이 넣어 줍니다. DeepL에는 적용되지 않습니다.") {
         Text("추가 지시사항", fontSize = 12.sp, color = LilacStyle.muted)
         SettingField(prefs.promptExtra, { v -> library.update { it.copy(promptExtra = v.take(4000)) } }, "예: 존댓말과 반말을 원문 그대로 지켜 주세요.", lines = 3)

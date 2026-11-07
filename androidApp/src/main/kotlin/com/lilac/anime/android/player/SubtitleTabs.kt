@@ -111,8 +111,11 @@ fun SubtitleTab(model: PlayerModel, openFile: () -> Unit) {
     Text(state, color = Color.White.copy(alpha = 0.66f), fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
     if (subtitles.translatable) {
         val again = subtitles.retranslatable
-        subtitles.cloudProvider()?.let { cloud ->
-            ButtonRow { TabButton(SubtitleLabels.engine(cloud) + if (again) "로 다시 번역" else "로 한국어 번역", Modifier.weight(1f), !translation.running) { subtitles.translate(again, cloud) } }
+        ButtonRow {
+            subtitles.cloudProvider()?.let { cloud ->
+                TabButton(SubtitleLabels.engine(cloud) + if (again) "로 다시 번역" else "로 한국어 번역", Modifier.weight(1f), !translation.running) { subtitles.translate(again, cloud) }
+            }
+            TabButton(if (again) "로컬 AI로 다시 번역" else "로컬 AI로 번역", Modifier.weight(1f), !translation.running) { subtitles.translate(again, "local") }
         }
         translation.status?.let { TabNote(it) }
         if (translation.running) {
@@ -151,7 +154,8 @@ fun SubtitleTab(model: PlayerModel, openFile: () -> Unit) {
             val tracks = subtitles.siteTracks
             PSBox(subtitles.trackSourceLabel + " 자막 트랙", "${tracks.size}개 트랙", "사이트의 언어별 자막 · 한국어가 없으면 골라서 번역") {
                 siteTrackOrder(tracks).forEach { track ->
-                    Option(trackName(track), trackDetail(track), subtitles.selectedTrackURL == track.url) { subtitles.chooseTrack(track) }
+                    Option(trackName(track), if (track.origin != null) listOf(subtitles.originLabel(track), trackDetail(track)).filter { it.isNotEmpty() }.joinToString(" · ") else trackDetail(track),
+                        subtitles.selectedTrackURL == track.url) { subtitles.chooseTrack(track) }
                 }
             }
         }
@@ -178,7 +182,9 @@ fun SubtitleTab(model: PlayerModel, openFile: () -> Unit) {
         TabGroup("영상에 들어 있는 자막")
         embedded.forEach { track -> Option(track.title, "", track.selected) { model.engine.selectTrack(track) } }
     }
-    TabNote("Whisper 음성 자막과 음성에 맞춘 싱크 맞추기는 로컬 AI와 함께 옮겨집니다.", Color.White.copy(alpha = 0.6f))
+    val library = LocalApp.current.library
+    TabSwitch("다른 사이트 자막 트랙도 찾기", library.preferences.otherSiteTracks, small = true) { on -> library.update { it.copy(otherSiteTracks = on) } }
+    TabNote("Whisper 음성 자막과 음성에 맞춘 싱크 맞추기는 다음 단계에서 옮겨집니다.", Color.White.copy(alpha = 0.6f))
     subtitles.error?.let { Text(it, color = Color.Red, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp)) }
 }
 

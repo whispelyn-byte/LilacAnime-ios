@@ -564,6 +564,9 @@ private fun PlayerSettingsPanel(model: PlayerModel, close: () -> Unit, openWeb: 
                         ChoiceGrid(PlayerFit.entries.map { it.key to it.title }, PlayerPresentation(PlayerAspect.of(prefs.playerAspect), PlayerFit.of(prefs.playerFit)).effectiveFit.key) { value ->
                             library.update { it.copy(playerFit = value, playerAspect = if (value == "stretch") "fill" else "original") }
                         }
+                        Group("Anime4K 영상 보정")
+                        ChoiceGrid(Anime4KMode.entries.map { it.key to it.title }, prefs.anime4k) { value -> library.update { it.copy(anime4k = value) } }
+                        model.engine.anime4kError?.let { Note(it, Color(0xFFFFA500)) }
                         Group("자동 재생 · 건너뛰기")
                         Switch("다음 화 자동재생", prefs.autoPlay) { on -> library.update { it.copy(autoPlay = on) } }
                         Switch("오프닝·엔딩 건너뛰기 버튼", prefs.showSkipButton) { on -> library.update { it.copy(showSkipButton = on) } }

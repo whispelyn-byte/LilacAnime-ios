@@ -7,13 +7,13 @@ on:
   workflow_dispatch:
   push:
     branches: ['main', 'android-port']
-    paths: ['androidApp/**', 'shared/**', '*gradle*', 'gradle/**', '.github/workflows/android.yml']
+    paths: ['androidApp/**', 'shared/**', 'iosApp/Native/**', 'iosApp/LilacAnime/Resources/**', '*gradle*', 'gradle/**', '.github/workflows/android.yml']
   pull_request:
-    paths: ['androidApp/**', 'shared/**', '*gradle*', 'gradle/**', '.github/workflows/android.yml']
+    paths: ['androidApp/**', 'shared/**', 'iosApp/Native/**', 'iosApp/LilacAnime/Resources/**', '*gradle*', 'gradle/**', '.github/workflows/android.yml']
 jobs:
   apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -21,6 +21,10 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
+      - name: Get llama.cpp b11490 (as iosApp/scripts/build-native.sh)
+        run: |
+          git clone --depth 1 --branch b11490 https://github.com/ggml-org/llama.cpp.git androidApp/build/llama.cpp
+          test "$(git -C androidApp/build/llama.cpp rev-parse HEAD)" = 9c2e0e491a822adae1f0b1c831adb4160057d24f
       - name: Build debug APK
         run: sh ./gradlew --no-daemon -PincludeAndroid=true :androidApp:assembleDebug
       - name: Name the APK

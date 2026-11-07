@@ -96,20 +96,53 @@ data class AppPreferences(
     val promptExtra: String = "",
     val promptRules: String = "",
     val selectedGGUF: String = "",
+    val anime4k: String = "off",
+    val otherSiteTracks: Boolean = true,
+    val localGPU: Boolean = true,
+    val contextSize: Int = 4096,
+    val threads: Int = 0,
+    val maxTokens: Int = 512,
+    val temperature: Double = 0.25,
+    val topP: Double = 0.85,
+    val topK: Int = 40,
+    val repetitionPenalty: Double = 1.05,
+    val contextCues: Int = 6,
+    val prefetchAhead: Int = 10,
+    val thinking: String = "off",
+    val modelSampling: Boolean = true,
+    val prompt: String = "이전 맥락
+{context}
+이후 맥락
+{future_context}
+
+{source_text}",
+    val localModelInputs: Map<String, LocalModelInputOptions> = emptyMap(),
 ) {
-    /** Desktop uses the configured API first (the chosen one first), then the installed local model (stage 5). */
-    fun translationPreferences(automatic: Boolean = false, hasKey: (String) -> Boolean = { SecureKeys.load(it).isNotEmpty() }): AppPreferences? {
+    /** Desktop automatically uses a configured API, then the installed local model (iOS translationPreferences). */
+    fun translationPreferences(automatic: Boolean = false, localOnly: Boolean = false, hasKey: (String) -> Boolean = { SecureKeys.load(it).isNotEmpty() }): AppPreferences? {
         if (automatic && !autoTranslation) return null
         val clouds = listOf("gemini", "openai", "deepl", "qwen", "claude")
         val wanted = translationProvider
+        val files = runCatching { com.lilac.anime.android.localai.LocalModelFiles.files() }.getOrDefault(emptyList())
+        val installedFile = files.firstOrNull { it.name == selectedGGUF } ?: files.firstOrNull { it.name == "gemma-4-E4B_q4_0-it.gguf" } ?: files.firstOrNull()
+        val local = if (installedFile != null && com.lilac.anime.android.localai.LocalAI.available) copy(selectedGGUF = installedFile.name) else null
+        if (localOnly) return if (wanted == "local") local else null
+        if (wanted == "local" && local != null) return local
         val preferred = if (wanted in clouds) listOf(wanted) + clouds.filter { it != wanted } else clouds
-        val provider = preferred.firstOrNull(hasKey) ?: return null
-        return copy(translationProvider = provider, translationModel = translationModels[provider] ?: if (wanted == provider) translationModel else "")
+        preferred.firstOrNull(hasKey)?.let { provider ->
+            return copy(translationProvider = provider, translationModel = translationModels[provider] ?: if (wanted == provider) translationModel else "")
+        }
+        return local?.copy(translationProvider = "local")
     }
     /** 번역 프롬프트: the user's rules after the app's (extra) or in their place (custom), 4000 characters each. */
     val rulesExtra: String get() = promptExtra.trim().take(4000)
     val rulesCustom: String get() = promptRules.trim().take(4000)
 }
+
+/** How a local model is asked (iOS LocalModelInputOptions): 자동, 일반 지시문 or 번역 전용 input, the source language, and a
+ *  prompt of the user's own with {text}. */
+@Serializable
+data class LocalModelInputOptions(val inputMode: String = "auto", val sourceLanguage: String = "auto", val customPrompt: String = "")
 
 /** The subtitle put on an episode by hand, and its timing (iOS SubtitleChoice). */
 @Serializable

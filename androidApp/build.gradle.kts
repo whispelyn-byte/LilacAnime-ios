@@ -15,9 +15,14 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = file("../iosApp/version.txt").readText().trim()
-        // Phones and tablets (arm) and the emulator (x86_64).
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+        // Phones and tablets (arm64) and the emulator (x86_64).
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+        // llama.cpp is built optimized in every variant: a debug build runs a model many times slower.
+        externalNativeBuild { cmake { arguments += listOf("-DCMAKE_BUILD_TYPE=Release", "-DANDROID_STL=c++_shared"); cppFlags += "-std=c++17" } }
     }
+    // 로컬 AI: llama.cpp b11490 with the iOS app's wrapper (iosApp/Native/Sources/LilacLocalAI), see src/main/cpp.
+    externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt") } }
+    packaging { jniLibs.pickFirsts += "**/libc++_shared.so" }
     // The iOS app's page scripts (flix-*.js, ohli-capture.js) and shaders, shared as assets.
     sourceSets["main"].assets.srcDirs("src/main/assets", "../iosApp/LilacAnime/Resources")
     buildTypes {

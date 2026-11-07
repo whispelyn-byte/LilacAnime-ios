@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.lilac.anime.android.data.LibraryStore
 import com.lilac.anime.android.data.SecureKeys
+import com.lilac.anime.android.data.await
 import com.lilac.anime.android.player.MpvEngine
 import com.lilac.anime.android.player.PlaybackItem
 import com.lilac.anime.android.player.RemoteSubtitle
@@ -62,6 +63,35 @@ class PlayerSubtitles(
     private var offerJob: Job? = null
     private var classification: Job? = null
     private var offered: Found? = null
+    private val crossService = IosServices()
+    /** The same episode's tracks on the other sites (RE:Anime, Miruro), asked once as it opens (iOS CrossSiteTracks). */
+    var otherTracks by mutableStateOf(emptyList<RemoteSubtitle>()); private set
+    private var otherJob: Deferred<List<RemoteSubtitle>>? = null
+    private fun loadOther() {
+        val item = item()
+        otherTracks = emptyList(); otherJob?.cancel(); otherJob = null
+        val special = item.displayNumber.toIntOrNull() == null
+        if (!library.preferences.otherSiteTracks || item.anime.source == "local" || special || item.number <= 0 || item.directURL != null) return
+        val at = token()
+        otherJob = scope.async {
+            val found = crossService.await<List<CrossSiteTrack>> { crossSiteTracks(item.anime.anime, item.anime.source, item.number, false, false, it) }.getOrDefault(emptyList())
+                .map { RemoteSubtitle(it.label, it.url, it.language, it.headers.ifEmpty { null }, it.origin) }
+            if (at == token()) otherTracks = found
+            found
+        }
+    }
+    private val trackSites = setOf("reanime", "miruro", "animenosub")
+    private val koreanSites = setOf("ohli24", "linkani", "linkkf")
+    /** iOS CrossSiteTrackPolicy.merged: the site's own tracks, then the other sites' — all when the site has none, only a
+     *  Korean one beside the site's own, the Korean sites' files always. */
+    private fun merged(own: List<RemoteSubtitle>, other: List<RemoteSubtitle>): List<RemoteSubtitle> {
+        val mine = own.filter { it.origin == null }
+        val others = (own.filter { it.origin != null } + other).filter { t -> mine.none { it.url == t.url } }.distinctBy { it.url }
+        if (mine.any(SubtitlePolicy::isKorean)) return mine + others.filter { it.origin in koreanSites }
+        return if (mine.isEmpty()) others else mine + others.filter(SubtitlePolicy::isKorean)
+    }
+    fun originLabel(track: RemoteSubtitle) = mapOf("reanime" to "Re:Anime", "miruro" to "Miruro", "animenosub" to "Animenosub", "ohli24" to "애니24",
+        "linkani" to "링크애니", "linkkf" to "Linkkf")[track.origin ?: item().anime.source] ?: "Re:Anime"
 
     /** As an episode opens: its timing, and the subtitle put on it by hand when 자막 소스 is 직접 선택. */
     fun begin() {
@@ -77,6 +107,7 @@ class PlayerSubtitles(
             }
         }
         scope.launch { EpisodeSubtitleStore.load() }
+        loadOther()
     }
     /** Another episode: everything of the last one let go. */
     fun reset() {
@@ -84,7 +115,7 @@ class PlayerSubtitles(
         translation.cancel(); preparer.cancel(); engine.clearSubtitle()
         subtitle = null; sourceSubtitle = null; selectedProvider = ""; selectedTrackURL = null; selectedMaker = null; selectedJimakuURL = null
         subtitleState = null; makers = emptyList(); searching = false; searchError = null; pressedSource = null; pressedFor = null; pickedSheet = null; sheetPicked = false
-        koreanFound = false; error = null
+        koreanFound = false; error = null; otherJob?.cancel(); otherJob = null; otherTracks = emptyList()
     }
 
     suspend fun isKorean(file: File): Boolean = koreanFiles[file.path] ?: SubtitleFiles.isKorean(file).also { koreanFiles[file.path] = it }
@@ -100,7 +131,9 @@ class PlayerSubtitles(
         automaticJob?.cancel()
         automaticJob = scope.launch {
             try {
-                val found = preparer.prepare(opening, stream.subtitles, library.preferences, library.aiSubtitleSeries[opening.anime.id] == true, stream = stream)
+                // Another site's Korean track of this very episode comes before the blogs: waited for 12 s at most.
+                val other = if (stream.subtitles.any(SubtitlePolicy::isKorean)) emptyList() else withTimeoutOrNull(12_000) { otherJob?.await() } ?: otherTracks
+                val found = preparer.prepare(opening, merged(stream.subtitles, other), library.preferences, library.aiSubtitleSeries[opening.anime.id] == true, stream = stream)
                 if (found != null && at == token() && requested == request && subtitle == null) select(found.file, found.provider, automatic = true)
             } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { if (at == token()) error = failure.message }
         }
@@ -172,10 +205,12 @@ class PlayerSubtitles(
     // MARK: the subtitle tab
 
     /** The tracks the stream brought; Linkkf's, 애니24's and 링크애니's own subtitle is not listed among them. */
-    val siteTracks: List<RemoteSubtitle> get() = if (item().anime.source in listOf("linkkf", "ohli24", "linkani")) emptyList() else ownTracks()
+    val siteTracks: List<RemoteSubtitle> get() = merged(if (item().anime.source in trackSites) ownTracks() else ownTracks().filter { it.origin != null }, otherTracks)
     val linkkfSubtitle: Boolean get() = item().anime.source == "linkkf" && ownTracks().isNotEmpty()
     val hasTrackList: Boolean get() = siteTracks.isNotEmpty()
-    val trackSourceLabel: String get() = when (item().anime.source) { "miruro" -> "Miruro"; "animenosub" -> "Animenosub"; else -> "Re:Anime" }
+    val trackSourceLabel: String get() = (listOfNotNull(item().anime.source.takeIf { it in trackSites && siteTracks.any { t -> t.origin == null } }) + siteTracks.mapNotNull { it.origin })
+        .distinct().mapNotNull { mapOf("reanime" to "Re:Anime", "miruro" to "Miruro", "animenosub" to "Animenosub", "ohli24" to "애니24", "linkani" to "링크애니", "linkkf" to "Linkkf")[it] }
+        .joinToString("·").ifEmpty { "Re:Anime" }
     private val currentSaved: SavedSubtitle? get() = subtitle?.let { file -> EpisodeSubtitleStore.list(item()).firstOrNull { it.file?.canonicalPath == file.canonicalPath } }
     /** The chip lit: the one pressed last until the subtitle on screen changes, then the source of the subtitle on screen. */
     val activeSource: String get() {
@@ -284,7 +319,8 @@ class PlayerSubtitles(
         if (manual) { request++; automaticJob?.cancel(); dismissOffer() }
         var preferences = library.preferences
         if (provider != null) preferences = preferences.copy(translationProvider = provider, translationModel = preferences.translationModels[provider] ?: "")
-        val configured = preferences.translationPreferences() ?: run { error = "번역 API 키를 먼저 설정하세요 (설정 > 자막 자동 번역). 로컬 AI는 다음 단계에서 옮겨집니다."; return }
+        val localOnly = manual && preferences.translationProvider == "local"
+        val configured = preferences.translationPreferences(localOnly = localOnly) ?: run { error = "번역 API 키 또는 로컬 GGUF 모델을 먼저 설정하세요."; return }
         val source = sourceSubtitle
         if (source != null) { runTranslation(source, configured, fresh, manual); return }
         val at = token(); val requested = request; val item = item()
@@ -304,7 +340,7 @@ class PlayerSubtitles(
         val at = token(); val requested = request; val episode = item()
         // Pressed with a Korean subtitle there, the series goes on in machine translation (desktop runTranslation).
         if (manual && (koreanFound || DesktopSubtitlePolicy.siteKorean(episode.anime.source, active()?.subtitles ?: emptyList(), active()))) library.preferAI(true, episode.anime.id)
-        translation.translate(original, preferences, { engine.position }, { engine.seekRevision }, episode.anime, fresh) { output ->
+        translation.translate(original, preferences, { engine.position }, { engine.seekRevision }, episode.anime, fresh, manual && preferences.translationProvider == "local") { output ->
             if (at != token() || requested != request) return@translate
             EpisodeSubtitleStore.save(output, episode, preferences.translationProvider, true, original = original)
             if (subtitle == output) engine.reloadSubtitle() else { subtitle = output; engine.subtitle(output, true) }
@@ -338,5 +374,5 @@ class PlayerSubtitles(
     }
     fun shift(delta: Double) = changeOffset(Math.round((offset + delta) * 1000) / 1000.0)
 
-    fun shutdown() { reset(); translation.shutdown(); preparer.close(); scope.cancel() }
+    fun shutdown() { reset(); translation.shutdown(); preparer.close(); scope.cancel(); crossService.close() }
 }

@@ -12,6 +12,7 @@ class LilacApp : Application() {
         super.onCreate()
         AndroidPlatform.cacheDirectory = cacheDir.absolutePath
         com.lilac.anime.android.data.SecureKeys.init(this)
+        com.lilac.anime.android.net.WireGuard.init(this)
         com.lilac.anime.android.subtitle.SubtitleFiles.init(this)
         com.lilac.anime.android.subtitle.EpisodeSubtitleStore.init(this)
         com.lilac.anime.android.data.DesktopCatalog.init(this)

@@ -97,7 +97,7 @@ fun SettingSlider(value: Double, range: ClosedFloatingPointRange<Float>, step: F
 fun SettingsScreen() {
     val app = LocalApp.current
     val library = app.library
-    val categories = listOf("general" to "일반", "playback" to "재생", "subtitle" to "자막", "titles" to "한국어 제목 검색", "translate" to "자막 자동 번역", "local" to "로컬 AI 모델", "storage" to "저장 자막·캐시", "sync" to "기기 동기화")
+    val categories = listOf("general" to "일반", "playback" to "재생", "subtitle" to "자막", "titles" to "한국어 제목 검색", "translate" to "자막 자동 번역", "local" to "로컬 AI 모델", "storage" to "저장 자막·캐시", "sync" to "기기 동기화", "network" to "연결 (WireGuard)")
     var category by rememberSaveable { mutableStateOf("general") }
     val gutter = LilacStyle.gutter
     @Composable fun page() {
@@ -111,6 +111,7 @@ fun SettingsScreen() {
                 "storage" -> StorageSettings()
                 "local" -> LocalModelSettings()
                 "sync" -> SyncSettings()
+                "network" -> WireGuardSettings()
                 else -> GeneralSettings()
             }
             library.persistenceError?.let { SettingNote(it, Color.Red) }
@@ -439,6 +440,40 @@ private fun SyncSettings() {
     SettingNote("비밀번호는 연결할 때 한 번만 보내고, 서버가 준 토큰만 이 기기에 암호화해 둡니다. 이 기기의 파일로 본 기록은 보내지 않습니다. 같은 항목을 두 기기에서 바꾸면 나중에 바꾼 쪽이 남습니다.")
     Text("서버 만드는 방법 →", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = LilacStyle.accent,
         modifier = Modifier.clickable { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/whispelyn-byte/LilacAnime-server"))) } })
+}
+
+/** 연결 (WireGuard), desktop data-settings-pane="network": this app's traffic alone through a WireGuard server. */
+@Composable
+private fun WireGuardSettings() {
+    val wireGuard = com.lilac.anime.android.net.WireGuard
+    val scope = rememberCoroutineScope()
+    var error by remember { mutableStateOf<String?>(null) }
+    val consent = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) scope.launch { wireGuard.changeEnabled(true) }
+        else error = "VPN 연결을 허용하지 않아 켜지 않았어요."
+    }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            error = null
+            try { wireGuard.load(uri) } catch (failure: kotlinx.coroutines.CancellationException) { throw failure } catch (failure: Exception) { error = failure.message ?: "설정 파일을 읽지 못했어요." }
+        }
+    }
+    LaunchedEffect(Unit) { while (true) { wireGuard.refresh(); kotlinx.coroutines.delay(3000) } }
+    PageTitle("연결 (WireGuard)", "WireGuard 설정 파일(.conf)을 불러오면 이 앱의 통신만 그 VPN 서버를 거칩니다. 다른 앱과 같은 네트워크의 주소(Chromecast 등)는 그대로 바로 연결합니다.")
+    SettingSwitch("이 앱만 WireGuard로 연결", wireGuard.state, wireGuard.enabled) { on ->
+        error = null
+        if (!on) scope.launch { wireGuard.changeEnabled(false) }
+        else wireGuard.permissionIntent()?.let { consent.launch(it) } ?: scope.launch { wireGuard.changeEnabled(true) }
+    }
+    SettingBlock("설정 파일") {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            LilacOutlineButton("설정 파일 불러오기") { picker.launch(arrayOf("*/*")) }
+            LilacOutlineButton("지우기", tint = Color.Red, enabled = wireGuard.file != null) { scope.launch { wireGuard.remove() } }
+        }
+        SettingNote(wireGuard.file ?: "불러온 설정 파일이 없습니다.", if (wireGuard.file != null) LilacStyle.text else LilacStyle.muted)
+        error?.let { SettingNote(it, Color.Red) }
+    }
+    SettingNote("Android의 VPN 기능을 이 앱에만 써서 연결합니다. 처음 켤 때 VPN 연결 허용을 묻고, 켜 둔 동안에는 다른 VPN 앱과 함께 쓸 수 없어요. 켜 둔 동안 VPN 서버에 연결되지 않으면 이 앱의 통신은 바로 나가지 않고 멈춥니다(VPN 밖으로 새지 않도록). 끄면 바로 연결로 돌아갑니다. 설정 파일의 개인 키는 이 기기에 암호화해 저장합니다.")
 }
 
 /** 저장 자막·캐시 (iOS SubtitleStorageView): the subtitle folder's size, cleaning, and each episode's kept subtitles. */

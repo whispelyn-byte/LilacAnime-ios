@@ -16,7 +16,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.*
@@ -134,22 +133,8 @@ private fun WorkspaceHeader() {
             } else {
                 HeaderIcon(Icons.Filled.Search, "검색", navigation.section == "search") { navigation.go("search") }
             }
+            // The content source is chosen in 설정 alone, as on desktop (no menu beside the gear).
             HeaderIcon(Icons.Outlined.Settings, "설정", navigation.section == "settings") { navigation.go("settings") }
-            var menu by remember { mutableStateOf(false) }
-            Box {
-                HeaderIcon(Icons.Filled.MoreHoriz, "더보기", false) { menu = true }
-                DropdownMenu(menu, { menu = false }, containerColor = LilacStyle.card) {
-                    DropdownMenuItem(text = { Text("로컬 영상 열기", color = LilacStyle.text) }, leadingIcon = { Icon(Icons.Filled.Folder, null, tint = LilacStyle.text) },
-                        onClick = { menu = false; navigation.go("local") })
-                    HorizontalDivider(color = LilacStyle.line)
-                    Text("영상 소스", fontSize = 12.sp, color = LilacStyle.muted, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
-                    ContentSources.keys.forEach { key ->
-                        DropdownMenuItem(text = { Text(ContentSources.name(key), color = LilacStyle.text) },
-                            trailingIcon = { if (key == app.library.preferences.source) Icon(Icons.Filled.Check, null, tint = LilacStyle.accent) },
-                            onClick = { menu = false; app.library.update { it.copy(source = key) } })
-                    }
-                }
-            }
         }
         if (navigation.section != "home" || navigation.details.isNotEmpty()) HorizontalDivider(color = LilacStyle.line, thickness = 1.dp)
     }

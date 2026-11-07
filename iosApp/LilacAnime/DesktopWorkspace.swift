@@ -78,7 +78,6 @@ struct DesktopFullCatalog: View {
                             .font(.system(size: 13)).foregroundStyle(LilacStyle.muted)
                     }
                     HStack(spacing: 8) {
-                        CatalogSourceMenu(source: $library.preferences.source)
                         HStack(spacing: 6) {
                             Image(systemName: "magnifyingglass").foregroundStyle(LilacStyle.muted)
                             TextField("한국어·원제·영어 검색", text: $query).submitLabel(.search).onSubmit { reloadRemote() }
@@ -302,22 +301,6 @@ struct LocalVideoView: View {
                 }
                 .onChange(of: item != nil) { ready in if ready, let item { playback.open(item); self.item = nil } }
         }
-    }
-}
-
-/// The source as the desktop's select: its name with a chevron, the sources in a menu.
-struct CatalogSourceMenu: View {
-    @Binding var source: String
-    var body: some View {
-        Menu {
-            Picker("콘텐츠 소스", selection: $source) { ForEach(ContentSources.keys, id: \.self) { Text(ContentSources.name($0)).tag($0) } }
-        } label: {
-            HStack(spacing: 6) {
-                Text(ContentSources.name(source)).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold))
-            }.foregroundStyle(LilacStyle.text).padding(.horizontal, 12).frame(height: 38)
-                .background(LilacStyle.card2, in: RoundedRectangle(cornerRadius: 7)).overlay(RoundedRectangle(cornerRadius: 7).stroke(LilacStyle.line))
-        }.accessibilityLabel("콘텐츠 소스 " + ContentSources.name(source))
     }
 }
 

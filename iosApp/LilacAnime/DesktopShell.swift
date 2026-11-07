@@ -67,16 +67,9 @@ struct DesktopWorkspace: View {
                 headerIcon("magnifyingglass", label: "검색", active: navigation.section == "search") { navigation.section = "search" }
                     .accessibilityIdentifier("workspace-route-search")
             }
+            // The content source is chosen in 설정 alone, as on desktop (no menu beside the gear).
             headerIcon("gearshape", label: "설정", active: navigation.section == "settings") { navigation.section = "settings" }
                 .accessibilityIdentifier("workspace-settings")
-            Menu {
-                Button { navigation.section = "local" } label: { Label("로컬 영상 열기", systemImage: "folder") }
-                Picker("영상 소스", selection: $library.preferences.source) {
-                    ForEach(ContentSources.keys, id: \.self) { Text(ContentSources.name($0)).tag($0) }
-                }
-            } label: {
-                Image(systemName: "ellipsis").font(.system(size: 18, weight: .semibold)).foregroundStyle(LilacStyle.text.opacity(0.85)).frame(width: 34, height: 36)
-            }.accessibilityLabel("더보기").accessibilityIdentifier("workspace-menu")
         }.padding(.horizontal, LilacStyle.gutter(sizeClass)).frame(height: 54)
             .background(LilacStyle.background)
             .overlay(alignment: .bottom) { if navigation.section != "home" { LilacStyle.line.frame(height: 1) } }

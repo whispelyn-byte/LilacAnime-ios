@@ -198,31 +198,6 @@ object ContentSources {
     }
 }
 
-/** The source as the desktop's select: its name with a chevron, the sources in a menu. */
-@Composable
-fun CatalogSourceMenu(source: String, onChange: (String) -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    Box {
-        Row(
-            Modifier.height(38.dp).lilacField().clip(RoundedCornerShape(7.dp)).clickable { open = true }.padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(ContentSources.name(source), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = LilacStyle.text, maxLines = 1)
-            Spacer(Modifier.width(6.dp))
-            Icon(Icons.Filled.KeyboardArrowDown, null, tint = LilacStyle.text, modifier = Modifier.size(16.dp))
-        }
-        DropdownMenu(open, onDismissRequest = { open = false }, containerColor = LilacStyle.card) {
-            ContentSources.keys.forEach { key ->
-                DropdownMenuItem(
-                    text = { Text(ContentSources.name(key), color = LilacStyle.text) },
-                    trailingIcon = { if (key == source) Icon(Icons.Filled.Check, null, tint = LilacStyle.accent) },
-                    onClick = { open = false; onChange(key) },
-                )
-            }
-        }
-    }
-}
-
 /** .catalog-filter-fields label: the field's name over a select of its values; the values open in a sheet. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

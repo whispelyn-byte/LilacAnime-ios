@@ -163,7 +163,6 @@ struct CatalogView: View {
                     }.font(.system(size: 16)).padding(.leading, 14).padding(.trailing, 5).padding(.vertical, 5)
                         .background(LilacStyle.card, in: RoundedRectangle(cornerRadius: 8)).overlay(RoundedRectangle(cornerRadius: 8).stroke(LilacStyle.line))
                     HStack(spacing: 8) {
-                        CatalogSourceMenu(source: $model.source)
                         Button { withAnimation(LilacMotion.animation(reduced: reduceMotion)) { filters.toggle() } } label: {
                             Label("태그 필터", systemImage: filters ? "chevron.up" : "line.3.horizontal.decrease")
                         }.buttonStyle(LilacOutlineButtonStyle())

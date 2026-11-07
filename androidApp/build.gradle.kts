@@ -61,6 +61,8 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.documentfile:documentfile:1.0.1")
     implementation("androidx.core:core-ktx:1.16.0")
+    // 설정 > 연결 (WireGuard): the tunnel for this app alone (desktop runs wireproxy; Apache-2.0).
+    implementation("com.wireguard.android:tunnel:1.0.20260102")
     // mpv for Android (the iOS app plays with mpv too).
     implementation("dev.jdtech.mpv:libmpv:1.0.0")
     // Subtitle archives (iOS uses libarchive): 7z and RAR4; ZIP is the platform's own.

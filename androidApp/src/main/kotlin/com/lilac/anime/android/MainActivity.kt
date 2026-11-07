@@ -21,6 +21,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val app = application as LilacApp
+        com.lilac.anime.android.net.WireGuard.start()
         setContent {
             var restored by remember { mutableStateOf(false) }
             LaunchedEffect(Unit) {

@@ -159,7 +159,6 @@ fun FullCatalogScreen() {
                     Text(if (remoteSource) "선택한 콘텐츠 소스의 작품입니다." else catalog.progress(source), fontSize = 13.sp, color = LilacStyle.muted)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    CatalogSourceMenu(source) { value -> library.update { it.copy(source = value) } }
                     Row(Modifier.weight(1f).height(38.dp).lilacField().padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Filled.Search, null, tint = LilacStyle.muted, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
@@ -306,7 +305,6 @@ fun SearchScreen() {
                     LilacPrimaryButton("검색") { search() }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CatalogSourceMenu(source) { value -> library.update { it.copy(source = value) } }
                     LilacOutlineButton("태그 필터", icon = if (filters) Icons.Filled.KeyboardArrowUp else Icons.Filled.FilterList) { filters = !filters }
                 }
                 AnimatedVisibility(filters) {

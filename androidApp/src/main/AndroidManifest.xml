@@ -15,6 +15,9 @@
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
         android:theme="@style/Theme.Lilac">
+        <meta-data
+            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+            android:value="com.lilac.anime.android.player.CastOptionsProvider" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

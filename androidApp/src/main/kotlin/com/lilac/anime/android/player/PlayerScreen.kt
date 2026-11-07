@@ -587,6 +587,12 @@ private fun PlayerSettingsPanel(model: PlayerModel, close: () -> Unit, openWeb: 
                             ChoiceGrid(audio.map { it.id to it.title }, audio.firstOrNull { it.selected }?.id ?: -1) { id -> audio.firstOrNull { it.id == id }?.let(model.engine::selectTrack) }
                         }
                         Group("이 기기에서")
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+                            CastButton(Modifier.size(42.dp))
+                            SheetButton("Chromecast로 보내기", Modifier.weight(1f)) { model.castVideo() }
+                            SheetButton("Cast 중지", Modifier.weight(1f)) { model.cast.stop() }
+                        }
+                        Note("Chromecast로 보낼 때는 고른 자막을 함께 보냅니다 (ASS 효과는 빠지고 일반 자막으로 나옵니다). Cast 중계 중에는 앱을 재생 화면에 둡니다.")
                         Switch("백그라운드 재생", prefs.backgroundAudio) { on -> library.update { it.copy(backgroundAudio = on) } }
                         SheetButton("웹 플레이어 열기", Modifier.fillMaxWidth().padding(top = 8.dp), openWeb)
                         Text("조작  영상 꾹 누르기 2배속 · 왼쪽/오른쪽 두 번 탭 탐색 · 키보드: Space 재생/정지 · ←/→ 탐색 · 0~9 위치 · [ ] 속도 · C 자막 켜기/끄기 · S 오프닝·엔딩 건너뛰기 · P 스크린샷 · M 음소거 · PageUp/PageDown 이전/다음 화",

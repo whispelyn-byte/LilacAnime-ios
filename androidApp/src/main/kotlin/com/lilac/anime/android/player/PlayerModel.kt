@@ -209,6 +209,18 @@ class PlayerModel(private val context: Context, start: PlaybackItem, private val
         } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { if (token == generation) error = failure.message }
     }
 
+    val cast = CastService(context)
+    /** Chromecast로 보내기 (iOS castVideo): the episode from where it is, with the subtitle on screen; this player pauses. */
+    fun castVideo() {
+        val stream = active ?: run { notify("먼저 영상을 재생하세요."); return }
+        scope.launch {
+            try {
+                cast.send(stream, item.anime.title + " · " + item.title.ifEmpty { item.displayNumber + "화" }, engine.position, subtitles.subtitle, subtitles.offset)
+                engine.pause(); notify("Chromecast로 보냈어요. 이 앱을 재생 화면에 둔 채로 보세요.")
+            } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { notify(failure.message ?: "Cast하지 못했습니다.") }
+        }
+    }
+
     fun reloadForQuality() { active?.let { save(); play(it) } }
 
     fun updateAutoSkip(position: Double) {
@@ -240,7 +252,7 @@ class PlayerModel(private val context: Context, start: PlaybackItem, private val
 
     fun shutdown() {
         save(); generation++; selectionJob?.cancel(); stallJob?.cancel()
-        subtitles.shutdown(); engine.shutdown(); resolver.shutdown(); proxy?.stop(); proxy = null
+        cast.stop(); subtitles.shutdown(); engine.shutdown(); resolver.shutdown(); proxy?.stop(); proxy = null
         service.close(); scope.cancel()
     }
 }

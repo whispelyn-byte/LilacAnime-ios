@@ -53,6 +53,10 @@ dependencies {
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.3.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.webkit:webkit:1.12.1")
+    // Chromecast (iOS: google-cast-ios-sdk).
+    implementation("com.google.android.gms:play-services-cast-framework:22.1.0")
+    implementation("androidx.mediarouter:mediarouter:1.7.0")
+    implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.core:core-ktx:1.16.0")
     // mpv for Android (the iOS app plays with mpv too).
     implementation("dev.jdtech.mpv:libmpv:1.0.0")

@@ -10,7 +10,7 @@ class PlaybackFailure(message: String) : Exception(message)
 
 /** Resolves `value` against `base` as a browser would; null when it is not a usable address. */
 fun resolveURL(base: String, value: String): String? = runCatching { URL(URL(base), value.trim()).toString() }.getOrNull()
-fun urlPath(value: String): String = runCatching { URL(value).path }.getOrDefault("")
+fun urlPath(value: String): String = runCatching { URL(value).path }.getOrElse { if (value.startsWith("/")) value else "" }
 fun urlHost(value: String): String = runCatching { URL(value).host }.getOrDefault("")
 fun urlExtension(value: String): String = urlPath(value).substringAfterLast('/').substringAfterLast('.', "").lowercase()
 fun isFileURL(value: String) = value.startsWith("file:") || value.startsWith("/")

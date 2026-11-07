@@ -7,6 +7,7 @@ import kotlinx.coroutines.sync.withLock
 import okhttp3.*
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.OutputStream
 import java.net.InetAddress
 import java.net.ServerSocket
@@ -216,7 +217,25 @@ fun shortKey(value: String): String = MessageDigest.getInstance("SHA-256").diges
 
 /** iOS HLSProxy: a local HTTP server mpv plays from. It decrypts FlixCloud playlists, keeps only the chosen quality,
  *  serves disguised segments (.png/.webp/.html) decoded as transport stream and fetches the next ones ahead. */
-class HlsProxy {
+class HlsProxy(
+    /** The Chromecast relay (iOS LANMediaRelay): listens on the Wi-Fi address, names it in its addresses, allows CORS. */
+    private val lanAddress: String? = null,
+) {
+    private val host get() = lanAddress ?: "127.0.0.1"
+    private val blobs = java.util.concurrent.ConcurrentHashMap<String, Pair<ByteArray, String>>()
+    private var localRoot: File? = null
+    /** Bytes served at their own address (the subtitle sent with a cast). */
+    fun blob(data: ByteArray, type: String, ext: String): String {
+        val key = UUID.randomUUID().toString().replace("-", "")
+        blobs[key] = data to type
+        return "http://$host:$port/$token/$key.$ext"
+    }
+    /** A downloaded episode served from its folder (its playlist's files, nothing else). */
+    suspend fun startLocal(file: File): String {
+        localRoot = file.canonicalFile.parentFile
+        startServer()
+        return register(file.canonicalPath)
+    }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var server: ServerSocket? = null
     private val routes = java.util.concurrent.ConcurrentHashMap<String, String>()
@@ -229,7 +248,11 @@ class HlsProxy {
 
     suspend fun start(stream: ResolvedStream, quality: String = "Auto"): ResolvedStream {
         this.stream = stream; this.quality = quality
-        val socket = withContext(Dispatchers.IO) { ServerSocket(0, 64, InetAddress.getByName("127.0.0.1")) }
+        startServer()
+        return stream.copy(url = register(stream.url), headers = emptyMap(), manifestKey = null, hlsManifest = null)
+    }
+    private suspend fun startServer() {
+        val socket = withContext(Dispatchers.IO) { ServerSocket(0, 64, InetAddress.getByName(if (lanAddress != null) "0.0.0.0" else "127.0.0.1")) }
         server = socket; port = socket.localPort
         scope.launch {
             while (isActive) {
@@ -237,7 +260,6 @@ class HlsProxy {
                 launch { runCatching { respond(connection) }; runCatching { connection.close() } }
             }
         }
-        return stream.copy(url = register(stream.url), headers = emptyMap(), manifestKey = null, hlsManifest = null)
     }
 
     private fun register(url: String): String {
@@ -246,7 +268,7 @@ class HlsProxy {
         val original = urlExtension(url)
         // FFmpeg refuses HLS segments named .html/.png/.webp: they are served decoded as transport stream, so named so.
         val ext = if (url == stream?.url && stream?.hlsManifest != null) "m3u8" else if (original in setOf("html", "png", "webp")) "ts" else original.ifEmpty { "bin" }
-        return "http://127.0.0.1:$port/$token/$key.$ext"
+        return "http://$host:$port/$token/$key.$ext"
     }
 
     private suspend fun respond(socket: Socket) {
@@ -263,7 +285,10 @@ class HlsProxy {
         if (parts.size < 2 || parts[0] !in setOf("GET", "HEAD")) { send(out, 405, ByteArray(0)); return }
         val path = parts[1].trim('/').split("/")
         val stream = stream
-        val url = if (path.size == 2 && path[0] == token) routes[path[1].substringBefore(".")] else null
+        val routeKey = if (path.size == 2 && path[0] == token) path[1].substringBefore(".") else ""
+        blobs[routeKey]?.let { (data, type) -> send(out, 200, data, mapOf("Content-Type" to type), parts[0] == "HEAD"); return }
+        val url = routes[routeKey]
+        if (url != null && url.startsWith("/")) { serveLocal(out, File(url), lines.firstOrNull { it.lowercase().startsWith("range:") }?.drop(6)?.trim(), parts[0] == "HEAD"); return }
         if (url == null || stream == null) { send(out, 404, ByteArray(0)); return }
         val range = lines.firstOrNull { it.lowercase().startsWith("range:") }?.drop(6)?.trim()
         try {
@@ -307,8 +332,40 @@ class HlsProxy {
         }
     }
 
+    /** A downloaded file: a playlist with its references named here, anything else in ranges straight from the disk. */
+    private fun serveLocal(out: OutputStream, file: File, range: String?, headOnly: Boolean) {
+        val root = localRoot
+        if (root == null || !file.canonicalPath.startsWith(root.canonicalPath + File.separator) && file.canonicalFile.parentFile != root || !file.isFile) { send(out, 404, ByteArray(0)); return }
+        val ext = file.extension.lowercase()
+        if (ext == "m3u8") {
+            val base = file.toURI().toString()
+            val text = HlsData.rewrite(file.readText(), base) { target -> runCatching { register(File(java.net.URI(target)).canonicalPath) }.getOrDefault(target) }
+            send(out, 200, text.toByteArray(), mapOf("Content-Type" to "application/vnd.apple.mpegurl"), headOnly); return
+        }
+        val type = mapOf("ts" to "video/mp2t", "mp4" to "video/mp4", "m4s" to "video/iso.segment", "aac" to "audio/aac", "vtt" to "text/vtt", "key" to "application/octet-stream")[ext] ?: "application/octet-stream"
+        val size = file.length()
+        var start = 0L; var end = size - 1; var status = 200
+        if (range != null && range.startsWith("bytes=")) {
+            val bounds = range.drop(6).split("-", limit = 2)
+            if (bounds[0].isEmpty()) { start = maxOf(0, size - (bounds.getOrNull(1)?.toLongOrNull() ?: size)) } else { start = bounds[0].toLongOrNull() ?: 0; end = bounds.getOrNull(1)?.toLongOrNull()?.coerceAtMost(size - 1) ?: (size - 1) }
+            if (start > end || start >= size) { send(out, 416, ByteArray(0)); return }
+            status = 206
+        }
+        val length = end - start + 1
+        val header = StringBuilder("HTTP/1.1 $status OK\r\nConnection: close\r\nContent-Length: $length\r\nContent-Type: $type\r\nAccept-Ranges: bytes\r\n")
+        if (status == 206) header.append("Content-Range: bytes $start-$end/$size\r\n")
+        if (lanAddress != null) header.append("Access-Control-Allow-Origin: *\r\n")
+        out.write(header.append("\r\n").toString().toByteArray(Charsets.ISO_8859_1))
+        if (!headOnly) java.io.RandomAccessFile(file, "r").use { raf ->
+            raf.seek(start); val buffer = ByteArray(1 shl 16); var left = length
+            while (left > 0) { val n = raf.read(buffer, 0, minOf(buffer.size.toLong(), left).toInt()); if (n < 0) break; out.write(buffer, 0, n); left -= n }
+        }
+        out.flush()
+    }
+
     private fun send(out: OutputStream, status: Int, body: ByteArray, headers: Map<String, String> = emptyMap(), headOnly: Boolean = false) {
         val text = StringBuilder("HTTP/1.1 $status ${if (status < 400) "OK" else "Error"}\r\nConnection: close\r\nContent-Length: ${body.size}\r\n")
+        if (lanAddress != null) text.append("Access-Control-Allow-Origin: *\r\n")
         headers.forEach { (key, value) -> text.append(key).append(": ").append(value).append("\r\n") }
         text.append("\r\n")
         out.write(text.toString().toByteArray(Charsets.ISO_8859_1))

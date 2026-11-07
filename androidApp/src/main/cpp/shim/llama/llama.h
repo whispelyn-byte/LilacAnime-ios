@@ -1,3 +1,3 @@
-// iOS includes llama.cpp as <llama/llama.h> (its xcframework); here the header comes from the llama target directly.
+// iOS includes llama.cpp as <llama/llama.h> (its xcframework); here the header comes from the llama target.
 #pragma once
-#include "llama.h"
+#include_next <llama.h>

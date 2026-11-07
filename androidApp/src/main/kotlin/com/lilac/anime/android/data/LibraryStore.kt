@@ -110,12 +110,7 @@ data class AppPreferences(
     val prefetchAhead: Int = 10,
     val thinking: String = "off",
     val modelSampling: Boolean = true,
-    val prompt: String = "이전 맥락
-{context}
-이후 맥락
-{future_context}
-
-{source_text}",
+    val prompt: String = "이전 맥락\n{context}\n이후 맥락\n{future_context}\n\n{source_text}",
     val localModelInputs: Map<String, LocalModelInputOptions> = emptyMap(),
 ) {
     /** Desktop automatically uses a configured API, then the installed local model (iOS translationPreferences). */

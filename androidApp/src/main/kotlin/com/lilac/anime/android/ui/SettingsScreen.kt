@@ -22,12 +22,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lilac.anime.android.LocalApp
+import com.lilac.anime.android.BuildConfig
 import com.lilac.anime.android.data.Navigation
 import com.lilac.anime.android.data.SecureKeys
 import com.lilac.anime.android.data.await
@@ -172,6 +174,31 @@ private fun GeneralSettings() {
     if (confirm) AlertDialog(onDismissRequest = { confirm = false }, containerColor = LilacStyle.card, title = { Text("시청 기록을 모두 삭제할까요?", color = LilacStyle.text) },
         confirmButton = { TextButton({ library.clearHistory(); confirm = false }) { Text("전체 삭제", color = Color.Red) } },
         dismissButton = { TextButton({ confirm = false }) { Text("취소", color = LilacStyle.accent) } })
+    AndroidBuildSettings()
+}
+
+@Composable
+private fun AndroidBuildSettings() {
+    val browser = LocalUriHandler.current
+    var showChanges by remember { mutableStateOf(false) }
+    SettingBlock("Android 빌드", "설치 버전 ${BuildConfig.VERSION_NAME} · Android APK 워크플로에서 새 빌드를 확인할 수 있습니다.") {
+        LilacOutlineButton("새 APK 확인") {
+            browser.openUri("https://github.com/whispelyn-byte/LilacAnime-ios/actions/workflows/android.yml")
+        }
+        LilacOutlineButton("변경 내역") { showChanges = true }
+    }
+    if (showChanges) AlertDialog(
+        onDismissRequest = { showChanges = false },
+        title = { Text("Android 변경 내역") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("재생 준비 상태와 오류 표시를 추가하고 일부 HLS 재생목록과 영상 조각의 처리를 개선했습니다.")
+                Text("다음 화 영상과 자막을 미리 찾고, Space를 누르고 있는 동안 2배속으로 재생할 수 있습니다.")
+                Text("다운로드 자막 번역, Anissia WinPNG 자막, Hugging Face GGUF 검색을 추가했습니다.")
+            }
+        },
+        confirmButton = { TextButton(onClick = { showChanges = false }) { Text("닫기") } },
+    )
 }
 
 @Composable
@@ -191,6 +218,7 @@ private fun PlaybackSettings() {
         SettingChoices(SeekStep.choices.map { it.toDouble() to "${it}초" }, prefs.seekSeconds) { v -> library.update { it.copy(seekSeconds = v) } }
     }
     SettingSwitch("다음 화 자동재생", "영상이 끝나면 다음 화를 재생합니다.", prefs.autoPlay) { on -> library.update { it.copy(autoPlay = on) } }
+    SettingSwitch("다음 화 미리 준비", "재생 중 다음 화 영상 주소와 자막을 미리 찾습니다.", prefs.prepareNextEpisode) { on -> library.update { it.copy(prepareNextEpisode = on) } }
     SettingSwitch("오프닝·엔딩 건너뛰기 버튼", null, prefs.showSkipButton) { on -> library.update { it.copy(showSkipButton = on) } }
     SettingSwitch("오프닝·엔딩 자동으로 건너뛰기", null, prefs.autoSkip) { on -> library.update { it.copy(autoSkip = on) } }
     SettingSwitch("백그라운드 재생", "앱을 내려도 소리가 계속 나오고, 알림에서 재생·일시정지할 수 있습니다.", prefs.backgroundAudio) { on -> library.update { it.copy(backgroundAudio = on) } }
@@ -360,6 +388,7 @@ private fun TranslateSettings() {
         }
     }
     SettingSwitch("자막 자동 번역", "한국어 자막이 없으면 그 회차의 Jimaku 일본어 자막을, 없으면 영상 사이트의 일본어 트랙을, 그것도 없으면 영어 트랙을 알아서 번역해 띄웁니다. 보고 있는 장면부터 번역합니다.", prefs.autoTranslation) { on -> library.update { it.copy(autoTranslation = on) } }
+    SettingSwitch("다운로드 자막 번역", "한국어 자막이 없는 다운로드에 번역 자막을 함께 저장합니다.", prefs.translateDownloads) { on -> library.update { it.copy(translateDownloads = on) } }
     SettingSwitch("효과음·화자 이름 빼고 번역", "（ため息）·[laughs] 같은 효과음 설명, 웃음소리만 있는 줄은 지우고, 줄 앞의 화자 이름을 떼고 번역합니다.", prefs.dropCaptions) { on -> library.update { it.copy(dropCaptions = on) } }
     SettingSwitch("실패하면 다른 번역 API로", "키를 등록한 다른 번역 API로 이어서 번역합니다.", prefs.cloudFallback) { on -> library.update { it.copy(cloudFallback = on) } }
     SettingSwitch("번역 API가 안 되면 로컬 AI로", "사용량을 다 썼거나 연결이 끊기면 로컬 AI가 이어서 번역합니다.", prefs.translationFallback) { on -> library.update { it.copy(translationFallback = on) } }

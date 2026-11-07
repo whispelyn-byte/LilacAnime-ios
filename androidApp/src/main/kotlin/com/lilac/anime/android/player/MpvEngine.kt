@@ -3,6 +3,7 @@ package com.lilac.anime.android.player
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.Surface
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
@@ -28,7 +29,7 @@ class MpvEngine(private val context: Context) {
     var paused by mutableStateOf(true)
     var buffering by mutableStateOf(false)
     var tracks by mutableStateOf(emptyList<MediaTrack>())
-    var error by mutableStateOf<String?>(null)
+    var error by mutableStateOf<String?>(null); private set
     var cacheAhead by mutableDoubleStateOf(0.0); private set
     var fileLoaded by mutableStateOf(false); private set
 
@@ -38,10 +39,15 @@ class MpvEngine(private val context: Context) {
     private val main = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var mpv: MPVLib? = null
+    private var initializationFailed = false
+    private var surfaceAttached = false
     private var pending: ResolvedStream? = null
-    private var resumePosition = 0.0
+    private var startAt: String? = null
     private var startPaused = false
     private var completionNotified = false
+    private var waitingForStart = false
+    private var openingFile = false
+    private var playbackStarted = false
     private var loadTimeout: Job? = null
     private var poll: Job? = null
     private val configured = mutableMapOf<String, String>()
@@ -65,7 +71,11 @@ class MpvEngine(private val context: Context) {
     /** Made once the surface exists (iOS attach): the options, the observed properties, then whatever was asked before. */
     fun create() {
         if (mpv != null) return
-        val player = runCatching { MPVLib.create(context.applicationContext) }.getOrNull() ?: run { error = "mpv 초기화 실패"; return }
+        val player = runCatching { MPVLib.create(context.applicationContext) }
+            .onFailure { Log.e("LilacMpv", "Could not create libmpv", it) }
+            .getOrNull() ?: run {
+            initializationFailed = true; error = "mpv 초기화 실패"; return
+        }
         val fonts = com.lilac.anime.android.subtitle.SubtitleFiles.fontDirectory.apply { mkdirs() }
         // libass finds fonts only in this folder: the system's CJK font is linked into it so Korean is drawn (iOS uses
         // Apple SD Gothic Neo, its system font).
@@ -78,7 +88,14 @@ class MpvEngine(private val context: Context) {
             "input-default-bindings" to "no", "sub-auto" to "no", "save-position-on-quit" to "no", "tls-verify" to "no",
             "sub-fonts-dir" to fonts.absolutePath, "user-agent" to PLAYER_AGENT,
         )) player.setOptionString(key, value)
-        player.init()
+        try {
+            player.init()
+        } catch (failure: Exception) {
+            Log.e("LilacMpv", "Could not initialize libmpv", failure)
+            runCatching { player.destroy() }
+            initializationFailed = true; error = "mpv 초기화 실패"; return
+        }
+        initializationFailed = false
         player.addObserver(observer)
         for ((name, format) in listOf("time-pos" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE, "duration" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE,
             "pause" to MPVLib.MpvFormat.MPV_FORMAT_FLAG, "paused-for-cache" to MPVLib.MpvFormat.MPV_FORMAT_FLAG,
@@ -92,19 +109,21 @@ class MpvEngine(private val context: Context) {
         muted = defaults.getBoolean("player.muted", false); set("mute", if (muted) "yes" else "no")
         configure(preferences)
         poll = scope.launch { while (isActive) { delay(250); onProgress?.invoke(position, duration) } }
-        pending?.let { load(it, resumePosition, startPaused) }
     }
 
     fun attachSurface(surface: Surface) {
         val player = mpv ?: return
         player.attachSurface(surface)
-        player.setOptionString("force-window", "yes")
+        surfaceAttached = true
+        set("force-window", "yes")
         set("vo", "gpu")
+        openPending()
     }
     fun surfaceSize(width: Int, height: Int) { set("android-surface-size", "${width}x$height") }
     fun detachSurface() {
         val player = mpv ?: return
-        set("vo", "null"); player.setOptionString("force-window", "no")
+        surfaceAttached = false
+        set("vo", "null"); set("force-window", "no")
         player.detachSurface()
     }
 
@@ -171,26 +190,59 @@ class MpvEngine(private val context: Context) {
     private fun applyPresentation() { presentation.mpvOptions.toSortedMap().forEach { (name, value) -> configure(name, value) } }
     fun applyPreferences(settings: AppPreferences) { configure(settings) }
 
-    fun load(stream: ResolvedStream, resume: Double = 0.0, paused: Boolean = false) {
+    fun load(stream: ResolvedStream, resume: Double = 0.0, paused: Boolean = false, resumeFraction: Double? = null) {
         finishHold()
         loadTimeout?.cancel()
-        pending = stream; resumePosition = resume; startPaused = paused; completionNotified = false
+        pending = stream; startPaused = paused; completionNotified = false
+        startAt = when {
+            resume.isFinite() && resume > 0 -> resume.toString()
+            resumeFraction != null && resumeFraction > 0 && resumeFraction < 1 -> "${resumeFraction * 100}%"
+            else -> null
+        }
+        if (!initializationFailed) error = null
+        fileLoaded = false; playbackStarted = false
+        position = 0.0; duration = 0.0; cacheAhead = 0.0; tracks = emptyList()
+        waitingForStart = true; openingFile = false; buffering = true
+        openPending()
+    }
+
+    private fun openPending() {
         val player = mpv ?: return
-        error = null; fileLoaded = false
+        if (!surfaceAttached) return
+        val stream = pending ?: return
+        pending = null
+        error = null
         val agent = stream.headers.entries.firstOrNull { it.key.equals("User-Agent", true) }?.value ?: PLAYER_AGENT
         set("user-agent", agent)
         set("http-header-fields", stream.headers.filterKeys { !it.equals("User-Agent", true) && !it.equals("Referer", true) }
             .map { it.key + ": " + it.value.replace(",", "\\,") }.joinToString(","))
-        set("referrer", stream.referer)
+        set("referrer", stream.referer.ifEmpty { stream.headers.entries.firstOrNull { it.key.equals("Referer", true) }?.value.orEmpty() })
         // A local file is this app's own HLS: FFmpeg refuses segments not named as media unless told otherwise.
         set("demuxer-lavf-o", if (isFileURL(stream.url)) "allowed_extensions=ALL,allowed_segment_extensions=ALL,extension_picky=0" else "")
-        set("start", if (resume > 1) resume.toString() else "none")
-        set("pause", if (paused) "yes" else "no"); this.paused = paused
-        player.command(arrayOf("loadfile", if (stream.url.startsWith("file://")) stream.url.removePrefix("file://") else stream.url, "replace"))
+        set("pause", if (startPaused) "yes" else "no"); paused = startPaused
+        val address = mpvAddress(stream.url)
+        val start = startAt
+        if (start == null) player.command(arrayOf("loadfile", address, "replace"))
+        else player.command(arrayOf("loadfile", address, "replace", "-1", "start=$start"))
         loadTimeout = scope.launch {
             delay(30_000)
-            if (!fileLoaded) error = "영상 재생을 시작하지 못했습니다. 다른 영상 서버를 선택하거나 다시 시도하세요."
+            if (!fileLoaded) reportLoadFailure()
         }
+    }
+
+    private fun reportLoadFailure() {
+        buffering = false
+        error = "영상 재생을 시작하지 못했습니다. 다른 영상 서버를 선택하거나 다시 시도하세요."
+    }
+
+    fun stop() {
+        finishHold()
+        loadTimeout?.cancel()
+        pending = null; waitingForStart = false; openingFile = false
+        if (!initializationFailed) error = null
+        fileLoaded = false; playbackStarted = false; buffering = false; paused = true
+        position = 0.0; duration = 0.0; cacheAhead = 0.0; tracks = emptyList()
+        command("stop")
     }
 
     fun changeVolume(value: Double) { volume = value.coerceIn(0.0, 100.0); set("volume", volume.toString()); defaults.edit().putFloat("player.volume", volume.toFloat()).apply() }
@@ -209,14 +261,22 @@ class MpvEngine(private val context: Context) {
 
     /** Touch-and-hold 2배속 (desktop hold): the speed it had comes back when let go. */
     fun boostHold() {
-        if (paused || speedBoosted) return
+        if (paused || !fileLoaded || speedBoosted) return
         holdOriginal = speed; speedBoosted = true; changeSpeed(2.0)
     }
-    fun finishHold() {
+    fun beginSpaceHold() {
+        if (holdTimer != null || speedBoosted) return
+        holdTimer = scope.launch { delay(250); boostHold() }
+    }
+
+    fun finishHold(toggleOnTap: Boolean = false) {
+        val tapped = holdTimer != null && !speedBoosted
         holdTimer?.cancel(); holdTimer = null
-        val original = holdOriginal ?: return
-        holdOriginal = null; speedBoosted = false
-        changeSpeed(if (speed == 2.0) original else speed)
+        holdOriginal?.let { original ->
+            holdOriginal = null; speedBoosted = false
+            if (speed == 2.0) changeSpeed(original)
+        }
+        if (tapped && toggleOnTap) toggle()
     }
 
     /** 스크린샷: the frame on screen at the video's own size, without subtitles or controls, as a PNG file. */
@@ -228,15 +288,15 @@ class MpvEngine(private val context: Context) {
         false
     }
 
-    val canSaveProgress get() = mpv != null && fileLoaded
+    val canSaveProgress get() = fileLoaded && playbackStarted
 
     private fun set(name: String, value: String) { runCatching { mpv?.setPropertyString(name, value) } }
     private fun command(vararg args: String) { runCatching { mpv?.command(arrayOf(*args)) } }
 
     private fun onDouble(property: String, value: Double) {
         when (property) {
-            "time-pos" -> if (value.isFinite()) position = value
-            "duration" -> if (value.isFinite()) duration = value
+            "time-pos" -> if (fileLoaded && value.isFinite()) position = value
+            "duration" -> if (fileLoaded && value.isFinite()) duration = value
             "volume" -> volume = value
             "speed" -> speed = value
             "demuxer-cache-duration" -> cacheAhead = value
@@ -245,7 +305,7 @@ class MpvEngine(private val context: Context) {
     private fun onFlag(property: String, value: Boolean) {
         when (property) {
             "pause" -> paused = value
-            "paused-for-cache" -> buffering = value
+            "paused-for-cache" -> if (fileLoaded) buffering = value
             "mute" -> muted = value
             "eof-reached" -> if (value && fileLoaded) reachedEnd()
         }
@@ -260,15 +320,33 @@ class MpvEngine(private val context: Context) {
         }.getOrDefault(tracks)
     }
     private fun onEvent(id: Int) {
+        val player = mpv ?: return
         when (id) {
-            MPVLib.MpvEvent.MPV_EVENT_START_FILE -> { buffering = true }
-            MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED -> {
+            MPVLib.MpvEvent.MPV_EVENT_START_FILE -> if (waitingForStart && pending == null) {
+                waitingForStart = false; openingFile = true
+            }
+            MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED -> if (openingFile) {
+                openingFile = false
                 fileLoaded = true; buffering = false; loadTimeout?.cancel(); error = null
-                set("start", "none")
+                position = player.getPropertyDouble("time-pos")?.takeIf { it.isFinite() } ?: 0.0
+                duration = player.getPropertyDouble("duration")?.takeIf { it.isFinite() } ?: 0.0
                 subtitleFile?.let { command("sub-add", it, "select") }
                 if (!startPaused) play()
             }
-            MPVLib.MpvEvent.MPV_EVENT_END_FILE -> if (fileLoaded) reachedEnd()
+            MPVLib.MpvEvent.MPV_EVENT_PLAYBACK_RESTART -> if (fileLoaded) {
+                player.getPropertyDouble("time-pos")?.takeIf { it.isFinite() }?.let {
+                    position = it
+                    playbackStarted = true
+                }
+            }
+            MPVLib.MpvEvent.MPV_EVENT_END_FILE -> when {
+                openingFile -> {
+                    openingFile = false; paused = true
+                    loadTimeout?.cancel()
+                    reportLoadFailure()
+                }
+                fileLoaded && player.getPropertyBoolean("eof-reached") == true -> reachedEnd()
+            }
         }
     }
     /** mpv's eof-reached and its end-file event are one ending (iOS PlaybackCompletion). */

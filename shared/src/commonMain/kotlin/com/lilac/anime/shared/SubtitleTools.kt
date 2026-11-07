@@ -3,6 +3,45 @@ import com.lilac.anime.shared.ported.SubtitleDocument
 import com.fleeksoft.ksoup.Ksoup
 
 object SubtitleTools {
+    private val htmlStart = Regex("^(?:<!--[\\s\\S]*?-->\\s*)*<(?:!doctype\\s+html|html\\b|head\\b|body\\b|script\\b|meta\\b)", RegexOption.IGNORE_CASE)
+    private val assHeader = Regex("(?im)^\\s*\\[script info\\]\\s*$")
+    private val srtTiming = Regex("(?m)^\\s*\\d{1,2}:\\d{2}:\\d{2}[,.]\\d{3}\\s*-->\\s*\\d{1,2}:\\d{2}:\\d{2}[,.]\\d{3}")
+
+    /** Providers sometimes label subtitle files as HTML. SAMI itself also uses markup. */
+    fun isHtmlResponse(head: String, mimeType: String?): Boolean =
+        htmlStart.containsMatchIn(cleanHead(head)) ||
+            (mimeType.equals("text/html", ignoreCase = true) && providerFileFormat(head) == null)
+
+    internal fun providerFileFormat(head: String): String? {
+        val content = cleanHead(head)
+        return when {
+            htmlStart.containsMatchIn(content) -> null
+            content.startsWith("WEBVTT", ignoreCase = true) -> "vtt"
+            assHeader.containsMatchIn(content) -> "ass"
+            content.startsWith("<SAMI", ignoreCase = true) -> "smi"
+            srtTiming.containsMatchIn(content) -> "srt"
+            else -> null
+        }
+    }
+
+    private fun cleanHead(head: String) = head.removePrefix("\uFEFF").trimStart()
+
+    internal fun providerFileFormat(data: ByteArray): String? {
+        val end = minOf(data.size, 4096)
+        val bom = if (end >= 2) ((data[0].toInt() and 0xff) shl 8) or (data[1].toInt() and 0xff) else 0
+        // File markers are ASCII in CP949. Only UTF-16 needs its byte order to read them.
+        val head = if (bom == 0xfffe || bom == 0xfeff) {
+            buildString {
+                for (index in 2 until end - 1 step 2) {
+                    val first = data[index].toInt() and 0xff
+                    val second = data[index + 1].toInt() and 0xff
+                    append((if (bom == 0xfffe) first or (second shl 8) else (first shl 8) or second).toChar())
+                }
+            }
+        } else data.decodeToString(endIndex = end)
+        return providerFileFormat(head)
+    }
+
     /** Same CHS+JPN overlap test as desktop subtitle-translator.cjs. */
     fun translationBlanks(content: String, extension: String): List<Int> {
         val cues = SubtitleDocument.parse(content, extension.lowercase())

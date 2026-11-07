@@ -8,6 +8,9 @@ import androidx.compose.runtime.snapshotFlow
 import com.lilac.anime.android.data.LibraryStore
 import com.lilac.anime.android.data.SavedAnime
 import com.lilac.anime.android.data.await
+import com.lilac.anime.android.download.DownloadStore
+import com.lilac.anime.android.subtitle.EpisodeSubtitleStore
+import com.lilac.anime.android.subtitle.SubtitlePreparer
 import com.lilac.anime.shared.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -35,8 +38,12 @@ class PlayerModel(private val context: Context, start: PlaybackItem, private val
     private var skipEntered: Pair<String, SkipCountdown>? = null
     private var preferRaw = false
     private var playRequest = 0L
+    private var playJob: Job? = null
     private var selectionJob: Job? = null
     private var stallJob: Job? = null
+    private var preparationJob: Job? = null
+    private var preparedResolver: PlaybackResolver? = null
+    private var preparedKey: Pair<String, String>? = null
     private var miruroMonitor = MiruroStallMonitor()
     private var miruroFailed = mutableSetOf<String>()
     private val refreshedSeries = mutableSetOf<String>()
@@ -50,7 +57,11 @@ class PlayerModel(private val context: Context, start: PlaybackItem, private val
     var playable: ResolvedStream? = null; private set
 
     init {
-        scope.launch { snapshotFlow { resolver.streams }.distinctUntilChanged().collect { selectResolved(it) } }
+        scope.launch { snapshotFlow { resolver.streams }.collect { selectResolved(it) } }
+        scope.launch {
+            snapshotFlow { if (library.preferences.prepareNextEpisode && engine.fileLoaded && active != null) item.next.firstOrNull() else null }
+                .collect { next -> if (next != null) prepareNext(next) else discardPreparation() }
+        }
         // 애니24's own subtitle file can be found after the stream: the playing stream takes it and it is put on.
         scope.launch {
             snapshotFlow { resolver.subtitles }.distinctUntilChanged().collect { tracks ->
@@ -67,7 +78,16 @@ class PlayerModel(private val context: Context, start: PlaybackItem, private val
     val seriesItems: List<PlaybackItem> get() = previous + listOf(item) + item.next
 
     fun begin() {
-        active = null; loadedSkip = false; engine.error = null; error = null
+        selectionJob?.cancel()
+        playJob?.cancel()
+        proxy?.stop(); proxy = null; playable = null
+        preview.reset()
+        engine.stop()
+        begin(reuseResolver = false)
+    }
+
+    private fun begin(reuseResolver: Boolean) {
+        active = null; loadedSkip = false; error = null
         val token = generation
         engine.onEnd = {
             if (token == generation) {
@@ -81,7 +101,7 @@ class PlayerModel(private val context: Context, start: PlaybackItem, private val
         }
         engine.onProgress = { position, duration ->
             if (token == generation && active != null) {
-                if (position - lastSave >= 5 || position < lastSave) { lastSave = position; save() }
+                if (position - lastSave >= 5 || position < lastSave) save()
                 if (!loadedSkip && duration > 0) {
                     loadedSkip = true
                     scope.launch {
@@ -102,7 +122,46 @@ class PlayerModel(private val context: Context, start: PlaybackItem, private val
         // Animenosub's and Miruro's clean video is chosen for a work known to have Korean subtitles (desktop korean-series).
         preferRaw = item.anime.source in setOf("miruro", "animenosub") &&
             (defaults.getStringSet("desktop.korean-series", emptySet()) ?: emptySet()).contains(item.anime.id)
-        resolver.resolve(item, preferRaw, library.preferences.preferredServers[item.anime.source] ?: library.preferences.preferredStream)
+        if (!reuseResolver) {
+            val previousStreams = resolver.streams
+            resolver.resolve(item, preferRaw, library.preferences.preferredServers[item.anime.source] ?: library.preferences.preferredStream)
+            if (resolver.streams == previousStreams) selectResolved(resolver.streams)
+        }
+    }
+
+    private fun prepareNext(next: PlaybackItem) {
+        val key = next.anime.id to next.episodeID
+        if (preparedKey == key) return
+        discardPreparation()
+        if (next.directURL != null || DownloadStore.offline(next) != null) return
+        val settings = library.preferences
+        val warm = PlaybackResolver(context)
+        warm.silent = true
+        preparedResolver = warm
+        preparedKey = key
+        preparationJob = scope.launch {
+            val raw = next.anime.source in setOf("miruro", "animenosub") &&
+                next.anime.id in defaults.getStringSet("desktop.korean-series", emptySet()).orEmpty()
+            warm.resolve(next, raw, settings.preferredServers[next.anime.source] ?: settings.preferredStream)
+            val streams = withTimeoutOrNull(60_000) {
+                snapshotFlow { warm.streams to warm.loading }.first { (streams, loading) -> streams.isNotEmpty() || !loading }.first
+            }.orEmpty()
+            val preparer = SubtitlePreparer(context)
+            try {
+                if (EpisodeSubtitleStore.list(next).isEmpty()) {
+                    val stream = streams.firstOrNull()
+                    preparer.prepare(next, stream?.subtitles.orEmpty().ifEmpty { warm.subtitles }, settings, stream = stream)
+                        ?.let { EpisodeSubtitleStore.save(it.file, next, it.provider, translated = false) }
+                }
+            } finally {
+                preparer.close()
+            }
+        }
+    }
+
+    private fun discardPreparation() {
+        preparationJob?.cancel(); preparationJob = null
+        preparedResolver?.shutdown(); preparedResolver = null; preparedKey = null
     }
 
     /** An episode opened from 시청기록 carries the list saved back then: the series is asked again for newer episodes. */
@@ -145,13 +204,18 @@ class PlayerModel(private val context: Context, start: PlaybackItem, private val
 
     fun change(target: PlaybackItem, remember: Boolean = true) {
         // The next episode, when saved, plays from its file too.
-        val next = com.lilac.anime.android.download.DownloadStore.offline(target)?.copy(next = target.next, preceding = target.preceding) ?: target
+        val next = DownloadStore.offline(target)?.copy(next = target.next, preceding = target.preceding) ?: target
+        val prepared = preparedResolver?.takeIf {
+            next.directURL == null && preparedKey == (next.anime.id to next.episodeID) && it.streams.isNotEmpty()
+        }
         selectionJob?.cancel()
         if (remember) previous = previous + item
-        save(); engine.pause(); proxy?.stop(); proxy = null
+        save(); playJob?.cancel(); engine.stop(); preview.reset(); proxy?.stop(); proxy = null; playable = null
         generation++; item = next; active = null; chapters = emptyList(); skipEntered = null
         loadedSkip = false; lastSave = 0.0; lastSkipped = ""; subtitles.reset(); engine.clearViewerSeek()
-        begin()
+        if (prepared != null) resolver.adopt(next, prepared.streams, prepared.subtitles, prepared.servers, prepared.serverLabel)
+        discardPreparation()
+        begin(reuseResolver = prepared != null)
     }
     fun jump(index: Int) {
         val all = seriesItems
@@ -170,19 +234,29 @@ class PlayerModel(private val context: Context, start: PlaybackItem, private val
         miruroFailed = mutableSetOf(); miruroMonitor = MiruroStallMonitor()
         val playing = ++playRequest
         val token = generation
-        scope.launch {
+        playJob?.cancel()
+        playJob = scope.launch {
+            var replacement: HlsProxy? = null
             try {
-                proxy?.stop(); proxy = null
                 var playable = stream
-                if (needsProxy(stream)) { val started = HlsProxy(); proxy = started; playable = started.start(stream, library.preferences.quality) }
+                if (needsProxy(stream)) {
+                    val started = HlsProxy()
+                    replacement = started
+                    playable = started.start(stream, library.preferences.quality)
+                }
                 if (token != generation || playing != playRequest) return@launch
+                proxy?.stop(); proxy = replacement; replacement = null
                 active = stream; this@PlayerModel.playable = playable; error = null
+                preview.reset()
                 if (item.anime.source == "miruro") stream.label.split(" - ").getOrNull(1)?.split(" ")?.firstOrNull()?.let { defaults.edit().putString("miruro.working-provider", it).apply() }
                 engine.configure(library.preferences)
-                engine.load(playable, library.resume(item.anime, item.episodeID), paused)
+                engine.load(playable, library.resume(item.anime, item.episodeID), paused,
+                    resumeFraction = library.resumeFraction(item.anime, item.episodeID))
                 if (subtitles.subtitle == null) subtitles.automatic(stream)
             } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) {
                 if (token == generation && playing == playRequest) error = failure.message
+            } finally {
+                replacement?.stop()
             }
         }
     }
@@ -204,7 +278,8 @@ class PlayerModel(private val context: Context, start: PlaybackItem, private val
             if (needsProxy(chosen)) { replacement = HlsProxy(); playable = try { replacement.start(chosen, library.preferences.quality) } catch (e: Throwable) { replacement.stop(); throw e } }
             if (token != generation || active?.id != current.id || engine.paused || engine.seekRevision != seek || kotlin.math.abs(engine.position - position) > 0.1 || !engine.buffering) { replacement?.stop(); return }
             proxy?.stop(); proxy = replacement
-            active = chosen; error = null
+            active = chosen; this.playable = playable; error = null
+            preview.reset()
             engine.load(playable, position)
         } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { if (token == generation) error = failure.message }
     }
@@ -249,11 +324,13 @@ class PlayerModel(private val context: Context, start: PlaybackItem, private val
     fun save() {
         val stream = active ?: return
         if (!engine.canSaveProgress) return
+        lastSave = engine.position
         library.progress(item.anime, item.episodeID, item.title, item.number, item.watchURL, stream.url.takeIf { isFileURL(it) }, engine.position, engine.duration, item.displayNumber)
     }
 
     fun shutdown() {
-        save(); generation++; selectionJob?.cancel(); stallJob?.cancel()
+        save(); generation++; selectionJob?.cancel(); playJob?.cancel(); stallJob?.cancel()
+        discardPreparation()
         cast.stop(); preview.close(); subtitles.shutdown(); engine.shutdown(); resolver.shutdown(); proxy?.stop(); proxy = null
         service.close(); scope.cancel()
     }

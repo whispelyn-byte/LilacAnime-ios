@@ -35,11 +35,11 @@ class TranslationCoordinator {
     private val workingFiles = mutableSetOf<File>()
     private val json = Json
 
-    fun translate(file: File, preferences: AppPreferences, position: () -> Double, seekRevision: () -> Long, anime: SavedAnime?, fresh: Boolean = false, localOnly: Boolean = false, completion: (File) -> Unit) {
+    fun translate(file: File, preferences: AppPreferences, position: () -> Double, seekRevision: () -> Long, anime: SavedAnime?, fresh: Boolean = false, localOnly: Boolean = false, completion: (File) -> Unit): Job {
         cancel(); if (fresh) service.clearTranslationCache()
         running = true; error = null; status = null; progress = 0.0
         val token = ++generation
-        job = scope.launch {
+        val task = scope.launch {
             try {
                 val ext = file.extension
                 val dropCaptions = preferences.dropCaptions
@@ -194,6 +194,8 @@ class TranslationCoordinator {
             } catch (failure: CancellationException) { if (token == generation) running = false }
             catch (failure: Throwable) { if (token == generation) { error = failure.message; running = false } }
         }
+        job = task
+        return task
     }
 
     private fun sortedJson(value: Any?): String = when (value) {
@@ -272,6 +274,6 @@ class TranslationCoordinator {
         return candidates.sortedWith(compareBy({ score(it) }, { it })).take(limit)
     }
 
-    fun cancel() { if (running) { service.cancel(); LocalInference.cancel() }; generation++; job?.cancel(); job = null; running = false }
+    fun cancel() { if (running) service.cancel(); generation++; job?.cancel(); job = null; running = false }
     fun shutdown() { cancel(); workingFiles.forEach { it.delete() }; workingFiles.clear(); scope.cancel(); service.close() }
 }

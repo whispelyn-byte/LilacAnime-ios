@@ -17,12 +17,17 @@ import com.lilac.anime.shared.DesktopPlaybackServer
 import com.lilac.anime.shared.DesktopPlaybackStream
 import com.lilac.anime.shared.IosServices
 import com.lilac.anime.shared.OhliDirectStream
+import com.lilac.anime.shared.CrossSiteTrack
+import com.lilac.anime.shared.PROVIDER_SUBTITLE_AGENT
+import com.lilac.anime.android.subtitle.SubtitleFiles
 import kotlinx.coroutines.*
 import org.json.JSONObject
 import org.json.JSONTokener
 
 /** The address every page and stream is asked with (the iOS app's, so the sites answer as they do there). */
 const val PLAYER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1"
+/** 애니24 is asked as desktop asks it (main.cjs LINKKF_UA): its player answers a phone with another page. */
+const val OHLI_AGENT = PROVIDER_SUBTITLE_AGENT
 
 /** iOS PlaybackResolver: finds an episode's streams. Miruro and 링크애니 are read by the shared code; RE:Anime and
  *  Animenosub list servers whose pages are opened in a hidden, muted WebView that reports the media it requests;
@@ -49,6 +54,7 @@ class PlaybackResolver(private val context: Context) {
     private var preferRaw = false
     private var ohliPlayer: String? = null
     private val pendingOhli = mutableListOf<OhliCandidate>()
+    private val ohliCaptionsTried = mutableSetOf<String>()
     private val candidateJobs = mutableMapOf<String, Job>()
     private var lastOhliCandidate: Job? = null
     private var flixKey: String? = null
@@ -106,6 +112,7 @@ class PlaybackResolver(private val context: Context) {
         cancel(); currentItem = item; streams = emptyList(); subtitles = emptyList(); servers = emptyList(); serverCandidates.clear()
         error = null; loading = true; this.preferRaw = preferRaw
         installScripts(item.anime.source == "ohli24")
+        webView.settings.userAgentString = if (item.anime.source == "ohli24") OHLI_AGENT else PLAYER_AGENT
         val token = generation
         item.directURL?.let { direct ->
             if (isFileURL(direct) || urlExtension(direct) in setOf("m3u8", "mp4", "mkv", "webm")) {
@@ -277,7 +284,7 @@ class PlaybackResolver(private val context: Context) {
         clearSelected()
         desktop.cancel(); generation++; timeout?.cancel(); timeout = null
         candidateJobs.values.forEach { it.cancel() }; candidateJobs.clear(); ohliPlayer = null
-        pendingOhli.clear(); lastOhliCandidate = null
+        pendingOhli.clear(); lastOhliCandidate = null; ohliCaptionsTried.clear()
         webView.stopLoading(); loading = false
     }
     fun shutdown() {
@@ -319,7 +326,7 @@ class PlaybackResolver(private val context: Context) {
             if (kind == "ohliPlayer" && isMainFrame && frame?.let(::urlHost) == currentItem?.watchURL?.let(::urlHost)) {
                 ohliPlayer = value
                 for (candidate in pendingOhli) if (OhliPlayback.accepts(candidate.kind, candidate.frame, value)) {
-                    if (candidate.kind == "ohliCaption") addOhliCaption(candidate.url, candidate.frame ?: "")
+                    if (candidate.kind == "ohliCaption") addOhliCaptions(listOf(candidate.url))
                     else verifyOhli(candidate.url, candidate.kind == "ohliVariant", candidate.manifest)
                 }
                 pendingOhli.clear(); return
@@ -328,7 +335,7 @@ class PlaybackResolver(private val context: Context) {
                 pendingOhli += OhliCandidate(value, frame, kind, body.optString("manifest").ifEmpty { null }); return
             }
             if (!OhliPlayback.accepts(kind, frame, ohliPlayer)) return
-            if (kind == "ohliCaption") { addOhliCaption(value, frame ?: ""); return }
+            if (kind == "ohliCaption") { addOhliCaptions(listOf(value)); return }
             verifyOhli(value, kind == "ohliVariant", body.optString("manifest").ifEmpty { null })
             return
         }
@@ -340,21 +347,31 @@ class PlaybackResolver(private val context: Context) {
         }
     }
 
-    /** The player's own Korean subtitle file, given to every stream of the episode. */
-    private fun addOhliCaption(url: String, referer: String) {
-        if (subtitles.any { it.url == url }) return
-        val headers = buildMap { put("User-Agent", PLAYER_AGENT); if (referer.isNotEmpty()) put("Referer", referer) }
-        val track = RemoteSubtitle("애니24 한국어 자막", url, "ko", headers)
+    /** The player's own Korean subtitle file, given to every stream of the episode (desktop resolveOhliEpisode): the
+     *  first of its files that answers as a subtitle, fetched as desktop does and kept on disk, so the subtitle tab and
+     *  the automatic choice take it like the other sites' files. None that answers: the subtitle is in the picture. */
+    private fun addOhliCaptions(files: List<String>) {
+        val token = generation
+        scope.launch { ohliCaptions(files, token) }
+    }
+    private suspend fun ohliCaptions(files: List<String>, token: Long) {
+        val fresh = files.filter { it.startsWith("http") && ohliCaptionsTried.add(it) }
+        if (fresh.isEmpty() || subtitles.any { it.origin == "ohli24" }) return
+        val found = desktop.await<CrossSiteTrack> { ohliSubtitle(fresh, it) }.getOrNull() ?: return
+        val track = SubtitleFiles.providerTrack(found)?.copy(label = "애니24 한국어 자막") ?: return
+        if (token != generation || subtitles.any { it.origin == "ohli24" }) return
         subtitles = subtitles + track
         streams = streams.map { it.copy(subtitles = it.subtitles + track, burnedKorean = false) }
     }
 
     /** The player read without opening it (desktop ohliStreamDirect); when that fails, the page itself. */
     private suspend fun ohliDirect(player: String, token: Long) {
-        val stream = desktop.await<OhliDirectStream> { ohliStream(player, PLAYER_AGENT, it) }.getOrNull()
+        val stream = desktop.await<OhliDirectStream> { ohliStream(player, OHLI_AGENT, it) }.getOrNull()
         if (token != generation) return
         if (stream == null || !OhliPlayback.isEpisodePlaylist(stream.manifest)) { loadPage(player, 45); return }
-        stream.subtitles.forEach { addOhliCaption(it, player) }
+        // The subtitle file is read before the video is handed over, as desktop's ohliStream does.
+        ohliCaptions(stream.subtitles, token)
+        if (token != generation) return
         verifyOhli(stream.url, true, stream.manifest)
         if (streams.isEmpty()) loadPage(player, 45)
     }
@@ -363,7 +380,7 @@ class PlaybackResolver(private val context: Context) {
         if (candidateJobs.containsKey(url) || streams.any { it.url == url }) return
         if (hls) {
             if (manifest == null || manifest.length > 4_000_000 || !OhliPlayback.isEpisodePlaylist(manifest)) return
-            streams = streams + ResolvedStream("HLS", url, "", mapOf("User-Agent" to PLAYER_AGENT), subtitles = subtitles, hlsManifest = manifest,
+            streams = streams + ResolvedStream("HLS", url, "", mapOf("User-Agent" to OHLI_AGENT), subtitles = subtitles, hlsManifest = manifest,
                 burnedKorean = if (subtitles.isEmpty()) null else false)
             loading = false; error = null; timeout?.cancel()
             return
@@ -375,7 +392,7 @@ class PlaybackResolver(private val context: Context) {
                 previous?.join()
                 if (generation != token || streams.isNotEmpty()) return@launch
                 val referer = ohliPlayer ?: ""
-                val headers = buildMap { put("User-Agent", PLAYER_AGENT); if (referer.isNotEmpty()) put("Referer", referer) }
+                val headers = buildMap { put("User-Agent", OHLI_AGENT); if (referer.isNotEmpty()) put("Referer", referer) }
                 val stream = ResolvedStream("MP4", url, referer, headers)
                 // An advertisement is short: only media longer than 30 seconds is the episode.
                 val length = withContext(Dispatchers.IO) { mediaDuration(url, headers) }
@@ -403,7 +420,7 @@ class PlaybackResolver(private val context: Context) {
         if (index >= 0) { if (manifestKey != null) streams = streams.toMutableList().also { it[index] = it[index].copy(manifestKey = manifestKey) }; return }
         val headers = buildMap {
             CookieManager.getInstance().getCookie(value)?.takeIf { it.isNotEmpty() }?.let { put("Cookie", it) }
-            put("User-Agent", PLAYER_AGENT)
+            put("User-Agent", webView.settings.userAgentString ?: PLAYER_AGENT)
             if (referer.isNotEmpty()) put("Referer", referer)
         }
         val ext = urlExtension(value).uppercase()

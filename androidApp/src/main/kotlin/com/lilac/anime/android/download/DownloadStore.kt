@@ -10,6 +10,8 @@ import com.lilac.anime.android.data.SavedAnime
 import com.lilac.anime.android.player.*
 import com.lilac.anime.android.subtitle.SubtitleFiles
 import com.lilac.anime.android.subtitle.SubtitlePreparer
+import com.lilac.anime.android.subtitle.DesktopSubtitlePolicy
+import com.lilac.anime.android.subtitle.TranslationCoordinator
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -48,6 +50,7 @@ object DownloadStore {
     var error by mutableStateOf<String?>(null)
     var pendingResolution by mutableStateOf(0); private set
     var resolvingTitle by mutableStateOf(""); private set
+    var translatingTitle by mutableStateOf<String?>(null); private set
     val transferRate = mutableStateMapOf<String, Double>()
 
     lateinit var directory: File; private set
@@ -60,6 +63,8 @@ object DownloadStore {
     private var resolutionJob: Job? = null
     private val tasks = mutableMapOf<String, Job>()
     private val episodes = Semaphore(2)
+    private val translationSlot = Semaphore(1)
+    private var savedTranslation: Job? = null
     private var preferences: () -> AppPreferences = { AppPreferences() }
     private var writing: Job? = null
     private var loaded = false
@@ -183,8 +188,11 @@ object DownloadStore {
         tasks[id] = scope.launch {
             try {
                 episodes.withPermit { perform(id) }
-            } catch (failure: CancellationException) { update(id) { it.copy(status = "중단됨") } }
-            catch (failure: Throwable) { update(id) { it.copy(status = "실패", error = failure.message) } }
+            } catch (failure: CancellationException) { update(id) { if (it.localFile == null) it.copy(status = "중단됨") else it } }
+            catch (failure: Throwable) {
+                update(id) { if (it.localFile == null) it.copy(status = "실패", error = failure.message) else it }
+                error = failure.message
+            }
             finally { tasks.remove(id); transferRate.remove(id); stopServiceWhenIdle() }
         }
     }
@@ -222,6 +230,7 @@ object DownloadStore {
         }
         update(id) { it.copy(localFile = root, status = "완료") }
         prepareSubtitles(id)
+        translateSubtitles(id)
     }
 
     /** A part written whole: a disguised segment (.png/.webp/.html) decoded into transport stream as the player's proxy does. */
@@ -274,6 +283,72 @@ object DownloadStore {
         update(id) { it.copy(subtitleFiles = files.distinct(), subtitlesPrepared = true) }
     }
 
+    private suspend fun translateSubtitles(id: String) = translationSlot.withPermit {
+        val prefs = preferences()
+        if (!prefs.translateDownloads) return@withPermit
+        val translation = prefs.translationPreferences() ?: return@withPermit
+        val entry = entries.firstOrNull { it.id == id && it.localFile != null } ?: return@withPermit
+        val stream = entry.stream.resolved()
+        if (DesktopSubtitlePolicy.siteKorean(entry.anime.source, stream.subtitles, stream)) return@withPermit
+        val folder = folder(id)
+        val files = entry.subtitleFiles.map { File(folder, it) }.filter { it.isFile }
+        if (files.any { it.name.startsWith("translated-") || SubtitleFiles.isKorean(it) }) return@withPermit
+        val tracks = stream.subtitles.take(6)
+        val japanese = DesktopSubtitlePolicy.translationTrack(tracks, "ja")
+        val english = DesktopSubtitlePolicy.translationTrack(tracks, "en")
+        fun saved(track: RemoteSubtitle?) = track?.let { wanted -> files.firstOrNull { it.nameWithoutExtension == "track-${tracks.indexOf(wanted)}" } }
+        val original = saved(japanese) ?: files.firstOrNull { it.nameWithoutExtension == "subtitle-jimaku" }
+            ?: saved(english) ?: files.firstOrNull() ?: return@withPermit
+        val translator = TranslationCoordinator()
+        translatingTitle = entry.anime.title + " · " + entry.displayNumber.ifEmpty { entry.number.toString() } + "화"
+        try {
+            var result: File? = null
+            translator.translate(original, translation, { 0.0 }, { 0L }, entry.anime) {
+                if (!it.name.startsWith("working-")) result = it
+            }.join()
+            val output = result
+            if (output == null || output.name.contains("-partial-")) {
+                error = translator.error ?: translator.status
+                return@withPermit
+            }
+            if (entries.none { it.id == id }) return@withPermit
+            val name = "translated-" + output.name
+            val target = android.util.AtomicFile(File(folder, name))
+            val written = target.startWrite()
+            try {
+                output.inputStream().use { it.copyTo(written) }
+                target.finishWrite(written)
+            } catch (failure: Throwable) {
+                target.failWrite(written)
+                throw failure
+            }
+            update(id) { it.copy(subtitleFiles = (listOf(name) + it.subtitleFiles).distinct()) }
+        } finally {
+            translator.shutdown()
+            translatingTitle = null
+        }
+    }
+
+    fun translateSaved() {
+        if (savedTranslation?.isActive == true) return
+        val saved = entries.filter { it.localFile != null && it.id !in tasks }
+        if (saved.isEmpty() || !preferences().translateDownloads) return
+        if (preferences().translationPreferences() == null) { error = "설정에서 사용할 번역 API 또는 로컬 모델을 선택하세요."; return }
+        DownloadService.start(context)
+        savedTranslation = scope.launch {
+            try {
+                for (entry in saved) translateSubtitles(entry.id)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                error = failure.message
+            } finally {
+                savedTranslation = null
+                stopServiceWhenIdle()
+            }
+        }
+    }
+
     fun cancel(id: String) { tasks[id]?.cancel(); update(id) { it.copy(status = "중단됨") } }
     fun delete(id: String) {
         tasks[id]?.cancel()
@@ -287,7 +362,7 @@ object DownloadStore {
     }
     fun resumeGroup(animeID: String) { group(animeID).filter { it.localFile == null && it.status in listOf("중단됨", "실패") }.forEach(::retry) }
     fun removeGroup(animeID: String) { stopGroup(animeID); group(animeID).forEach { delete(it.id) } }
-    fun pauseAll() { stopResolving(); entries.filter { it.localFile == null }.forEach { cancel(it.id) } }
+    fun pauseAll() { stopResolving(); savedTranslation?.cancel(); tasks.keys.toList().forEach { tasks[it]?.cancel() }; entries.filter { it.localFile == null }.forEach { cancel(it.id) } }
     fun resumeAll() { entries.filter { it.localFile == null && !tasks.containsKey(it.id) }.forEach(::retry) }
     /** Episodes taken in from an exported folder (DownloadTransfer.import). */
     fun importCompleted(values: List<DownloadEntry>) { entries = values.filter { v -> entries.none { it.id == v.id } } + entries; persist() }
@@ -305,7 +380,7 @@ object DownloadStore {
         return parts.joinToString(", ")
     }
 
-    private fun stopServiceWhenIdle() { if (tasks.isEmpty() && resolutionJob == null && queue.isEmpty()) DownloadService.stop(context) }
+    private fun stopServiceWhenIdle() { if (tasks.isEmpty() && savedTranslation == null && resolutionJob == null && queue.isEmpty()) DownloadService.stop(context) }
     private fun update(id: String, change: (DownloadEntry) -> DownloadEntry) {
         entries = entries.map { if (it.id == id) change(it) else it }; persist()
     }

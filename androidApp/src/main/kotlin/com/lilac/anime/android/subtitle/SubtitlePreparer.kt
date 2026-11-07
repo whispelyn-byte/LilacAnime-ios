@@ -204,6 +204,20 @@ class SubtitlePreparer(private val context: Context) {
             runCatching { SubtitleFiles.associateFonts(SubtitleFiles.fonts(file) + fonts, file) }
             return Found(file, provider)
         }
+        if (provider == "anissia") {
+            for (asset in assets.filter { it.source == "post" }) {
+                currentCoroutineContext().ensureActive()
+                if (!tried.add(asset.url + "\u0000WinPNG")) continue
+                val episode = asset.matchedEpisode ?: item.displayNumber.toDoubleOrNull() ?: item.number.toDouble()
+                try {
+                    WinPngReader.subtitle(context, asset.url, episode)?.let { return Found(it, provider) }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    // Try the next ranked post when the embedded converter fails.
+                }
+            }
+        }
         return null
     }
 

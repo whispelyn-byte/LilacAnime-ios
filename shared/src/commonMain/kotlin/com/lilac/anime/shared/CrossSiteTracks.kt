@@ -19,8 +19,16 @@ import kotlinx.serialization.json.Json
 // They are timed for that site's video, not the one playing: the player syncs them to the episode's audio like any
 // subtitle put on, and never takes them as the timing reference for another subtitle.
 
-/** A subtitle track of another site's same episode: origin "reanime" or "miruro"; headers its file wants. */
-data class CrossSiteTrack(val label: String, val url: String, val language: String, val format: String, val origin: String, val headers: Map<String, String> = emptyMap())
+/** A subtitle track of another site's same episode. Some providers return the already verified file. */
+data class CrossSiteTrack(
+    val label: String,
+    val url: String,
+    val language: String,
+    val format: String,
+    val origin: String,
+    val headers: Map<String, String> = emptyMap(),
+    val contentBase64: String? = null
+)
 
 /** What the cross-site lookup needs of the work playing: the site, its own id, its titles, air year and AniList id. */
 data class CrossSiteWork(

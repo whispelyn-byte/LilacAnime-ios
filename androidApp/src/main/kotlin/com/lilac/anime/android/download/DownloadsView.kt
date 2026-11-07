@@ -118,11 +118,15 @@ fun DownloadsView() {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             LilacOutlineButton("모두 일시 중지", icon = Icons.Filled.Pause) { DownloadStore.pauseAll() }
             LilacOutlineButton("모두 이어받기", icon = Icons.Filled.Refresh) { DownloadStore.resumeAll() }
+            if (LocalApp.current.library.preferences.translateDownloads) {
+                LilacOutlineButton("저장한 회차 자막 번역", enabled = saved.isNotEmpty() && DownloadStore.translatingTitle == null) { DownloadStore.translateSaved() }
+            }
             LilacOutlineButton("폴더로 내보내기", icon = Icons.Filled.Folder) { exporter.launch(null) }
             LilacOutlineButton("폴더에서 가져오기", icon = Icons.Filled.Folder) { importer.launch(null) }
             LilacOutlineButton("다운로드 전체 삭제", icon = Icons.Filled.Delete, tint = danger) { confirmClear = true }
         }
         transfer?.let { Text(it, fontSize = 12.sp, color = LilacStyle.muted) }
+        DownloadStore.translatingTitle?.let { LilacProgress("$it 자막 번역 중") }
         if (DownloadStore.pendingResolution > 0) Column(Modifier.downloadCard(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             LilacProgress("영상 준비 · ${DownloadStore.pendingResolution}개 남음")
             Text(DownloadStore.resolvingTitle, fontSize = 12.sp, color = LilacStyle.muted)

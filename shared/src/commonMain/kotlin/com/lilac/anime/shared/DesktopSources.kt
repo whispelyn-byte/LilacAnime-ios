@@ -14,6 +14,8 @@ import kotlin.io.encoding.Base64
 
 internal expect fun inflateCatalogGzip(data: ByteArray): ByteArray
 
+const val PROVIDER_SUBTITLE_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
 internal fun JsonObject.text(key: String) = (get(key) as? JsonPrimitive)?.contentOrNull.orEmpty()
 internal fun JsonObject.number(key: String) = text(key).toIntOrNull()
 internal fun JsonObject.obj(key: String) = get(key) as? JsonObject ?: JsonObject(emptyMap())
@@ -735,23 +737,34 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
         val manifest = client.get(variant) { header("User-Agent", userAgent) }.body<String>()
         OhliDirectStream(variant, manifest, DesktopSourceParser.ohliSubtitleFiles(page.await()))
     } }
-    /** Whether a subtitle file answers as one (WebVTT, ASS, SAMI or SRT, not a web page; desktop ohliSubtitleFile). */
-    private suspend fun subtitleFileAnswers(url: String, headers: Map<String, String>): Boolean = try {
-        val response = client.get(url) { expectSuccess = false; headers.forEach { (key, value) -> header(key, value) } }
-        val head = if (response.status.isSuccess()) response.body<String>().take(4096).removePrefix("﻿").trimStart() else ""
-        head.isNotEmpty() && !Regex("^<(?:!doctype|html|head)", RegexOption.IGNORE_CASE).containsMatchIn(head) &&
-            (Regex("^webvtt", RegexOption.IGNORE_CASE).containsMatchIn(head) || Regex("\\[script info]|<sami", RegexOption.IGNORE_CASE).containsMatchIn(head) || head.contains("-->"))
-    } catch (error: CancellationException) { throw error } catch (_: Exception) { false }
+    /** Keep the same response we verified so neither platform has to fetch it again. */
+    internal suspend fun verifiedProviderSubtitle(url: String, headers: Map<String, String>, origin: String): CrossSiteTrack? {
+        return try {
+            val response = client.get(url) {
+                expectSuccess = false
+                if (headers.keys.none { it.equals("User-Agent", ignoreCase = true) }) header("User-Agent", PROVIDER_SUBTITLE_AGENT)
+                headers.forEach { (key, value) -> header(key, value) }
+            }
+            if (!response.status.isSuccess()) return null
+            val limit = 20 * 1024 * 1024
+            if ((response.headers[HttpHeaders.ContentLength]?.toLongOrNull() ?: 0) >= limit) return null
+            val data = response.body<ByteArray>()
+            if (data.size >= limit) return null
+            val format = SubtitleTools.providerFileFormat(data) ?: return null
+            CrossSiteTrack("한국어", url, "ko", format, origin, contentBase64 = Base64.encode(data))
+        } catch (error: CancellationException) { throw error } catch (_: Exception) { null }
+    }
     /** An 애니24 episode's Korean subtitle file alone, for another site's episode (desktop d8f7978 ohliEpisodeSubtitle):
      *  the first file its player page names that answers as a subtitle. None for a video with the subtitle in the picture. */
     internal suspend fun ohliEpisodeSubtitle(url: String): CrossSiteTrack? {
-        val agent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1"
         val player = ohliPlayer(url)
-        val html = client.get(player) { header("User-Agent", agent); header("Referer", DesktopSourceParser.OHLI24_WEB + "/") }.body<String>()
-        val headers = mapOf("User-Agent" to agent, "Referer" to player)
-        for (file in DesktopSourceParser.ohliSubtitleFiles(html)) {
-            if (subtitleFileAnswers(file, headers)) return CrossSiteTrack("한국어", file, "ko", "vtt", "ohli24", headers)
-        }
+        val html = client.get(player) { header("User-Agent", PROVIDER_SUBTITLE_AGENT); header("Referer", DesktopSourceParser.OHLI24_WEB + "/") }.body<String>()
+        return ohliSubtitle(DesktopSourceParser.ohliSubtitleFiles(html))
+    }
+    /** The first of an 애니24 player's subtitle files that answers as one, fetched as desktop ohliSubtitleFile does
+     *  (its own user agent, no Referer; the body read, not the MIME type). None: the subtitle is in the picture. */
+    suspend fun ohliSubtitle(files: List<String>): CrossSiteTrack? {
+        for (file in files.distinct()) verifiedProviderSubtitle(file, emptyMap(), "ohli24")?.let { return it }
         return null
     }
     /** A 링크애니 episode's own Korean subtitle file alone (its page's player_aaaa subtitle_url, when the file is the
@@ -759,7 +772,7 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
     internal suspend fun linkaniEpisodeSubtitle(url: String): CrossSiteTrack? {
         val track = DesktopSourceParser.linkaniStreams(text(url)).firstOrNull()?.subtitles?.firstOrNull() ?: return null
         val headers = mapOf("Referer" to "https://linkani.tv/")
-        return if (subtitleFileAnswers(track.url, headers)) CrossSiteTrack("한국어", track.url, "ko", "vtt", "linkani", headers) else null
+        return verifiedProviderSubtitle(track.url, headers, "linkani")
     }
     /** An episode's player page, from its page data (desktop resolveOhliEpisode). */
     suspend fun ohliPlayer(url: String): String =

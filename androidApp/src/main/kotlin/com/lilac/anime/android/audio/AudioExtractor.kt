@@ -4,6 +4,7 @@ import android.content.Context
 import com.lilac.anime.android.player.PLAYER_AGENT
 import com.lilac.anime.android.player.PlaybackFailure
 import com.lilac.anime.android.player.isFileURL
+import com.lilac.anime.android.player.mpvAddress
 import dev.jdtech.mpv.MPVLib
 import kotlinx.coroutines.*
 import java.io.File
@@ -52,7 +53,7 @@ object AudioExtractor {
             mpv.init()
             mpv.addObserver(observer)
             if (progress != null) mpv.observeProperty("time-pos", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
-            mpv.command(arrayOf("loadfile", source.url.removePrefix("file://"), "replace"))
+            mpv.command(arrayOf("loadfile", mpvAddress(source.url), "replace"))
             try { finished.await() } catch (cancelled: CancellationException) { runCatching { mpv.command(arrayOf("stop")) }; throw cancelled }
             if (!loaded || !target.isFile || target.length() == 0L) throw PlaybackFailure("영상 음성을 읽지 못했어요.")
         } finally {

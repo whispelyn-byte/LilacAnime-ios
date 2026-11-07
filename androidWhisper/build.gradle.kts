@@ -7,6 +7,7 @@ plugins {
 android {
     namespace = "com.lilac.anime.whisper"
     compileSdk = 36
+    ndkVersion = "29.0.14206865"
     defaultConfig {
         minSdk = 26
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }

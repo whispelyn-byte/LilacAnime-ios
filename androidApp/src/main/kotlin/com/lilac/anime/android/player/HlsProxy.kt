@@ -23,6 +23,9 @@ class Fetched(val data: ByteArray, val status: Int, val headers: Headers, val ur
 
 /** iOS HLSData: what the proxy and the server checks do with playlists and segments. */
 object HlsData {
+    private val disguisedExtensions = setOf("jpg", "jpeg", "png", "webp", "html")
+    fun disguised(url: String) = urlExtension(url) in disguisedExtensions
+
     /** A cookie jar shared by the player's requests: a CDN's cookie from the playlist goes with its segments. */
     private val cookies = object : CookieJar {
         private val kept = java.util.concurrent.ConcurrentHashMap<String, List<Cookie>>()
@@ -57,6 +60,7 @@ object HlsData {
         val builder = Request.Builder().url(url)
         val sameHost = urlHost(url) == urlHost(stream.url)
         stream.headers.forEach { (key, value) -> if (!key.equals("cookie", true) || sameHost) builder.header(key, value) }
+        if (stream.headers.keys.none { it.equals("User-Agent", true) }) builder.header("User-Agent", PLAYER_AGENT)
         if (stream.referer.isNotEmpty()) builder.header("Referer", stream.referer)
         if (range != null) builder.header("Range", range)
         return builder.build()
@@ -185,6 +189,22 @@ object HlsData {
     }
 
     private val uriPattern = Regex("URI=\"([^\"]+)\"", RegexOption.IGNORE_CASE)
+    fun variantPlaylists(text: String, base: String): List<String> {
+        var nextIsVariant = false
+        return text.lineSequence().mapNotNull { raw ->
+            val line = raw.trim()
+            when {
+                line.startsWith("#EXT-X-STREAM-INF:") -> { nextIsVariant = true; null }
+                line.startsWith("#EXT-X-MEDIA:") || line.startsWith("#EXT-X-I-FRAME-STREAM-INF:") ->
+                    uriPattern.find(line)?.groupValues?.get(1)?.let { resolveURL(base, it) }
+                nextIsVariant && line.isNotEmpty() && !line.startsWith("#") -> {
+                    nextIsVariant = false
+                    resolveURL(base, line)
+                }
+                else -> null
+            }
+        }.toList()
+    }
     fun references(text: String, base: String): List<String> {
         val urls = mutableListOf<String>()
         for (line in text.lines()) {
@@ -239,6 +259,7 @@ class HlsProxy(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var server: ServerSocket? = null
     private val routes = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val manifests = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val encrypted = java.util.Collections.synchronizedSet(mutableSetOf<String>())
     private val token = UUID.randomUUID().toString()
     private var stream: ResolvedStream? = null
@@ -249,11 +270,14 @@ class HlsProxy(
     suspend fun start(stream: ResolvedStream, quality: String = "Auto"): ResolvedStream {
         this.stream = stream; this.quality = quality
         startServer()
+        if (stream.manifestKey != null || stream.hlsManifest != null || urlExtension(stream.url) == "m3u8") manifests += stream.url
         return stream.copy(url = register(stream.url), headers = emptyMap(), manifestKey = null, hlsManifest = null)
     }
     private suspend fun startServer() {
-        val socket = withContext(Dispatchers.IO) { ServerSocket(0, 64, InetAddress.getByName(if (lanAddress != null) "0.0.0.0" else "127.0.0.1")) }
-        server = socket; port = socket.localPort
+        val socket = withContext(Dispatchers.IO) {
+            ServerSocket(0, 64, InetAddress.getByName(if (lanAddress != null) "0.0.0.0" else "127.0.0.1")).also { server = it }
+        }
+        port = socket.localPort
         scope.launch {
             while (isActive) {
                 val connection = runCatching { socket.accept() }.getOrNull() ?: break
@@ -267,7 +291,11 @@ class HlsProxy(
         routes[key] = url
         val original = urlExtension(url)
         // FFmpeg refuses HLS segments named .html/.png/.webp: they are served decoded as transport stream, so named so.
-        val ext = if (url == stream?.url && stream?.hlsManifest != null) "m3u8" else if (original in setOf("html", "png", "webp")) "ts" else original.ifEmpty { "bin" }
+        val ext = when {
+            url in manifests -> "m3u8"
+            HlsData.disguised(url) -> "ts"
+            else -> original.ifEmpty { "bin" }
+        }
         return "http://$host:$port/$token/$key.$ext"
     }
 
@@ -294,17 +322,19 @@ class HlsProxy(
         try {
             val aes = url in encrypted
             val ext = urlExtension(url)
-            val segment = !aes && ext in setOf("png", "webp", "html")
-            val fetched = if (segment) media.load(url, stream) else HlsData.playerFetch(url, stream, if (stream.manifestKey == null) range else null)
+            val playlist = url in manifests || ext == "m3u8"
+            val segment = !playlist && !aes && HlsData.disguised(url)
+            val fetched = if (segment) media.load(url, stream) else HlsData.playerFetch(url, stream, if (!playlist && stream.manifestKey == null) range else null)
             var body = fetched.data
             var contentType = fetched.mimeType ?: "application/octet-stream"
-            if (ext == "m3u8" || contentType.contains("mpegurl") || (url == stream.url && stream.hlsManifest != null)) {
+            if (playlist || contentType.contains("mpegurl")) {
                 val text = HlsData.selectVariant(HlsData.manifest(fetched.data, stream.manifestKey), quality)
-                val secret = HlsData.encryptedSegments(text, url)
-                val references = HlsData.references(text, url)
+                manifests.addAll(HlsData.variantPlaylists(text, fetched.url))
+                val secret = HlsData.encryptedSegments(text, fetched.url)
+                val references = HlsData.references(text, fetched.url)
                 synchronized(encrypted) { encrypted.removeAll(references.toSet()); encrypted.addAll(secret) }
-                media.order(references.filter { it !in secret && urlExtension(it) in setOf("png", "webp", "html") })
-                body = HlsData.rewrite(text, url) { register(it) }.toByteArray()
+                media.order(references.filter { it !in secret && it !in manifests && HlsData.disguised(it) })
+                body = HlsData.rewrite(text, fetched.url) { register(it) }.toByteArray()
                 contentType = "application/vnd.apple.mpegurl"
             } else if (segment) {
                 contentType = if (body.isNotEmpty() && body[0] == 71.toByte()) "video/mp2t" else "video/mp4"

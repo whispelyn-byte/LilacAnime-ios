@@ -49,6 +49,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -211,11 +212,11 @@ fun PlayerScreen(start: PlaybackItem, close: () -> Unit) {
                 Icon(Icons.Outlined.Settings, "설정", tint = Color.White, modifier = Modifier.clickable { settings = true })
             }
         }
-        val failure = model.engine.error ?: model.error ?: model.resolver.error
-        if (!showWeb && !inPip && (model.active == null || model.engine.error != null)) {
+        val failure = model.engine.error ?: model.error ?: model.resolver.error.takeIf { model.active == null }
+        if (!showWeb && !inPip && (model.active == null || !model.engine.fileLoaded || failure != null)) {
             Column(Modifier.align(Alignment.Center).padding(24.dp).background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(16.dp)).padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (model.resolver.loading || (failure == null && model.active == null)) {
+                if (failure == null) {
                     CircularProgressIndicator(color = Color.White, strokeWidth = 2.5.dp, modifier = Modifier.size(28.dp))
                     Text("영상을 준비하고 있어요", color = Color.White, fontSize = 14.sp)
                 }
@@ -301,6 +302,8 @@ private fun PlayerControls(model: PlayerModel, close: () -> Unit, settings: () -
     LaunchedEffect(model.toast) { model.toast?.let { flash(it.first, 2200) } }
     LaunchedEffect(hint?.id) { val current = hint ?: return@LaunchedEffect; delay(800); if (hint?.id == current.id) hint = null }
     LaunchedEffect(keyboardEnabled) { if (keyboardEnabled) runCatching { focus.requestFocus() } }
+    LaunchedEffect(keyboardEnabled, locked) { if (!keyboardEnabled || locked) engine.finishHold() }
+    DisposableEffect(engine) { onDispose { engine.finishHold() } }
     fun shot() { if (taking) return; taking = true; scope.launch { flash(screenshot()); taking = false } }
     fun changeSpeed(up: Boolean) {
         val speeds = listOf(0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 3.0, 4.0)
@@ -311,10 +314,19 @@ private fun PlayerControls(model: PlayerModel, close: () -> Unit, settings: () -
     }
     val chapter = model.currentChapter
 
-    Box(Modifier.fillMaxSize().focusRequester(focus).focusable().onKeyEvent { event ->
-        if (!keyboardEnabled || locked || event.type != KeyEventType.KeyDown) return@onKeyEvent false
+    Box(Modifier.fillMaxSize().focusRequester(focus)
+        .onFocusChanged { if (!it.hasFocus) engine.finishHold() }
+        .focusable().onKeyEvent { event ->
+        if (!keyboardEnabled || locked) return@onKeyEvent false
+        if (event.key == Key.Spacebar) {
+            when (event.type) {
+                KeyEventType.KeyDown -> engine.beginSpaceHold()
+                KeyEventType.KeyUp -> { engine.finishHold(toggleOnTap = true); touch() }
+            }
+            return@onKeyEvent true
+        }
+        if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
         when (event.key) {
-            Key.Spacebar -> { engine.toggle(); touch() }
             Key.DirectionLeft -> SeekHint.relative(-seek, engine.position, engine.duration, hint)?.let { engine.seekByViewer(it.target); hint = it }
             Key.DirectionRight -> SeekHint.relative(seek, engine.position, engine.duration, hint)?.let { engine.seekByViewer(it.target); hint = it }
             Key.DirectionUp -> engine.changeVolume(engine.volume + 5)
@@ -383,7 +395,7 @@ private fun PlayerControls(model: PlayerModel, close: () -> Unit, settings: () -
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(Modifier.weight(1f).background(Color.Black.copy(alpha = 0.52f), RoundedCornerShape(20.dp)).padding(horizontal = 12.dp, vertical = 2.dp),
                             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(clock(if (dragging) value.toDouble() else engine.position), color = Color.White, fontSize = 11.sp)
+                            Text(if (engine.fileLoaded) clock(if (dragging) value.toDouble() else engine.position) else "—", color = Color.White, fontSize = 11.sp)
                             Slider(
                                 value = if (dragging) value else engine.position.toFloat().coerceIn(0f, maxOf(engine.duration.toFloat(), 1f)),
                                 onValueChange = { if (!dragging) { dragging = true }; value = it; touch(); (model.playable ?: model.active)?.let { s -> model.preview.show(s, it.toDouble()) } },
@@ -391,7 +403,7 @@ private fun PlayerControls(model: PlayerModel, close: () -> Unit, settings: () -
                                 valueRange = 0f..maxOf(engine.duration.toFloat(), 1f), modifier = Modifier.weight(1f),
                                 colors = SliderDefaults.colors(thumbColor = LilacStyle.accent, activeTrackColor = LilacStyle.accent, inactiveTrackColor = Color.White.copy(alpha = 0.3f)),
                             )
-                            Text(clock(engine.duration), color = Color.White.copy(alpha = 0.65f), fontSize = 11.sp)
+                            Text(if (engine.duration > 0) clock(engine.duration) else "—", color = Color.White.copy(alpha = 0.65f), fontSize = 11.sp)
                         }
                         ControlButton(Icons.Outlined.CameraAlt, "스크린샷", enabled = !taking) { shot(); touch() }
                         ControlButton(Icons.Filled.Lock, "화면 잠금") { locked = true; visible = false }

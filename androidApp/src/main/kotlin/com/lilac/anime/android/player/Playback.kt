@@ -14,6 +14,8 @@ fun urlPath(value: String): String = runCatching { URL(value).path }.getOrElse {
 fun urlHost(value: String): String = runCatching { URL(value).host }.getOrDefault("")
 fun urlExtension(value: String): String = urlPath(value).substringAfterLast('/').substringAfterLast('.', "").lowercase()
 fun isFileURL(value: String) = value.startsWith("file:") || value.startsWith("/")
+internal fun mpvAddress(value: String): String =
+    if (value.startsWith("file:")) android.net.Uri.parse(value).path ?: value else value
 
 /** A stream found for an episode (iOS ResolvedStream). */
 data class ResolvedStream(

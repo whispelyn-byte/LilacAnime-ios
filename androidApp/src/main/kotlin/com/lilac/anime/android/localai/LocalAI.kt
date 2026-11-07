@@ -91,7 +91,6 @@ object LocalInference {
             result
         }
     }
-    fun cancel() { if (handle != 0L) LocalAI.nativeCancel(handle) }
     suspend fun unload() = lock.withLock { idle?.cancel(); idle = null; if (handle != 0L) { LocalAI.nativeClose(handle); handle = 0L }; loaded = "" }
 }
 

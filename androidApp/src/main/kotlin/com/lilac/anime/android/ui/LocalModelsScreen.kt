@@ -5,6 +5,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,7 +19,11 @@ import androidx.compose.ui.unit.sp
 import com.lilac.anime.android.LocalApp
 import com.lilac.anime.android.data.LocalModelInputOptions
 import com.lilac.anime.android.data.SecureKeys
+import com.lilac.anime.android.data.await
 import com.lilac.anime.android.localai.*
+import com.lilac.anime.shared.IosServices
+import com.lilac.anime.shared.ModelFile
+import com.lilac.anime.shared.ModelSearchResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -35,6 +41,7 @@ fun LocalModelSettings() {
     val scope = rememberCoroutineScope()
     var files by remember { mutableStateOf(LocalModelFiles.files()) }
     var address by remember { mutableStateOf("") }
+    var searchingModels by remember { mutableStateOf(false) }
     var token by remember { mutableStateOf("") }
     var copying by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -103,6 +110,7 @@ fun LocalModelSettings() {
         LilacOutlineButton(if (copying) "모델 가져오는 중…" else "GGUF 파일 가져오기", enabled = !copying) { picker.launch(arrayOf("*/*")) }
     }
     SettingBlock("주소로 받기", "GGUF 파일의 HTTPS 주소를 넣으세요. 모델 파일은 앱 안에 저장됩니다.") {
+        LilacOutlineButton("Hugging Face 모델 검색") { searchingModels = true }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             SettingField(address, { address = it }, "https://…/model.gguf", modifier = Modifier.weight(1f))
             LilacOutlineButton(if (ModelInstaller.progress["address"] != null) "받는 중…" else "받기") {
@@ -134,6 +142,77 @@ fun LocalModelSettings() {
         }
     }
     error?.let { SettingNote(it, Color.Red) }
+    if (searchingModels) ModelSearchDialog(
+        dismiss = { searchingModels = false },
+        select = { address = it; searchingModels = false },
+    )
+}
+
+@Composable
+private fun ModelSearchDialog(dismiss: () -> Unit, select: (String) -> Unit) {
+    val service = remember { IosServices() }
+    DisposableEffect(service) { onDispose { service.close() } }
+    val context = LocalContext.current
+    var query by remember { mutableStateOf("") }
+    var search by remember { mutableStateOf<Pair<String, Long>?>(null) }
+    var repo by remember { mutableStateOf<String?>(null) }
+    var models by remember { mutableStateOf(emptyList<ModelSearchResult>()) }
+    var files by remember { mutableStateOf(emptyList<ModelFile>()) }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(search) {
+        val term = search?.first ?: return@LaunchedEffect
+        loading = true
+        error = null
+        models = emptyList()
+        service.await<List<ModelSearchResult>> { searchModels(term, it) }
+            .onSuccess { models = it }
+            .onFailure { error = it.message }
+        loading = false
+    }
+    LaunchedEffect(repo) {
+        val selected = repo ?: return@LaunchedEffect
+        loading = true
+        error = null
+        files = emptyList()
+        service.await<List<ModelFile>> { modelFiles(selected, it) }
+            .onSuccess { files = it }
+            .onFailure { error = it.message }
+        loading = false
+    }
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text(repo ?: "Hugging Face") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (repo == null) {
+                    SettingField(query, { query = it }, "GGUF 모델 이름")
+                    LilacOutlineButton("검색", enabled = query.isNotBlank()) { search = query.trim() to System.nanoTime() }
+                } else {
+                    LilacOutlineButton("검색 결과로") { repo = null; error = null; loading = false }
+                }
+                if (loading) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                error?.let { SettingNote(it, Color.Red) }
+                if (!loading && error == null && search != null && (if (repo == null) models.isEmpty() else files.isEmpty())) {
+                    SettingNote("GGUF 파일을 찾지 못했습니다.")
+                }
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 280.dp)) {
+                    if (repo == null) {
+                        items(models, key = { it.id }) { model ->
+                            TextButton(onClick = { repo = model.id }) { Text(model.id) }
+                        }
+                    } else {
+                        items(files, key = { it.name }) { file ->
+                            TextButton(onClick = { select(file.url) }) {
+                                Text(file.name + " · " + android.text.format.Formatter.formatFileSize(context, file.size))
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = dismiss) { Text("닫기") } },
+    )
 }
 
 /** iOS LocalModelOptionsEditor: a file of the user's own, how it is asked. */

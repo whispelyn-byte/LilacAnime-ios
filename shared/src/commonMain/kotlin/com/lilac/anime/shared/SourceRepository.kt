@@ -56,6 +56,7 @@ class SourceRepository(private val client: HttpClient, private val details: Deta
     private val updateCache = mutableMapOf<String, Pair<Long, List<Anime>>>()
     suspend fun ohliPlayer(url: String): String = desktop.ohliPlayer(url)
     suspend fun ohliStream(playerUrl: String, userAgent: String): OhliDirectStream = desktop.ohliStream(playerUrl, userAgent)
+    suspend fun ohliSubtitle(files: List<String>): CrossSiteTrack? = desktop.ohliSubtitle(files)
     suspend fun browse(source: String, query: String = "", page: Int = 1, filter: BrowseFilter = BrowseFilter()): List<Anime> {
         require(page > 0)
         if (filter.sort == "updated" && source in listOf("reanime", "miruro", "ohli24")) {
@@ -232,7 +233,9 @@ class SourceRepository(private val client: HttpClient, private val details: Deta
         override suspend fun subtitle(episode: KoreanSiteEpisode): CrossSiteTrack? = when (site) {
             "ohli24" -> desktop.ohliEpisodeSubtitle(episode.url)
             "linkani" -> desktop.linkaniEpisodeSubtitle(episode.url)
-            else -> KoreanSiteBrowserRegistry.linkkfSubtitle(episode.url)
+            else -> KoreanSiteBrowserRegistry.linkkfSubtitle(episode.url)?.let { track ->
+                desktop.verifiedProviderSubtitle(track.url, track.headers, site)
+            }
         }
     }
     private val crossSite by lazy {

@@ -69,6 +69,7 @@ data class AppPreferences(
     val speed: Double = 1.0,
     val seekSeconds: Double = 10.0,
     val autoPlay: Boolean = true,
+    val prepareNextEpisode: Boolean = true,
     val autoSkip: Boolean = false,
     val showSkipButton: Boolean = true,
     val backgroundAudio: Boolean = true,
@@ -85,6 +86,7 @@ data class AppPreferences(
     val vttStyle: Boolean = true,
     val subtitleProvider: String = "auto",
     val autoTranslation: Boolean = true,
+    val translateDownloads: Boolean = true,
     val translationProvider: String = "gemini",
     val translationModel: String = "",
     val translationModels: Map<String, String> = emptyMap(),
@@ -208,6 +210,7 @@ class LibraryStore(context: Context) {
                  position: Double, duration: Double, displayNumber: String? = null) {
         if (!position.isFinite() || !duration.isFinite() || position < 0) return
         val id = anime.id + "#" + episodeID
+        if (duration <= 0 && history.any { it.id == id && it.progress > 0 }) return
         // Only the newest entry of a series keeps its episode list (iOS: library.json grew without end otherwise).
         val older = history.filter { it.id != id }.map { entry ->
             if (entry.anime.id != anime.id || entry.anime.snapshot.contains("\"episodes\":[]")) entry
@@ -219,6 +222,10 @@ class LibraryStore(context: Context) {
     }
     fun resume(anime: SavedAnime, episodeID: String): Double =
         history.firstOrNull { it.anime.id == anime.id && it.episodeID == episodeID }?.let { if (it.duration > 0 && it.position / it.duration > 0.95) 0.0 else it.position } ?: 0.0
+
+    fun resumeFraction(anime: SavedAnime, episodeID: String): Double? =
+        history.firstOrNull { it.anime.id == anime.id && it.episodeID == episodeID && it.duration <= 0 && it.position <= 0 }
+            ?.progress?.takeIf { it > 0.0 && it <= 0.95 }
 
     fun deleteHistory(ids: Set<String>) { history = history.filterNot { it.id in ids }; persist(); onChange?.invoke(false) }
     fun clearHistory() { history = emptyList(); persist(); onChange?.invoke(false) }

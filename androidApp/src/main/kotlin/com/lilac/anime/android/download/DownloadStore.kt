@@ -268,11 +268,15 @@ object DownloadStore {
             val preparer = SubtitlePreparer(context)
             try {
                 val stream = entry.stream.resolved()
-                preparer.prepare(playbackFor(entry), stream.subtitles, prefs, stream = stream)?.let { found ->
+                // The other sites' tracks of the episode are waited for (a download is not in a hurry) and kept: all of them
+                // when the site has none, else the Korean ones beside its own (desktop queueTracks).
+                val other = preparer.otherSiteTracks(playbackFor(entry), prefs).filter { o -> stream.subtitles.none { it.url == o.url } }
+                val kept = if (stream.subtitles.isEmpty()) other else other.filter(com.lilac.anime.android.player.SubtitlePolicy::isKorean)
+                preparer.prepareDownload(playbackFor(entry), stream.subtitles + other, prefs, stream)?.let { found ->
                     val name = "subtitle-" + found.provider + "." + found.file.extension
                     found.file.copyTo(File(folder, name), overwrite = true); files += name
                 }
-                stream.subtitles.take(6).forEachIndexed { index, track ->
+                (stream.subtitles.take(6) + kept.take(4)).forEachIndexed { index, track ->
                     runCatching { SubtitleFiles.prepare(track.url, track.headers ?: emptyMap()).firstOrNull() }.getOrNull()?.let { file ->
                         val name = "track-$index." + file.extension
                         file.copyTo(File(folder, name), overwrite = true); files += name

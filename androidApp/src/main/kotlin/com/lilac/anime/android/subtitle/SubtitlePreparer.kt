@@ -215,6 +215,55 @@ class SubtitlePreparer(private val context: Context) {
         }
     }
 
+    /**
+     * A download's subtitle (desktop findDownloadSubtitle, iOS downloadSubtitle): a Korean one first — the preferred
+     * source's saved one when it is Korean, the stream's own subtitle, a saved Korean one, another site's Korean track
+     * (all of them waited for), the blogs — then a saved one in another language, else a source to translate.
+     */
+    suspend fun prepareDownload(item: PlaybackItem, tracks: List<RemoteSubtitle>, preferences: AppPreferences, stream: ResolvedStream? = null): Found? {
+        if (preferences.subtitleProvider == "manual" || DesktopSubtitlePolicy.burnedKorean(item.anime.source, stream)) return null
+        val source = item.anime.source
+        val saved = EpisodeSubtitleStore.list(item)
+        fun korean(record: SavedSubtitle) = record.translated || record.provider in setOf("kairan", "csora", "anissia", "linkkf", "user")
+        val preferred = DesktopSubtitlePolicy.preferredSaved(saved, preferences.subtitleProvider)
+        if (preferred != null && korean(preferred)) preferred.file?.let { return Found(it, preferred.provider) }
+        val own = tracks.filter { it.origin == null || it.origin == source }
+        for (track in if (source in KOREAN_SLOW_SITES) own else own.filter(SubtitlePolicy::isKorean)) {
+            currentCoroutineContext().ensureActive()
+            runCatching { SubtitleFiles.prepare(track.url, track.headers ?: emptyMap()) }.getOrNull()?.let { files -> select(files, item)?.let { return Found(it, if (source == "linkkf") "linkkf" else "reanime") } }
+        }
+        saved.firstOrNull(::korean)?.let { record -> record.file?.let { return Found(it, record.provider) } }
+        for (track in tracks.filter { it.origin != null && it.origin != source && SubtitlePolicy.isKorean(it) }) {
+            currentCoroutineContext().ensureActive()
+            runCatching { SubtitleFiles.prepare(track.url, track.headers ?: emptyMap()) }.getOrNull()?.let { files -> select(files, item)?.let { return Found(it, "reanime", track) } }
+        }
+        if (source != "local") community(item, preferences)?.let { rememberKorean(item); return it }
+        (preferred ?: saved.firstOrNull())?.let { record -> record.file?.let { return Found(it, record.provider) } }
+        return translationSource(item, tracks, preferences)
+    }
+
+    /** The other sites' tracks of an episode, all of them (RE:Anime's and Miruro's, and the Korean sites' files), for a
+     *  download, which waits for them (desktop withOtherSiteTracks; 다른 사이트 자막 트랙도 찾기). */
+    suspend fun otherSiteTracks(item: PlaybackItem, preferences: AppPreferences): List<RemoteSubtitle> {
+        val label = item.displayNumber.trim()
+        val number = label.toIntOrNull() ?: item.number
+        val special = Regex("^\\d+(?:\\.\\d+|[a-z])$", RegexOption.IGNORE_CASE).matches(label) ||
+            Regex("^(?:ova|ona|sp|special|특별|극장)", RegexOption.IGNORE_CASE).containsMatchIn(label)
+        val dubbed = Regex("(?:^|[^a-z])dub(?:bed)?(?:[^a-z]|$)", RegexOption.IGNORE_CASE).containsMatchIn(item.watchURL + " " + item.episodeID)
+        if (!preferences.otherSiteTracks || item.anime.source == "local" || special || dubbed || number <= 0) return emptyList()
+        return coroutineScope {
+            val korean = async {
+                com.lilac.anime.android.data.DesktopCatalog.enrich(item.anime.anime, item.anime.source)
+                val record = com.lilac.anime.android.data.DesktopCatalog.record(item.anime)
+                val titles = (listOf(record?.korean.orEmpty(), item.anime.title) + record?.aliases.orEmpty()).filter { TitleCandidates.isKorean(it) }.distinct().take(3)
+                if (titles.isEmpty()) emptyList()
+                else service.await<List<CrossSiteTrack>> { koreanSiteTracks(item.anime.anime, item.anime.source, number, false, false, titles, it) }.getOrDefault(emptyList())
+            }
+            val sites = service.await<List<CrossSiteTrack>> { crossSiteTracks(item.anime.anime, item.anime.source, number, false, false, it) }.getOrDefault(emptyList())
+            (sites + korean.await()).mapNotNull { SubtitleFiles.providerTrack(it) }.distinctBy { it.url }
+        }
+    }
+
     /** Which Korean source the series had last time (a site's origin, or "blog"): a slow site's file is waited for longer. */
     private fun koreanSourceOf(item: PlaybackItem) = defaults.getString("korean-source." + item.anime.id, "").orEmpty()
     fun rememberKoreanSource(item: PlaybackItem, found: Found) {

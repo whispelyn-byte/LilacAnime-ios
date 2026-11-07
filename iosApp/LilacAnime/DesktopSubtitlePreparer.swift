@@ -206,13 +206,16 @@ final class DesktopSubtitlePreparer {
     private func downloadSubtitle(_ item: PlaybackItem, saved: [SavedSubtitle], tracks: [RemoteSubtitle], preferences: AppPreferences, otherTracks: Task<[RemoteSubtitle], Never>?) async throws -> (URL, String)? {
         let preferred = DesktopSubtitlePolicy.preferredSaved(saved, preferred: preferences.subtitleProvider)
         if let preferred, DesktopSubtitlePolicy.downloadKorean(preferred), let file = preferred.file { return (file, preferred.provider) }
-        for track in tracks where !track.crossSite && DesktopSubtitlePolicy.isKorean(track) {
+        // The stream's own subtitle (desktop stream.subtitleUrl): a Korean track; Linkkf's, 링크애니's and 애니24's file is
+        // the Korean subtitle itself.
+        let siteFile = ["linkkf", "linkani", "ohli24"].contains(item.anime.source)
+        for track in tracks where !track.crossSite && (siteFile || DesktopSubtitlePolicy.isKorean(track)) {
             try Task.checkCancellation()
-            if let files = try? await SubtitleFiles.prepare(track.url, headers: track.headers ?? [:]), let file = select(files, item: item, offsets: []) { return (file, "reanime") }
+            if let files = try? await SubtitleFiles.prepare(track.url, headers: track.headers ?? [:]), let file = select(files, item: item, offsets: []) { return (file, item.anime.source == "linkkf" ? "linkkf" : "reanime") }
         }
         if let korean = saved.first(where: DesktopSubtitlePolicy.downloadKorean), let file = korean.file { return (file, korean.provider) }
         if let found = try await otherKorean(item, tracks: tracks, otherTracks: otherTracks, preferences: preferences) { return found }
-        if item.anime.source != "local" && item.anime.source != "linkkf", let found = try await community(item, preferences: preferences) { return found }
+        if item.anime.source != "local", let found = try await community(item, preferences: preferences) { return found }
         if let other = preferred ?? saved.first, let file = other.file { return (file, other.provider) }
         return try await translationSource(item, tracks: tracks, preferences: preferences, later: otherTracks)
     }

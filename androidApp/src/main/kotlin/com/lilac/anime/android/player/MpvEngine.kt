@@ -304,10 +304,12 @@ class MpvEngine(private val context: Context) {
     }
     private fun onFlag(property: String, value: Boolean) {
         when (property) {
-            "pause" -> paused = value
+            // keep-open pauses on the last frame (keep-open-pause): that pause is the ending too.
+            "pause" -> { paused = value; if (value && fileLoaded && atLastFrame()) reachedEnd() }
             "paused-for-cache" -> if (fileLoaded) buffering = value
             "mute" -> muted = value
-            "eof-reached" -> if (value && fileLoaded) reachedEnd()
+            // Seeking back from the end plays to the end again, and it is said again (iOS PlaybackCompletion.resume).
+            "eof-reached" -> if (fileLoaded) { if (value) reachedEnd() else completionNotified = false }
         }
     }
     private fun onTracks(json: String) {
@@ -345,12 +347,19 @@ class MpvEngine(private val context: Context) {
                     loadTimeout?.cancel()
                     reportLoadFailure()
                 }
-                fileLoaded && player.getPropertyBoolean("eof-reached") == true -> reachedEnd()
+                // Not asked for (stop and load clear fileLoaded first): mpv let the file go itself. At its end that is
+                // the ending (iOS MPV_END_FILE_REASON_EOF); the file is gone, so the last position read says so.
+                fileLoaded -> {
+                    val ended = player.getPropertyBoolean("eof-reached") == true || atLastFrame()
+                    fileLoaded = false; buffering = false
+                    if (ended) reachedEnd()
+                }
             }
         }
     }
     /** mpv's eof-reached and its end-file event are one ending (iOS PlaybackCompletion). */
     private fun reachedEnd() { if (completionNotified) return; completionNotified = true; onEnd?.invoke() }
+    private fun atLastFrame() = duration > 0 && position >= duration - 1.0
 
     companion object {
         /** The system's Korean font family (linked into the subtitle font folder). */

@@ -241,7 +241,8 @@ fun CatalogSelect(title: String, value: String, options: List<Pair<String, Strin
         }
     }
     if (selecting) {
-        ModalBottomSheet(onDismissRequest = { selecting = false }, containerColor = LilacStyle.background, skipPartiallyExpanded = true) {
+        ModalBottomSheet(onDismissRequest = { selecting = false }, containerColor = LilacStyle.background,
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(title, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = LilacStyle.text, modifier = Modifier.weight(1f))
                 Text("닫기", color = LilacStyle.accent, fontSize = 16.sp, modifier = Modifier.clickable { selecting = false }.padding(4.dp))

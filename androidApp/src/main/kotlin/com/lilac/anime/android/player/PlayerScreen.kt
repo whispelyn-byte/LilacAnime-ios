@@ -51,6 +51,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.*
@@ -385,8 +386,8 @@ private fun PlayerControls(model: PlayerModel, close: () -> Unit, settings: () -
                             Text(clock(if (dragging) value.toDouble() else engine.position), color = Color.White, fontSize = 11.sp)
                             Slider(
                                 value = if (dragging) value else engine.position.toFloat().coerceIn(0f, maxOf(engine.duration.toFloat(), 1f)),
-                                onValueChange = { if (!dragging) { dragging = true }; value = it; touch() },
-                                onValueChangeFinished = { dragging = false; engine.seekByViewer(value.toDouble()); touch() },
+                                onValueChange = { if (!dragging) { dragging = true }; value = it; touch(); (model.playable ?: model.active)?.let { s -> model.preview.show(s, it.toDouble()) } },
+                                onValueChangeFinished = { dragging = false; model.preview.hide(); engine.seekByViewer(value.toDouble()); touch() },
                                 valueRange = 0f..maxOf(engine.duration.toFloat(), 1f), modifier = Modifier.weight(1f),
                                 colors = SliderDefaults.colors(thumbColor = LilacStyle.accent, activeTrackColor = LilacStyle.accent, inactiveTrackColor = Color.White.copy(alpha = 0.3f)),
                             )
@@ -396,6 +397,14 @@ private fun PlayerControls(model: PlayerModel, close: () -> Unit, settings: () -
                         ControlButton(Icons.Filled.Lock, "화면 잠금") { locked = true; visible = false }
                     }
                 }
+            }
+        }
+        // The picture at the place being dragged to, over the bar (desktop seek bar preview).
+        if (dragging) model.preview.image?.let { bitmap ->
+            Column(Modifier.align(Alignment.BottomCenter).padding(bottom = 76.dp).background(Color.Black.copy(alpha = 0.75f), RoundedCornerShape(10.dp)).padding(4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally) {
+                androidx.compose.foundation.Image(bitmap.asImageBitmap(), null, modifier = Modifier.width(184.dp).clip(RoundedCornerShape(6.dp)))
+                Text(clock(value.toDouble()), color = Color.White, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
             }
         }
         if (locked) Box(Modifier.align(Alignment.BottomEnd).windowInsetsPadding(WindowInsets.safeDrawing).padding(18.dp)) {

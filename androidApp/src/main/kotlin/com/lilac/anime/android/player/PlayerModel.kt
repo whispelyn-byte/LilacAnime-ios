@@ -210,6 +210,8 @@ class PlayerModel(private val context: Context, start: PlaybackItem, private val
     }
 
     val cast = CastService(context)
+    /** 재생 막대 미리보기 (iOS SeekPreview). */
+    val preview = SeekPreview(context)
     /** Chromecast로 보내기 (iOS castVideo): the episode from where it is, with the subtitle on screen; this player pauses. */
     fun castVideo() {
         val stream = active ?: run { notify("먼저 영상을 재생하세요."); return }
@@ -252,7 +254,7 @@ class PlayerModel(private val context: Context, start: PlaybackItem, private val
 
     fun shutdown() {
         save(); generation++; selectionJob?.cancel(); stallJob?.cancel()
-        cast.stop(); subtitles.shutdown(); engine.shutdown(); resolver.shutdown(); proxy?.stop(); proxy = null
+        cast.stop(); preview.close(); subtitles.shutdown(); engine.shutdown(); resolver.shutdown(); proxy?.stop(); proxy = null
         service.close(); scope.cancel()
     }
 }

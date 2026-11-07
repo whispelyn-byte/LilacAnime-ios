@@ -289,6 +289,8 @@ object DownloadStore {
     fun removeGroup(animeID: String) { stopGroup(animeID); group(animeID).forEach { delete(it.id) } }
     fun pauseAll() { stopResolving(); entries.filter { it.localFile == null }.forEach { cancel(it.id) } }
     fun resumeAll() { entries.filter { it.localFile == null && !tasks.containsKey(it.id) }.forEach(::retry) }
+    /** Episodes taken in from an exported folder (DownloadTransfer.import). */
+    fun importCompleted(values: List<DownloadEntry>) { entries = values.filter { v -> entries.none { it.id == v.id } } + entries; persist() }
     fun clearAll() { pauseAll(); entries.forEach { folder(it.id).deleteRecursively() }; entries = emptyList(); persist() }
 
     /** "1~3, 5, 7화" (app.js episodeRanges). */

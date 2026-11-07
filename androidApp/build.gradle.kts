@@ -57,6 +57,7 @@ dependencies {
     implementation("com.google.android.gms:play-services-cast-framework:22.1.0")
     implementation("androidx.mediarouter:mediarouter:1.7.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("androidx.documentfile:documentfile:1.0.1")
     implementation("androidx.core:core-ktx:1.16.0")
     // mpv for Android (the iOS app plays with mpv too).
     implementation("dev.jdtech.mpv:libmpv:1.0.0")

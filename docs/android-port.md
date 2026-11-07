@@ -50,7 +50,9 @@ iOS 파일 이름을 기준으로 옮길 범위를 나눴습니다. 체크된 �
 - [x] 주간 편성표 (`WeeklyScheduleView.swift`)
 - [x] 로컬 영상 열기
 - [x] 타이틀 로고 · 배너 (`TitleArtwork.swift`)
-- [ ] 다운로드 폴더 내보내기·가져오기 (`DownloadTransfer.swift`), 다운로드 자막 번역
+- [x] 다운로드 폴더 내보내기·가져오기 (`DownloadTransfer.swift`; 이 앱 형식만, 데스크탑 downloads.json은 아직)
+- [x] 재생 막대 미리보기 (숨긴 mpv `vo=image`)
+- [ ] 다운로드 자막 번역, 다음 화 미리 준비, Hugging Face 모델 검색
 
 ### 5단계 — 기기 안 AI · 영상 처리
 - [x] 로컬 AI 번역 (`LocalModelsView.swift`, `LocalModelInput.swift`, `DesktopModelInstaller.swift`; iOS와 같은 llama.cpp b11490 + `iosApp/Native/Sources/LilacLocalAI`를 NDK로 빌드, JNI `androidApp/src/main/cpp`). CPU 전용 (GPU 백엔드 없음)

@@ -93,6 +93,23 @@ fun DownloadsView() {
     var confirmClear by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<String?>(null) }
     val entries = DownloadStore.entries
+    val transferScope = rememberCoroutineScope()
+    var transfer by remember { mutableStateOf<String?>(null) }
+    // 다운로드 폴더 내보내기 · 가져오기 (iOS DownloadTransferView): a folder picked on the device.
+    val exporter = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        transferScope.launch {
+            transfer = runCatching { DownloadTransfer.export(context, DownloadStore.entries.filter { it.localFile != null }, uri) { transfer = it } }
+                .fold({ "$it 폴더로 내보냈습니다." }, { it.message })
+        }
+    }
+    val importer = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        transferScope.launch {
+            transfer = runCatching { DownloadTransfer.import(context, uri, DownloadStore.entries.map { it.id }.toSet()) { transfer = it } }
+                .fold({ DownloadStore.importCompleted(it); "${it.size}개 회차를 가져왔습니다." }, { it.message })
+        }
+    }
     val groups = entries.groupBy { it.anime.id }.toList().sortedByDescending { (_, list) -> list.maxOf { it.date } }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         val saved = entries.filter { it.localFile != null }
@@ -101,8 +118,11 @@ fun DownloadsView() {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             LilacOutlineButton("모두 일시 중지", icon = Icons.Filled.Pause) { DownloadStore.pauseAll() }
             LilacOutlineButton("모두 이어받기", icon = Icons.Filled.Refresh) { DownloadStore.resumeAll() }
+            LilacOutlineButton("폴더로 내보내기", icon = Icons.Filled.Folder) { exporter.launch(null) }
+            LilacOutlineButton("폴더에서 가져오기", icon = Icons.Filled.Folder) { importer.launch(null) }
             LilacOutlineButton("다운로드 전체 삭제", icon = Icons.Filled.Delete, tint = danger) { confirmClear = true }
         }
+        transfer?.let { Text(it, fontSize = 12.sp, color = LilacStyle.muted) }
         if (DownloadStore.pendingResolution > 0) Column(Modifier.downloadCard(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             LilacProgress("영상 준비 · ${DownloadStore.pendingResolution}개 남음")
             Text(DownloadStore.resolvingTitle, fontSize = 12.sp, color = LilacStyle.muted)

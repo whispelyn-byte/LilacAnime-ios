@@ -10,6 +10,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.runTest
+import kotlin.io.encoding.Base64
 import kotlin.test.*
 
 class OhliDirectTest {
@@ -26,6 +27,64 @@ class OhliDirectTest {
         val html = """<script>var playerjsSubtitle = "[뉴게임01]https://sub.test/뉴게임01.srt,[KO]https://sub.test/b.ass";</script>"""
         assertEquals(listOf("https://sub.test/뉴게임01.srt", "https://sub.test/b.ass"), DesktopSourceParser.ohliSubtitleFiles(html))
         assertEquals(emptyList(), DesktopSourceParser.ohliSubtitleFiles("<html></html>"))
+    }
+
+    @Test fun crossSiteSubtitleKeepsTheVerifiedFileEvenWithAnHtmlContentType() = runTest {
+        val sami = "<SAMI><BODY><SYNC Start=0><P>".encodeToByteArray() +
+            byteArrayOf(0xc7.toByte(), 0xd1.toByte()) + "</BODY></SAMI>".encodeToByteArray()
+        val htmlHeaders = headersOf(HttpHeaders.ContentType, "text/html")
+        val client = HttpClient(MockEngine { request ->
+            when (request.url.encodedPath) {
+                "/episode" -> respond("""<script data-page="app" type="application/json">{"props":{"playing":{"body":{"url":"https://player.test/video"}}}}</script>""")
+                "/video" -> {
+                    assertEquals("${DesktopSourceParser.OHLI24_WEB}/", request.headers["Referer"])
+                    respond("""<script>var playerjsSubtitle = "[1]https://sub.test/blocked,[2]https://sub.test/caption";</script>""")
+                }
+                "/blocked" -> respond("<html><!-- try again --></html>", headers = htmlHeaders)
+                "/caption" -> {
+                    assertNull(request.headers["Referer"])
+                    assertTrue(request.headers[HttpHeaders.UserAgent].orEmpty().contains("Chrome/"))
+                    respond(sami, headers = htmlHeaders)
+                }
+                else -> error("Unexpected request: ${request.url}")
+            }
+        })
+        val track = assertNotNull(DesktopSourceRepository(client).ohliEpisodeSubtitle("https://episode.test/episode"))
+        assertEquals("https://sub.test/caption", track.url)
+        assertEquals("smi", track.format)
+        assertContentEquals(sami, Base64.decode(assertNotNull(track.contentBase64)))
+    }
+
+    @Test fun linkaniKeepsTheVerifiedSubtitleAndLinkkfSkipsAnHtmlPage() = runTest {
+        val vtt = "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\n자막\n"
+        val htmlHeaders = headersOf(HttpHeaders.ContentType, "text/html")
+        val client = HttpClient(MockEngine { request ->
+            when (request.url.encodedPath) {
+                "/episode" -> respond("""<script>var player_aaaa = {"url":"https://video.test/1.m3u8","subtitle_url":"https://sub.test/caption"};</script>""")
+                "/caption" -> {
+                    assertEquals("https://linkani.tv/", request.headers["Referer"])
+                    assertTrue(request.headers["User-Agent"].orEmpty().contains("Chrome/"))
+                    respond(vtt, headers = htmlHeaders)
+                }
+                "/blocked" -> {
+                    assertEquals("https://player.test/video", request.headers["Referer"])
+                    respond("<!-- blocked --><html>Log in</html>")
+                }
+                else -> error("Unexpected request: ${request.url}")
+            }
+        })
+        val repository = DesktopSourceRepository(client)
+        val track = assertNotNull(repository.linkaniEpisodeSubtitle("https://linkani.tv/episode"))
+        assertEquals("vtt", track.format)
+        assertEquals(vtt, Base64.decode(assertNotNull(track.contentBase64)).decodeToString())
+        assertNull(repository.verifiedProviderSubtitle("https://sub.test/blocked", mapOf("Referer" to "https://player.test/video"), "linkkf"))
+    }
+
+    @Test fun remoteSubtitleDownloadsRecognizeTheBodyInsteadOfRelyingOnMimeType() {
+        assertFalse(SubtitleTools.isHtmlResponse("<SAMI><BODY><SYNC Start=0><P>자막", "text/html"))
+        assertFalse(SubtitleTools.isHtmlResponse("\uFEFF1\n00:00:00,000 --> 00:00:01,000\n자막", "text/html"))
+        assertTrue(SubtitleTools.isHtmlResponse("<!-- redirect --><!DOCTYPE html><html>", "application/octet-stream"))
+        assertTrue(SubtitleTools.isHtmlResponse("Forbidden", "text/html"))
     }
 
     @Test fun thePlayerIsReadWithoutOpeningIt() = runTest {

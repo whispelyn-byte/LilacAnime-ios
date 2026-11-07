@@ -9,6 +9,18 @@ enum SubtitleFiles {
     static let fontDirectory = root.appendingPathComponent("Fonts")
     static let translations = root.appendingPathComponent("Translations")
     static func key(_ text: String) -> String { SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined() }
+    static func providerFile(_ content: String, source: String, format: String) async throws -> URL {
+        try await Task.detached(priority: .utility) {
+            guard subtitleExtensions.contains(format), let data = Data(base64Encoded: content) else {
+                throw failure("지원하는 자막 형식이 아닙니다.")
+            }
+            let folder = root.appendingPathComponent("Provider", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let file = folder.appendingPathComponent(key(source)).appendingPathExtension(format)
+            try data.write(to: file, options: .atomic)
+            return file
+        }.value
+    }
     /// `label`: the link's text. When it is a subtitle file name and the download's own name is not (Tistory's
     /// attachment URLs end in a generic "tfile.smi"), the file is named by it, so its episode number is kept.
     static func prepare(_ url: URL, headers: [String: String] = [:], japanese: Bool = false, filename: String? = nil, label: String? = nil) async throws -> [URL] {
@@ -23,7 +35,7 @@ enum SubtitleFiles {
             headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
             var (body, response) = try await URLSession.shared.data(for: request)
             for _ in 0..<2 {
-                guard let http = response as? HTTPURLResponse, http.mimeType == "text/html",
+                guard let http = response as? HTTPURLResponse, isHTML(body, mimeType: http.mimeType),
                       let html = String(data: body, encoding: .utf8) else { break }
                 let confirmed = SubtitleTools.shared.driveConfirmation(html: html, baseUrl: response.url?.absoluteString ?? url.absoluteString)
                 guard !confirmed.isEmpty, let target = URL(string: confirmed) else { break }
@@ -32,7 +44,7 @@ enum SubtitleFiles {
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                 throw failure("자막 다운로드가 실패했습니다.")
             }
-            if http.mimeType == "text/html" { throw failure("자막 파일 대신 웹 페이지가 반환되었습니다. 원본 게시물에서 파일을 내려받아 가져오세요.") }
+            if isHTML(body, mimeType: http.mimeType) { throw failure("자막 파일 대신 웹 페이지가 반환되었습니다. 원본 게시물에서 파일을 내려받아 가져오세요.") }
             data = body
             name = filename ?? SubtitleNames.downloadFilename(http.value(forHTTPHeaderField: "Content-Disposition"), fallback: name)
             if filename == nil, let named = labelName(label), !isArchive(data), labelReplaces(name) { name = named }
@@ -58,6 +70,12 @@ enum SubtitleFiles {
             return results
         }
         return [try normalize(file, japanese: japanese)]
+    }
+    private static func isHTML(_ data: Data, mimeType: String?) -> Bool {
+        let prefix = data.prefix(4096)
+        let utf16 = prefix.starts(with: [0xff, 0xfe]) || prefix.starts(with: [0xfe, 0xff])
+        let head = utf16 ? String(data: prefix, encoding: .utf16) ?? "" : String(decoding: prefix, as: UTF8.self)
+        return SubtitleTools.shared.isHtmlResponse(head: head, mimeType: mimeType)
     }
     private static let subtitleExtensions = ["ass", "ssa", "srt", "vtt", "smi"]
     /// A link text that is a subtitle file name, its size ("0.02MB") left out.

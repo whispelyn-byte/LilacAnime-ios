@@ -108,7 +108,7 @@ class MpvEngine(private val context: Context) {
         preferences = settings
         if (mpv == null) return
         applyPresentation()
-        if (!speedBoosted) setSpeed(settings.speed)
+        if (!speedBoosted) changeSpeed(settings.speed)
         configure("sub-scale", (settings.subtitleSize / 100).toString())
         configure("sub-font-size", "36"); configure("sub-margin-x", "36"); configure("sub-shadow-offset", "0")
         configure("sub-scale-with-window", "no"); configure("sub-border-size", "2"); configure("sub-bold", "yes")
@@ -140,9 +140,9 @@ class MpvEngine(private val context: Context) {
         }
     }
 
-    fun setVolume(value: Double) { volume = value.coerceIn(0.0, 100.0); set("volume", volume.toString()); defaults.edit().putFloat("player.volume", volume.toFloat()).apply() }
+    fun changeVolume(value: Double) { volume = value.coerceIn(0.0, 100.0); set("volume", volume.toString()); defaults.edit().putFloat("player.volume", volume.toFloat()).apply() }
     fun toggleMute() { muted = !muted; set("mute", if (muted) "yes" else "no"); defaults.edit().putBoolean("player.muted", muted).apply() }
-    fun setSpeed(value: Double) { speed = value; set("speed", value.toString()) }
+    fun changeSpeed(value: Double) { speed = value; set("speed", value.toString()) }
     fun play() { paused = false; set("pause", "no") }
     fun pause() { finishHold(); paused = true; set("pause", "yes") }
     fun toggle() { if (paused) play() else pause() }
@@ -157,13 +157,13 @@ class MpvEngine(private val context: Context) {
     /** Touch-and-hold 2배속 (desktop hold): the speed it had comes back when let go. */
     fun boostHold() {
         if (paused || speedBoosted) return
-        holdOriginal = speed; speedBoosted = true; setSpeed(2.0)
+        holdOriginal = speed; speedBoosted = true; changeSpeed(2.0)
     }
     fun finishHold() {
         holdTimer?.cancel(); holdTimer = null
         val original = holdOriginal ?: return
         holdOriginal = null; speedBoosted = false
-        setSpeed(if (speed == 2.0) original else speed)
+        changeSpeed(if (speed == 2.0) original else speed)
     }
 
     /** 스크린샷: the frame on screen at the video's own size, without subtitles or controls, as a PNG file. */

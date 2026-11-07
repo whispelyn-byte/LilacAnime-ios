@@ -258,7 +258,7 @@ private fun PlayerControls(model: PlayerModel, close: () -> Unit, settings: () -
         val speeds = listOf(0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 3.0, 4.0)
         val at = speeds.indexOfFirst { kotlin.math.abs(it - library.preferences.speed) < 0.001 }.takeIf { it >= 0 } ?: 4
         val next = speeds[(at + if (up) 1 else -1).coerceIn(0, speeds.size - 1)]
-        library.update { it.copy(speed = next) }; engine.finishHold(); engine.setSpeed(next)
+        library.update { it.copy(speed = next) }; engine.finishHold(); engine.changeSpeed(next)
         flash("재생 속도 " + "%.2f".format(next) + "x")
     }
     val chapter = model.currentChapter
@@ -269,8 +269,8 @@ private fun PlayerControls(model: PlayerModel, close: () -> Unit, settings: () -
             Key.Spacebar -> { engine.toggle(); touch() }
             Key.DirectionLeft -> SeekHint.relative(-seek, engine.position, engine.duration, hint)?.let { engine.seekByViewer(it.target); hint = it }
             Key.DirectionRight -> SeekHint.relative(seek, engine.position, engine.duration, hint)?.let { engine.seekByViewer(it.target); hint = it }
-            Key.DirectionUp -> engine.setVolume(engine.volume + 5)
-            Key.DirectionDown -> engine.setVolume(engine.volume - 5)
+            Key.DirectionUp -> engine.changeVolume(engine.volume + 5)
+            Key.DirectionDown -> engine.changeVolume(engine.volume - 5)
             Key.M -> engine.toggleMute()
             Key.C -> { engine.toggleSubtitleVisibility(); flash(if (engine.subtitlesVisible) "자막을 켰어요" else "자막을 껐어요") }
             Key.S -> if (chapter != null) engine.seek(chapter.end) else flash("지금은 건너뛸 OP/ED 구간이 아니에요")
@@ -515,7 +515,7 @@ private fun PlayerSettingsPanel(model: PlayerModel, close: () -> Unit, openWeb: 
                         }
                         Group("재생 속도  " + "%.2fx".format(prefs.speed))
                         ChoiceGrid(listOf(0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0).map { it to "%.2fx".format(it) }, prefs.speed) { value ->
-                            model.engine.finishHold(); library.update { it.copy(speed = value) }; model.engine.setSpeed(value)
+                            model.engine.finishHold(); library.update { it.copy(speed = value) }; model.engine.changeSpeed(value)
                         }
                         Group("뒤로/앞으로 이동  ${prefs.seekSeconds.toInt()}초")
                         ChoiceGrid(SeekStep.choices.map { it.toDouble() to "${it}초" }, prefs.seekSeconds) { value -> library.update { it.copy(seekSeconds = SeekStep.clamped(value)) } }

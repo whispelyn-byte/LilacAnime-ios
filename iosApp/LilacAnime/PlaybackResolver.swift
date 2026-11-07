@@ -448,14 +448,14 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
     }
     private func ohliCaptions(_ files: [String], token: UUID) async {
         let fresh = files.filter { $0.hasPrefix("http") && ohliCaptionsTried.insert($0).inserted }
-        guard !fresh.isEmpty, !subtitles.contains(where: { $0.origin == "ohli24" }) else { return }
+        guard !fresh.isEmpty, !subtitles.contains(where: { $0.label == "애니24 한국어 자막" }) else { return }
         let found: CrossSiteTrack? = await withCheckedContinuation { continuation in
             desktop.ohliSubtitle(files: fresh) { track, _ in continuation.resume(returning: track) }
         }
         guard let found, let content = found.contentBase64,
               let file = try? await SubtitleFiles.providerFile(content, source: found.url, format: found.format),
-              token == generation, !subtitles.contains(where: { $0.origin == "ohli24" }) else { return }
-        let track = RemoteSubtitle(label: "애니24 한국어 자막", url: file, language: "ko", origin: "ohli24")
+              token == generation, !subtitles.contains(where: { $0.label == "애니24 한국어 자막" }) else { return }
+        let track = RemoteSubtitle(label: "애니24 한국어 자막", url: file, language: "ko")
         subtitles.append(track)
         for index in streams.indices { streams[index].subtitles.append(track); streams[index].burnedKorean = false }
     }

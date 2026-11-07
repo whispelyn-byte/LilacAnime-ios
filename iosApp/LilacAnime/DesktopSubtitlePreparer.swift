@@ -70,7 +70,7 @@ final class DesktopSubtitlePreparer {
         guard otherTracks != nil || tracks.contains(where: \.crossSite), !tracks.contains(where: { !$0.crossSite && DesktopSubtitlePolicy.isKorean($0) }) else { return nil }
         var found = tracks.filter(\.crossSite)
         if let otherTracks {
-            if item.anime.source != "local" && item.anime.source != "linkkf" { Task { _ = try? await self.community(item, preferences: preferences) } }
+            if item.anime.source != "local" { Task { _ = try? await self.community(item, preferences: preferences) } }
             // 16 s: the Korean sites' files take longer (their pages are read when RE:Anime and Miruro have no Korean track).
             found += await CrossSiteTracks.value(otherTracks, within: 16)
         }
@@ -95,15 +95,18 @@ final class DesktopSubtitlePreparer {
             if let result = try await translationSource(item, tracks: tracks, preferences: preferences, later: otherTracks) { return result }
         }
         if let preferred = DesktopSubtitlePolicy.preferredSaved(saved, preferred: preferences.subtitleProvider), let file = preferred.file { return (file, preferred.provider) }
-        for track in tracks where !track.crossSite && DesktopSubtitlePolicy.isKorean(track) {
+        // desktop ensureSubtitle: the stream's own subtitle (Linkkf's, 링크애니's and 애니24's file is the Korean one
+        // itself; a downloaded episode's was picked when it was saved), then any saved file.
+        let siteFile = ["linkkf", "linkani", "ohli24"].contains(item.anime.source)
+        for track in tracks where !track.crossSite && (siteFile || DesktopSubtitlePolicy.isKorean(track)) {
             try Task.checkCancellation()
-            if let files = try? await SubtitleFiles.prepare(track.url, headers: track.headers ?? [:]), let file = select(files, item: item, offsets: []) { return (file, "reanime") }
+            if let files = try? await SubtitleFiles.prepare(track.url, headers: track.headers ?? [:]), let file = select(files, item: item, offsets: []) { return (file, item.anime.source == "linkkf" ? "linkkf" : "reanime") }
         }
-        if let first = saved.first, let file = first.file { return (file, first.provider) }
         for local in item.localSubtitles { if await SubtitleFiles.isKorean(local) { return (local, "download") } }
         if let local = item.localSubtitles.first { return (local, "download") }
+        if let first = saved.first, let file = first.file { return (file, first.provider) }
         if let found = try await otherKorean(item, tracks: tracks, otherTracks: otherTracks, preferences: preferences) { return found }
-        guard item.anime.source != "local" && item.anime.source != "linkkf" else { return nil }
+        guard item.anime.source != "local" else { return nil }
         if let found = try await community(item, preferences: preferences) { return found }
         return try await translationSource(item, tracks: tracks, preferences: preferences, later: otherTracks)
     }

@@ -40,6 +40,7 @@ import com.lilac.anime.android.data.await
 import com.lilac.anime.android.download.DownloadStore
 import com.lilac.anime.shared.*
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /** The work's page (ott.css #detailDialog, iOS DetailView): a tall still fading into the page, the poster and title over
  *  it, the play · 내 목록 · 작품 정보 buttons, and the 회차 · 작품 정보 · 관련 작품 tabs. */

@@ -184,20 +184,39 @@ class PlayerSubtitles(
         automaticJob?.cancel()
         automaticJob = scope.launch {
             try {
-                // Another site's Korean track of this very episode comes before the blogs: waited for 12 s at most.
-                val other = if (stream.subtitles.any(SubtitlePolicy::isKorean)) emptyList() else {
-                    try {
-                        withTimeoutOrNull(16_000) { otherJob?.await() } ?: otherTracks
+                // desktop ensureSubtitle: the other sites' tracks are waited for (16 s at most) only once nothing saved
+                // and no subtitle of the stream's own is there, so those go on at once.
+                val job = otherJob
+                var waited: List<RemoteSubtitle>? = null
+                // Waited for once: the translation step asks again and takes what came.
+                val later: (suspend () -> List<RemoteSubtitle>)? = if (job == null || stream.subtitles.any(SubtitlePolicy::isKorean)) null else suspend {
+                    waited ?: try {
+                        withTimeoutOrNull(16_000) { job.await() } ?: otherTracks
                     } catch (cancelled: CancellationException) {
                         currentCoroutineContext().ensureActive()
                         otherTracks
+                    }.also { waited = it }
+                }
+                val current = { at == token() && requested == request && subtitle == null }
+                val found = preparer.prepare(opening, merged(stream.subtitles, otherTracks), library.preferences, library.aiSubtitleSeries[opening.anime.id] == true,
+                    stream = stream, later = later, status = { if (current()) subtitleState = it })
+                if (found != null && current()) {
+                    subtitleState = null
+                    select(found.file, found.provider, automatic = true)
+                    // Another site's Korean track: marked in the list, and said to be synced to this video's audio.
+                    found.track?.let { track ->
+                        selectedTrackURL = track.url
+                        notify(originLabel(track) + "의 같은 회차 한국어 자막이에요. 이 영상에 싱크를 맞춰요.")
                     }
                 }
-                val found = preparer.prepare(opening, merged(stream.subtitles, other), library.preferences, library.aiSubtitleSeries[opening.anime.id] == true, stream = stream)
-                if (found != null && at == token() && requested == request && subtitle == null) select(found.file, found.provider, automatic = true)
-                // Nothing found: the episode heard with Whisper, when a model is installed (iOS automaticSubtitle).
-                else if (found == null && at == token() && requested == request && subtitle == null && prefs.whisperAuto &&
-                    com.lilac.anime.android.audio.WhisperModels.file(prefs.whisperModel) != null) startWhisper(manual = false)
+                // Nothing found: the episode heard with Whisper, when a model is installed (desktop whisperWhenNoSubtitle).
+                else if (found == null && current() && prefs.whisperAuto &&
+                    com.lilac.anime.android.audio.WhisperModels.file(prefs.whisperModel) != null) { subtitleState = null; startWhisper(manual = false) }
+                else if (found == null && current()) subtitleState = when {
+                    siteTracks.any(SubtitlePolicy::isKorean) -> "사이트 트랙에 한국어 자막이 있어요. 플레이어 설정 > 자막에서 고를 수 있어요."
+                    siteTracks.isNotEmpty() -> "한국어 자막이 없습니다. 아래 사이트 트랙에서 다른 언어를 고르거나 내 자막 파일을 열 수 있어요."
+                    else -> "자동으로 찾은 자막이 없습니다. 내 자막 파일을 열 수 있어요."
+                }
             } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { if (at == token()) error = failure.message }
         }
     }

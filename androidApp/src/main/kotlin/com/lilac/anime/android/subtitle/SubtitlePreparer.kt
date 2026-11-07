@@ -21,7 +21,8 @@ val PlaybackItem.subtitleEpisodeKey: String
     get() = if (Regex("^\\d+(?:\\.\\d+)?[a-z]?$", RegexOption.IGNORE_CASE).matches(displayNumber)) displayNumber else number.toString()
 
 /** A subtitle found: its file and where it came from (kairan, reanime, jimaku, …). */
-data class Found(val file: File, val provider: String)
+/** track: another site's track it came from (put on, it is synced to this video's audio). */
+data class Found(val file: File, val provider: String, val track: RemoteSubtitle? = null)
 
 /** Selection rules from desktop app.js ensureSubtitle (iOS DesktopSubtitlePolicy). */
 object DesktopSubtitlePolicy {
@@ -106,26 +107,55 @@ class SubtitlePreparer(private val context: Context) {
     private val contexts = mutableMapOf<String, Triple<String, Int, List<Int>>>()
     private val defaults = context.getSharedPreferences("lilac", Context.MODE_PRIVATE)
 
-    suspend fun prepare(item: PlaybackItem, tracks: List<RemoteSubtitle>, preferences: AppPreferences, prefersAI: Boolean = false, skipSaved: Boolean = false, stream: ResolvedStream? = null): Found? {
+    /**
+     * desktop app.js ensureSubtitle, step for step: the preferred source's saved file, the stream's own subtitle, any
+     * saved file, then — only now — another site's Korean track of this very episode (waited for, 16 s at most, with
+     * the blogs searched meanwhile), the blogs (Kairan / Csora / Anissia), then a source to translate.
+     * tracks: the stream's own and the other sites' tracks found so far; later: the other sites' tracks still loading.
+     * status: what the player says it is doing (desktop #subtitleState).
+     */
+    suspend fun prepare(item: PlaybackItem, tracks: List<RemoteSubtitle>, preferences: AppPreferences, prefersAI: Boolean = false, skipSaved: Boolean = false,
+                        stream: ResolvedStream? = null, later: (suspend () -> List<RemoteSubtitle>)? = null, status: (String?) -> Unit = {}): Found? {
         if (preferences.subtitleProvider == "manual" || DesktopSubtitlePolicy.burnedKorean(item.anime.source, stream)) return null
+        val source = item.anime.source
         val saved = if (skipSaved) emptyList() else EpisodeSubtitleStore.list(item)
+        // The site's own tracks (애니24's file is marked with its own origin); the rest are other sites' of the episode.
+        val own = tracks.filter { it.origin == null || it.origin == source }
+        val others = tracks.filter { it.origin != null && it.origin != source }
         if (prefersAI) {
             saved.firstOrNull { it.translated }?.file?.let { return Found(it, saved.first { s -> s.translated }.provider) }
-            translationSource(item, tracks, preferences)?.let { return it }
+            translationSource(item, tracks, preferences, later = later)?.let { return it }
         }
         DesktopSubtitlePolicy.preferredSaved(saved, preferences.subtitleProvider)?.let { record -> record.file?.let { return Found(it, record.provider) } }
-        for (track in tracks.filter(SubtitlePolicy::isKorean)) {
+        // The stream's own subtitle: a Korean track; Linkkf's, 링크애니's and 애니24's file is the Korean subtitle itself.
+        val ownKorean = if (source in setOf("linkkf", "linkani", "ohli24")) own else own.filter(SubtitlePolicy::isKorean)
+        for (track in ownKorean) {
             currentCoroutineContext().ensureActive()
-            runCatching { SubtitleFiles.prepare(track.url, track.headers ?: emptyMap()) }.getOrNull()?.let { files -> select(files, item)?.let { return Found(it, "reanime") } }
+            runCatching { SubtitleFiles.prepare(track.url, track.headers ?: emptyMap()) }.getOrNull()?.let { files -> select(files, item)?.let { return Found(it, if (source == "linkkf") "linkkf" else "reanime") } }
         }
-        saved.firstOrNull()?.let { record -> record.file?.let { return Found(it, record.provider) } }
-        // A downloaded episode's own subtitles: a Korean one first.
+        // A downloaded episode's subtitle was picked for it when it was saved (desktop: the stream's own subtitle).
         val local = item.localSubtitles.map(::File).filter { it.isFile }
         local.firstOrNull { SubtitleFiles.isKorean(it) }?.let { return Found(it, "download") }
         local.firstOrNull()?.let { return Found(it, "download") }
-        if (item.anime.source == "local" || item.anime.source == "linkkf") return null
-        community(item, preferences)?.let { rememberKorean(item); return it }
-        return translationSource(item, tracks, preferences)
+        saved.firstOrNull()?.let { record -> record.file?.let { return Found(it, record.provider) } }
+        val searchable = source != "local"
+        // Another site's Korean track of this very episode, before the blogs (matched only by title); the blogs are
+        // searched meanwhile all the same.
+        var found = others
+        if (later != null) {
+            if (searchable) for (provider in DesktopSubtitlePolicy.providers(preferences.subtitleProvider)) communityTask(provider, item, context(item))
+            status("다른 사이트의 한국어 자막 트랙을 찾는 중...")
+            found = (found + later()).distinctBy { it.url }
+        }
+        for (track in found.filter(SubtitlePolicy::isKorean)) {
+            currentCoroutineContext().ensureActive()
+            runCatching { SubtitleFiles.prepare(track.url, track.headers ?: emptyMap()) }.getOrNull()?.let { files -> select(files, item)?.let { return Found(it, "reanime", track) } }
+        }
+        if (searchable) {
+            status("온라인 자막을 찾는 중...")
+            community(item, preferences)?.let { rememberKorean(item); return it }
+        }
+        return translationSource(item, own + found, preferences, later = later)
     }
 
     /** A work known to have Korean subtitles: Animenosub's and Miruro's clean video is chosen for it next time. */
@@ -223,7 +253,8 @@ class SubtitlePreparer(private val context: Context) {
 
     /** The subtitle to translate from (desktop subtitle-source.js): the site's Japanese track, Jimaku's Japanese file, then
      *  the site's English track. */
-    suspend fun translationSource(item: PlaybackItem, tracks: List<RemoteSubtitle>, preferences: AppPreferences, requireAutomatic: Boolean = true): Found? {
+    suspend fun translationSource(item: PlaybackItem, tracks: List<RemoteSubtitle>, preferences: AppPreferences, requireAutomatic: Boolean = true,
+                                  later: (suspend () -> List<RemoteSubtitle>)? = null): Found? {
         if (requireAutomatic && preferences.translationPreferences(automatic = true) == null) return null
         val tried = mutableSetOf<String>()
         DesktopSubtitlePolicy.translationTrack(tracks, "ja")?.let { japanese ->
@@ -239,7 +270,12 @@ class SubtitlePreparer(private val context: Context) {
                 runCatching { SubtitleFiles.prepare(asset.url, japanese = true, filename = asset.name) }.getOrNull()?.firstOrNull()?.let { return Found(it, "jimaku") }
             }
         }
-        val ordered = listOfNotNull(DesktopSubtitlePolicy.translationTrack(tracks, "en")) + tracks
+        // The tracks still loading (another site's) are waited for after Jimaku, so they can be the source (desktop autoTranslate).
+        val all = if (later == null) tracks else (tracks + later()).distinctBy { it.url }
+        DesktopSubtitlePolicy.translationTrack(all, "ja")?.takeIf { tried.add(it.url) }?.let { japanese ->
+            runCatching { SubtitleFiles.prepare(japanese.url, japanese.headers ?: emptyMap()) }.getOrNull()?.let { files -> select(files, item)?.let { return Found(it, "reanime") } }
+        }
+        val ordered = listOfNotNull(DesktopSubtitlePolicy.translationTrack(all, "en")) + all
         for (track in ordered) {
             if (!tried.add(track.url) || SubtitlePolicy.isKorean(track)) continue
             currentCoroutineContext().ensureActive()

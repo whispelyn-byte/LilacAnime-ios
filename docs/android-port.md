@@ -49,7 +49,8 @@ iOS 파일 이름을 기준으로 옮길 범위를 나눴습니다. 체크된 �
 - [x] 최근 업데이트 (`DesktopRecentUpdates.swift`: 홈 최근 업데이트 줄, 내 목록 회차 업데이트순)
 - [x] 주간 편성표 (`WeeklyScheduleView.swift`)
 - [x] 로컬 영상 열기
-- [ ] 타이틀 로고 · 배너 (`TitleArtwork.swift`), 다운로드 폴더 내보내기·가져오기 (`DownloadTransfer.swift`), 다운로드 자막 번역 — 다음에
+- [x] 타이틀 로고 · 배너 (`TitleArtwork.swift`)
+- [ ] 다운로드 폴더 내보내기·가져오기 (`DownloadTransfer.swift`), 다운로드 자막 번역
 
 ### 5단계 — 기기 안 AI · 영상 처리
 - [x] 로컬 AI 번역 (`LocalModelsView.swift`, `LocalModelInput.swift`, `DesktopModelInstaller.swift`; iOS와 같은 llama.cpp b11490 + `iosApp/Native/Sources/LilacLocalAI`를 NDK로 빌드, JNI `androidApp/src/main/cpp`). CPU 전용 (GPU 백엔드 없음)
@@ -58,11 +59,12 @@ iOS 파일 이름을 기준으로 옮길 범위를 나눴습니다. 체크된 �
 - [x] 음성 읽기: iOS NativeAudio(FFmpeg) 대신 숨긴 mpv가 `ao=pcm`으로 16 kHz/8 kHz 모노 PCM을 씀 (`audio/AudioExtractor.kt`)
 - [x] Whisper 음성 자막 (`WhisperSubtitles.swift`, `WhisperLiveTranslation.swift`; iOS는 WhisperKit, Android는 whisper.cpp v1.7.4를 별도 모듈 `androidWhisper`로 — ggml이 llama.cpp와 겹치지 않게)
 - [x] 음성 싱크 맞추기 (`SubtitleAutoSync.swift`; 정렬은 공통 `SubtitleSync`), 다운로드 OP/ED 분석 (`OfflineAnalyzer.swift`; 공통 `AudioFingerprint`)
-- [ ] 영상 정리 (`VideoCleanup.swift`), Hugging Face 검색 (`HuggingFaceSearchView.swift`), 애니24·링크애니·Linkkf 한국어 자막 파일 (`koreanSiteTracks`)
+- [x] 영상 정리 (`VideoCleanup.swift`: 영역 · 로고 학습(데스크탑 JS를 숨긴 WebView에서) · 마스크 가져오기), 애니24·링크애니·Linkkf 한국어 자막 파일 (`koreanSiteTracks`)
+- [ ] Hugging Face 모델 검색 (`HuggingFaceSearchView.swift`)
 
 ### 6단계 — 연결
-- [ ] 기기 동기화 (`DeviceSync.swift`)
-- [ ] Chromecast (`CastService.swift`, `LANMediaRelay.swift`)
+- [x] 기기 동기화 (`DeviceSync.swift`)
+- [x] Chromecast (`CastService.swift`, `LANMediaRelay.swift` → HLS 프록시를 Wi-Fi 주소로)
 - [ ] 업데이트 확인 · 변경 내역 (`DesktopUpdater.swift`) — Android는 릴리즈가 없으므로 생략 가능
 
 ## iOS와 달라지는 점

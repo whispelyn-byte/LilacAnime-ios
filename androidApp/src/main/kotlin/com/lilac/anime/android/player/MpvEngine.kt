@@ -128,13 +128,14 @@ class MpvEngine(private val context: Context) {
         configureAnime4K()
     }
     var anime4kError by mutableStateOf<String?>(null); private set
-    private var configuredAnime4K: Anime4KMode? = null
+    private var configuredAnime4K: Pair<Anime4KMode, VideoCleanupSettings?>? = null
     /** Anime4K 영상 보정: the chosen mode's shaders; when they cannot be applied the original picture comes back. */
     private fun configureAnime4K() {
         val mode = Anime4KMode.of(preferences.anime4k)
-        if (configuredAnime4K == mode) return
-        configuredAnime4K = mode; anime4kError = null
-        runCatching { set("glsl-shaders", mode.paths(context).joinToString(":")) }.onFailure {
+        if (configuredAnime4K == mode to preferences.videoCleanup) return
+        configuredAnime4K = mode to preferences.videoCleanup; anime4kError = null
+        // 영상 정리 first, then Anime4K (iOS: VideoCleanup.paths + mode.paths).
+        runCatching { set("glsl-shaders", (VideoCleanup.paths(context, preferences.videoCleanup) + mode.paths(context)).joinToString(":")) }.onFailure {
             anime4kError = "영상 보정을 적용하지 못해 원본 영상으로 돌아왔습니다. 다른 모드를 선택해 다시 시도할 수 있어요."
             set("glsl-shaders", "")
         }

@@ -574,6 +574,7 @@ private fun PlayerSettingsPanel(model: PlayerModel, close: () -> Unit, openWeb: 
                         ChoiceGrid(PlayerFit.entries.map { it.key to it.title }, PlayerPresentation(PlayerAspect.of(prefs.playerAspect), PlayerFit.of(prefs.playerFit)).effectiveFit.key) { value ->
                             library.update { it.copy(playerFit = value, playerAspect = if (value == "stretch") "fill" else "original") }
                         }
+                        VideoCleanupControls(model.engine)
                         Group("Anime4K 영상 보정")
                         ChoiceGrid(Anime4KMode.entries.map { it.key to it.title }, prefs.anime4k) { value -> library.update { it.copy(anime4k = value) } }
                         model.engine.anime4kError?.let { Note(it, Color(0xFFFFA500)) }

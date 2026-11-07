@@ -97,6 +97,7 @@ data class AppPreferences(
     val promptRules: String = "",
     val selectedGGUF: String = "",
     val anime4k: String = "off",
+    val videoCleanup: com.lilac.anime.android.player.VideoCleanupSettings? = null,
     val whisperAuto: Boolean = true,
     val whisperModel: String = "base",
     val subtitleSyncCheck: Boolean = true,

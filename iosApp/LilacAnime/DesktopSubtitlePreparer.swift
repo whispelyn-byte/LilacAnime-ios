@@ -18,6 +18,57 @@ final class SubtitleSearchCache {
     func cancel() { searches.values.forEach { $0.1.cancel() }; searches.removeAll() }
 }
 
+/// The other site's Korean track and the blogs' Korean subtitle of an episode, asked at once (desktop koreanSearchFor):
+/// what is there now (the other site's track first), whether both have answered, and a wait for it.
+/// others: the other sites' tracks as they come; othersDone: done once they are all in.
+@MainActor
+final class KoreanSearch {
+    struct Pick { let file: URL; let provider: String; let track: RemoteSubtitle? }
+    static let slowSites: Set<String> = ["ohli24", "linkani", "linkkf"]
+    private let item: PlaybackItem, preferences: AppPreferences
+    private let others: () -> [RemoteSubtitle]
+    private weak var preparer: DesktopSubtitlePreparer?
+    private let started = Date()
+    private var blogs: Task<Void, Never>?
+    private var blog: (URL, String)?, blogDone = false, othersFinished: Bool
+    private var files: [URL: URL] = [:], failed: Set<URL> = []
+    init(item: PlaybackItem, preferences: AppPreferences, others: @escaping () -> [RemoteSubtitle], othersDone: Task<[RemoteSubtitle], Never>?, preparer: DesktopSubtitlePreparer) {
+        self.item = item; self.preferences = preferences; self.others = others; self.preparer = preparer
+        othersFinished = othersDone == nil
+        if let othersDone { Task { @MainActor [weak self] in _ = await othersDone.value; self?.othersFinished = true } }
+    }
+    /// Waited for at least once (the blogs asked: a saved or the site's own subtitle needs none).
+    var asked: Bool { blogs != nil }
+    var settled: Bool { blogDone && othersFinished }
+    var elapsed: Double { Date().timeIntervalSince(started) }
+    private var track: RemoteSubtitle? {
+        others().first { $0.crossSite && $0.origin != item.anime.source && DesktopSubtitlePolicy.isKorean($0) && !failed.contains($0.url) }
+    }
+    /// The wait ends on the other site's Korean track, or the blogs' once the other sites have answered (theirs comes first).
+    private var best: Bool { track != nil || (blog != nil && othersFinished) || settled }
+    func wait(_ seconds: Double) async -> Pick? {
+        if blogs == nil {
+            let item = item, preferences = preferences
+            blogs = Task { @MainActor [weak self] in
+                let found = item.anime.source == "local" ? nil : (try? await self?.preparer?.community(item, preferences: preferences)) ?? nil
+                self?.blog = found; self?.blogDone = true
+            }
+        }
+        let deadline = Date().addingTimeInterval(max(0, seconds))
+        while !best && Date() < deadline && !Task.isCancelled { try? await Task.sleep(nanoseconds: 200_000_000) }
+        return await now()
+    }
+    /// What is there now, as a file: the other site's Korean track (read once), else the blogs' subtitle.
+    private func now() async -> Pick? {
+        while let track {
+            if let file = files[track.url] { return Pick(file: file, provider: "reanime", track: track) }
+            if let file = await preparer?.file(of: track, item: item) { files[track.url] = file; return Pick(file: file, provider: "reanime", track: track) }
+            failed.insert(track.url)
+        }
+        return blog.map { Pick(file: $0.0, provider: $0.1, track: nil) }
+    }
+}
+
 @MainActor
 final class DesktopSubtitlePreparer {
     private let jimaku: DesktopJimakuCatalog
@@ -86,7 +137,9 @@ final class DesktopSubtitlePreparer {
 
     /// koreanFirst: a download's subtitle (main.cjs findDownloadSubtitle, desktop 0.5.32). otherTracks: the other sites'
     /// tracks of the episode still loading (CrossSiteTracks; tracks may hold those already found).
-    func prepare(_ item: PlaybackItem, tracks: [RemoteSubtitle], preferences: AppPreferences, prefersAI: Bool = false, skipSaved: Bool = false, stream: ResolvedStream? = nil, koreanFirst: Bool = false, otherTracks: Task<[RemoteSubtitle], Never>? = nil) async throws -> (URL, String)? {
+    /// korean: the player's search for the episode (KoreanSearch), whose Korean subtitle can still come after this
+    /// returns; status: what the player says it is doing (desktop #subtitleState).
+    func prepare(_ item: PlaybackItem, tracks: [RemoteSubtitle], preferences: AppPreferences, prefersAI: Bool = false, skipSaved: Bool = false, stream: ResolvedStream? = nil, koreanFirst: Bool = false, otherTracks: Task<[RemoteSubtitle], Never>? = nil, korean: KoreanSearch? = nil, status: ((String) -> Void)? = nil) async throws -> (URL, String)? {
         guard preferences.subtitleProvider != "manual", !DesktopSubtitlePolicy.burnedKorean(source: item.anime.source, stream: stream) else { return nil }
         let saved = skipSaved ? [] : EpisodeSubtitleStore.shared.list(item)
         if koreanFirst { return try await downloadSubtitle(item, saved: saved, tracks: tracks, preferences: preferences, otherTracks: otherTracks) }
@@ -105,10 +158,44 @@ final class DesktopSubtitlePreparer {
         for local in item.localSubtitles { if await SubtitleFiles.isKorean(local) { return (local, "download") } }
         if let local = item.localSubtitles.first { return (local, "download") }
         if let first = saved.first, let file = first.file { return (file, first.provider) }
+        if let korean {
+            // desktop: the other site's Korean track and the blogs' are asked at once, and whatever Korean one is there
+            // after a short wait (2.5 s) goes on, the other site's first. A work whose Korean subtitle came last time from a
+            // slow site (애니24, 링크애니, Linkkf: their pages are read) waits for it 16 s. The cloud translation costs a
+            // request, so it waits until both have answered (16 s at most); the local AI and Whisper start at once. A
+            // Korean subtitle coming after this returns takes the place of the translation, the Whisper subtitle or none
+            // (the player's upgradeToLateKorean).
+            status?("다른 사이트·블로그에서 한국어 자막을 찾는 중...")
+            var pick = await korean.wait(KoreanSearch.slowSites.contains(koreanSource(of: item)) ? 16 : 2.5)
+            if pick == nil, !korean.settled, !prefersAI, let config = preferences.translationPreferences(automatic: true), config.translationProvider != "local" {
+                status?("한국어 자막을 조금 더 찾아본 뒤 번역해요...")
+                pick = await korean.wait(16 - korean.elapsed)
+            }
+            try Task.checkCancellation()
+            if let pick { rememberKoreanSource(pick, item: item); if let track = pick.track { crossSitePicks[pick.file] = track }; return (pick.file, pick.provider) }
+            return try await translationSource(item, tracks: tracks, preferences: preferences, later: otherTracks)
+        }
         if let found = try await otherKorean(item, tracks: tracks, otherTracks: otherTracks, preferences: preferences) { return found }
         guard item.anime.source != "local" else { return nil }
         if let found = try await community(item, preferences: preferences) { return found }
         return try await translationSource(item, tracks: tracks, preferences: preferences, later: otherTracks)
+    }
+
+    /// Which Korean source the series had last time (a site's origin, or "blog"): a slow site's file is waited for longer.
+    private func koreanSource(of item: PlaybackItem) -> String { UserDefaults.standard.string(forKey: "korean-source." + item.anime.id) ?? "" }
+    func rememberKoreanSource(_ pick: KoreanSearch.Pick, item: PlaybackItem) {
+        let source = pick.track?.origin ?? (["kairan", "csora", "anissia"].contains(pick.provider) ? "blog" : nil)
+        guard let source else { return }
+        UserDefaults.standard.set(source, forKey: "korean-source." + item.anime.id)
+    }
+    /// The search the player keeps for an episode (desktop koreanSearchFor).
+    func koreanSearch(_ item: PlaybackItem, preferences: AppPreferences, others: @escaping () -> [RemoteSubtitle], othersDone: Task<[RemoteSubtitle], Never>?) -> KoreanSearch {
+        KoreanSearch(item: item, preferences: preferences, others: others, othersDone: othersDone, preparer: self)
+    }
+    /// An other site's Korean track read into a file, as the automatic choice reads one.
+    fileprivate func file(of track: RemoteSubtitle, item: PlaybackItem) async -> URL? {
+        guard let files = try? await SubtitleFiles.prepare(track.url, headers: track.headers ?? [:]) else { return nil }
+        return select(files, item: item, offsets: [])
     }
 
     /// A Korean subtitle comes first for a download: one saved for the episode (the preferred source's, a machine

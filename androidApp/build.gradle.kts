@@ -8,6 +8,8 @@ plugins {
 android {
     namespace = "com.lilac.anime.android"
     compileSdk = 36
+    // Match the toolchain used to build libmpv 1.0.0 and its libc++ runtime.
+    ndkVersion = "29.0.14206865"
     defaultConfig {
         // Its own id: installs beside the original Android app (com.lilac.anime).
         applicationId = "com.lilac.anime.android"

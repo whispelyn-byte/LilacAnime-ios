@@ -186,7 +186,7 @@ fun SubtitleTab(model: PlayerModel, openFile: () -> Unit) {
     val library = LocalApp.current.library
     ButtonRow { TabButton(subtitles.syncButtonTitle, Modifier.weight(1f), subtitles.syncRunning || subtitles.syncAvailable) { subtitles.runSync() } }
     TabSwitch("싱크가 어긋나면 자동으로 맞추기", library.preferences.subtitleSyncCheck, small = true) { on -> library.update { it.copy(subtitleSyncCheck = on) } }
-    TabSwitch("다른 사이트 자막 트랙도 찾기", library.preferences.otherSiteTracks, small = true) { on -> library.update { it.copy(otherSiteTracks = on) } }
+    TabSwitch("다른 사이트 자막 트랙도 찾기", library.preferences.otherSiteTracks, small = true) { on -> subtitles.otherSiteTracksChanged(on) }
     subtitles.error?.let { Text(it, color = Color.Red, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp)) }
 }
 

@@ -80,33 +80,58 @@ class PlayerSubtitles(
     /** The same episode's tracks on the other sites (RE:Anime, Miruro), asked once as it opens (iOS CrossSiteTracks). */
     var otherTracks by mutableStateOf(emptyList<RemoteSubtitle>()); private set
     private var otherJob: Deferred<List<RemoteSubtitle>>? = null
+    private var otherKoreanJob: Deferred<List<CrossSiteTrack>>? = null
+
+    fun otherSiteTracksChanged(enabled: Boolean) {
+        library.update { it.copy(otherSiteTracks = enabled) }
+        loadOther()
+    }
+
+    private fun clearOther() {
+        otherJob?.cancel(); otherJob = null
+        otherKoreanJob?.cancel(); otherKoreanJob = null
+        otherTracks = emptyList()
+    }
+
     private fun loadOther() {
         val item = item()
-        otherTracks = emptyList(); otherJob?.cancel(); otherJob = null
-        val special = item.displayNumber.toIntOrNull() == null
-        if (!library.preferences.otherSiteTracks || item.anime.source == "local" || special || item.number <= 0 || item.directURL != null) return
+        clearOther()
+        val label = item.displayNumber.trim()
+        val number = label.toIntOrNull() ?: item.number
+        val special = Regex("^\\d+(?:\\.\\d+|[a-z])$", RegexOption.IGNORE_CASE).matches(label) ||
+            Regex("^(?:ova|ona|sp|special|특별|극장)", RegexOption.IGNORE_CASE).containsMatchIn(label)
+        val dubbed = Regex("(?:^|[^a-z])dub(?:bed)?(?:[^a-z]|$)", RegexOption.IGNORE_CASE)
+            .containsMatchIn(item.watchURL + " " + item.episodeID)
+        if (!library.preferences.otherSiteTracks || item.anime.source == "local" || special || dubbed || number <= 0 || item.directURL != null) return
         val at = token()
+        val korean = scope.async {
+            com.lilac.anime.android.data.DesktopCatalog.enrich(item.anime.anime, item.anime.source)
+            val record = com.lilac.anime.android.data.DesktopCatalog.record(item.anime)
+            val titles = (listOf(record?.korean.orEmpty(), item.anime.title) + record?.aliases.orEmpty())
+                .filter { TitleCandidates.isKorean(it) }.distinct().take(3)
+            if (titles.isEmpty()) emptyList()
+            else crossService.await<List<CrossSiteTrack>> { koreanSiteTracks(item.anime.anime, item.anime.source, number, false, false, titles, it) }.getOrDefault(emptyList())
+        }
+        otherKoreanJob = korean
         otherJob = scope.async {
-            // RE:Anime and Miruro by the work's AniList entry; 애니24, 링크애니 and Linkkf by its Korean titles (slower).
-            val korean = scope.async {
-                com.lilac.anime.android.data.DesktopCatalog.enrich(item.anime.anime, item.anime.source)
-                val record = com.lilac.anime.android.data.DesktopCatalog.record(item.anime)
-                val titles = (listOf(record?.korean.orEmpty(), item.anime.title) + record?.aliases.orEmpty()).filter { TitleCandidates.isKorean(it) }.distinct()
-                if (titles.isEmpty()) emptyList()
-                else crossService.await<List<CrossSiteTrack>> { koreanSiteTracks(item.anime.anime, item.anime.source, item.number, false, false, titles, it) }.getOrDefault(emptyList())
-            }
-            val sites = crossService.await<List<CrossSiteTrack>> { crossSiteTracks(item.anime.anime, item.anime.source, item.number, false, false, it) }.getOrDefault(emptyList())
-            fun tracks(list: List<CrossSiteTrack>) = list.map { RemoteSubtitle(it.label, it.url, it.language, it.headers.ifEmpty { null }, it.origin) }
-            if (at == token()) otherTracks = tracks(sites)
+            val sites = crossService.await<List<CrossSiteTrack>> { crossSiteTracks(item.anime.anime, item.anime.source, number, false, false, it) }.getOrDefault(emptyList())
+            val fast = sites.map { RemoteSubtitle(it.label, it.url, it.language, it.headers.ifEmpty { null }, it.origin) }
+            if (at == token() && otherKoreanJob === korean) otherTracks = fast
             // The Korean sites' files join the list when they come; the automatic choice waits for them only while the
             // other sites have no Korean track (desktop d8f7978).
-            val found = if (tracks(sites).any(SubtitlePolicy::isKorean)) { scope.launch { val more = tracks(korean.await()); if (at == token()) otherTracks = otherTracks + more }; tracks(sites) }
-                else tracks(sites) + tracks(korean.await())
-            if (at == token()) otherTracks = found.distinctBy { it.url }
-            found
+            suspend fun finish(): List<RemoteSubtitle> {
+                val more = korean.await().mapNotNull { SubtitleFiles.providerTrack(it) }
+                val found = (fast + more).distinctBy { it.url }
+                if (at == token() && otherKoreanJob === korean) otherTracks = found
+                return found
+            }
+            if (fast.any(SubtitlePolicy::isKorean)) {
+                scope.launch { finish() }
+                fast
+            } else finish()
         }
     }
-    private val trackSites = setOf("reanime", "miruro", "animenosub")
+    private val trackSites = setOf("reanime", "miruro")
     private val koreanSites = setOf("ohli24", "linkani", "linkkf")
     /** iOS CrossSiteTrackPolicy.merged: the site's own tracks, then the other sites' — all when the site has none, only a
      *  Korean one beside the site's own, the Korean sites' files always. */
@@ -142,7 +167,7 @@ class PlayerSubtitles(
         subtitle = null; sourceSubtitle = null; selectedProvider = ""; selectedTrackURL = null; selectedMaker = null; selectedJimakuURL = null
         subtitleState = null; makers = emptyList(); searching = false; searchError = null; pressedSource = null; pressedFor = null; pickedSheet = null; sheetPicked = false
         whisper.cancel(); whisperLive.cancel(); whisperStatus = ""; syncJob?.cancel(); syncRunning = false; syncStatus = null; dismissSync()
-        koreanFound = false; error = null; otherJob?.cancel(); otherJob = null; otherTracks = emptyList()
+        koreanFound = false; error = null; clearOther()
     }
 
     suspend fun isKorean(file: File): Boolean = koreanFiles[file.path] ?: SubtitleFiles.isKorean(file).also { koreanFiles[file.path] = it }
@@ -160,7 +185,14 @@ class PlayerSubtitles(
         automaticJob = scope.launch {
             try {
                 // Another site's Korean track of this very episode comes before the blogs: waited for 12 s at most.
-                val other = if (stream.subtitles.any(SubtitlePolicy::isKorean)) emptyList() else withTimeoutOrNull(16_000) { otherJob?.await() } ?: otherTracks
+                val other = if (stream.subtitles.any(SubtitlePolicy::isKorean)) emptyList() else {
+                    try {
+                        withTimeoutOrNull(16_000) { otherJob?.await() } ?: otherTracks
+                    } catch (cancelled: CancellationException) {
+                        currentCoroutineContext().ensureActive()
+                        otherTracks
+                    }
+                }
                 val found = preparer.prepare(opening, merged(stream.subtitles, other), library.preferences, library.aiSubtitleSeries[opening.anime.id] == true, stream = stream)
                 if (found != null && at == token() && requested == request && subtitle == null) select(found.file, found.provider, automatic = true)
                 // Nothing found: the episode heard with Whisper, when a model is installed (iOS automaticSubtitle).

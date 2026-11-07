@@ -3,8 +3,10 @@ package com.lilac.anime.android.subtitle
 import android.content.Context
 import com.lilac.anime.android.player.HlsData
 import com.lilac.anime.android.player.PlaybackFailure
+import com.lilac.anime.android.player.RemoteSubtitle
 import com.lilac.anime.android.player.await
 import com.lilac.anime.android.player.shortKey
+import com.lilac.anime.shared.CrossSiteTrack
 import com.lilac.anime.shared.SubtitleTools
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -14,7 +16,10 @@ import java.io.File
 import java.io.InputStream
 import java.net.URLDecoder
 import java.nio.charset.Charset
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
+import kotlin.io.encoding.Base64
 
 /** iOS SubtitleFiles: subtitles downloaded, unpacked and read into files mpv plays, with the fonts they bring. */
 object SubtitleFiles {
@@ -27,6 +32,26 @@ object SubtitleFiles {
     private val subtitleExtensions = listOf("ass", "ssa", "srt", "vtt", "smi")
     private val fontExtensions = listOf("ttf", "otf", "ttc")
 
+    suspend fun providerTrack(track: CrossSiteTrack): RemoteSubtitle? {
+        val content = track.contentBase64
+            ?: return RemoteSubtitle(track.label, track.url, track.language, track.headers.ifEmpty { null }, track.origin)
+        if (track.format !in subtitleExtensions) return null
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val folder = File(root, "Provider").apply { mkdirs() }
+                val file = File(folder, "${key(track.url)}.${track.format}")
+                val temporary = File.createTempFile("subtitle-", ".tmp", folder)
+                try {
+                    temporary.writeBytes(Base64.decode(content))
+                    Files.move(temporary.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE)
+                } finally {
+                    temporary.delete()
+                }
+                RemoteSubtitle(track.label, file.path, track.language, origin = track.origin)
+            }.getOrNull()
+        }
+    }
+
     /** `label`: the link's text, used as the file's name when the download's own name says nothing (Tistory's tfile.smi). */
     suspend fun prepare(url: String, headers: Map<String, String> = emptyMap(), japanese: Boolean = false, filename: String? = null, label: String? = null): List<File> = withContext(Dispatchers.IO) {
         var name = filename ?: url.substringBefore('?').substringAfterLast('/').let { runCatching { URLDecoder.decode(it, "UTF-8") }.getOrDefault(it) }
@@ -36,13 +61,13 @@ object SubtitleFiles {
         } else {
             var response = download(url, headers)
             // Google Drive answers a big file with a confirmation page first.
-            repeat(2) {
-                if (response.type != "text/html") return@repeat
+            for (attempt in 0 until 2) {
+                if (!response.isHtml) break
                 val confirmed = SubtitleTools.driveConfirmation(response.data.toString(Charsets.UTF_8), response.url)
-                if (confirmed.isEmpty()) return@repeat
+                if (confirmed.isEmpty()) break
                 response = download(confirmed, emptyMap())
             }
-            if (response.type == "text/html") throw PlaybackFailure("자막 파일 대신 웹 페이지가 반환되었습니다. 원본 게시물에서 파일을 내려받아 가져오세요.")
+            if (response.isHtml) throw PlaybackFailure("자막 파일 대신 웹 페이지가 반환되었습니다. 원본 게시물에서 파일을 내려받아 가져오세요.")
             data = response.data
             name = filename ?: SubtitleNames.downloadFilename(response.disposition, name)
             if (filename == null) labelName(label)?.let { named -> if (!isArchive(data) && labelReplaces(name)) name = named }
@@ -68,7 +93,15 @@ object SubtitleFiles {
         listOf(normalize(file, japanese))
     }
 
-    private class Downloaded(val data: ByteArray, val type: String?, val disposition: String?, val url: String)
+    private class Downloaded(val data: ByteArray, type: String?, val disposition: String?, val url: String) {
+        val isHtml = SubtitleTools.isHtmlResponse(subtitleHead(data), type)
+    }
+
+    private fun subtitleHead(data: ByteArray): String {
+        val length = minOf(data.size, 4096)
+        val utf16 = startsWith(data, 0xff, 0xfe) || startsWith(data, 0xfe, 0xff)
+        return String(data, 0, length, if (utf16) Charsets.UTF_16 else Charsets.UTF_8)
+    }
     private suspend fun download(url: String, headers: Map<String, String>): Downloaded {
         val request = Request.Builder().url(url).apply { headers.forEach { (k, v) -> header(k, v) } }.build()
         return HlsData.client.newCall(request).await { response ->

@@ -35,10 +35,13 @@ iOS 파일 이름을 기준으로 옮길 범위를 나눴습니다. 체크된 �
 - [ ] 다음 화 미리 준비, 탐색 바 미리보기, 2배속 Space 길게 누르기 — 3단계 이후
 
 ### 3단계 — 자막 · 번역
-- [ ] 자막 찾기 · 고르기 · 저장 (`EpisodeSubtitleStore.swift`, `SubtitleFiles.swift`, `SubtitleArchive.swift`, `SubtitleNames.swift`, `DesktopSubtitlePreparer.swift`, `DesktopSubtitlePolicy.swift`, `DesktopJimakuCatalog.swift`, 다른 사이트 자막 트랙)
-- [ ] 자막 모양 · 싱크 (`SubtitleAppearance.swift`, `SubtitleLineSpacing.swift`, `SubtitleAutoSync.swift`)
-- [ ] 클라우드 번역 (`TranslationCoordinator.swift`, `CloudSubtitleScheduler.swift`, `TranslationPromptSettings.swift`)
-- [ ] 설정 화면 전체 (`SettingsView.swift`, `SettingsComponents.swift`), 키 저장 (Keychain → Android Keystore)
+- [x] 자막 찾기 · 고르기 · 저장 (`EpisodeSubtitleStore.swift`, `SubtitleFiles.swift`, `SubtitleArchive.swift` → ZIP(CP949) · commons-compress 7z · junrar RAR4, `SubtitleNames.swift`, `DesktopSubtitlePreparer.swift`, `DesktopSubtitlePolicy.swift`, `DesktopJimakuCatalog.swift`)
+- [x] 플레이어 자막 탭 (소스 카드, 사이트 트랙, Anissia 제작자, Jimaku 파일, 한국어 자막 다시 찾기, 파일에서 열기, 한국어 자막 제안)
+- [x] 자막 모양 · 타이밍 (`SubtitleAppearance.swift`, `SubtitleLineSpacing.swift`, 글꼴 가져오기, 시스템 한국어 글꼴 연결)
+- [x] 클라우드 번역 (`TranslationCoordinator.swift`의 API 부분, `CloudSubtitleScheduler.swift`, `TranslationPromptSettings.swift`)
+- [x] 설정 화면 (일반 · 재생 · 자막 · 한국어 제목 검색 · 자막 자동 번역 · 저장 자막·캐시), 키 저장 (Keychain → Android Keystore)
+- [ ] 다른 사이트 자막 트랙(`CrossSiteTracks.swift`), 음성 싱크 맞추기(`SubtitleAutoSync.swift`), Anissia WinPNG 게시물(`WinPNGReader.swift`) — 5단계(오디오 처리)와 함께
+- [ ] 한국어 제목 카탈로그로 블로그 검색 제목 찾기 — 4단계 (지금은 작품의 한국어 제목, 없으면 TMDB 키로 찾음)
 
 ### 4단계 — 다운로드 · 카탈로그
 - [ ] 다운로드 (`DownloadStore.swift`, `DownloadTransfer.swift`, `BackgroundDownloads.swift`, `DesktopDownloads.swift`, `DownloadStreamSelector.swift`) — 백그라운드는 포그라운드 서비스로

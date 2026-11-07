@@ -73,15 +73,55 @@ data class AppPreferences(
     val showSkipButton: Boolean = true,
     val backgroundAudio: Boolean = true,
     val subtitleSize: Double = 100.0,
+    val subtitleLineHeight: Double? = null,
+    val subtitleFont: String = "",
+    val subtitleColor: String = "#FFFFFF",
+    val outlineColor: String = "#000000",
+    val outlineWidth: Double = 2.0,
+    val subtitleBold: Boolean = true,
+    val subtitlePadding: Double = 12.0,
+    val subtitleOffset: Double = 0.0,
+    val assEffects: Boolean = true,
+    val vttStyle: Boolean = true,
+    val subtitleProvider: String = "auto",
     val autoTranslation: Boolean = true,
     val translationProvider: String = "gemini",
-)
+    val translationModel: String = "",
+    val translationModels: Map<String, String> = emptyMap(),
+    val cloudFallback: Boolean = true,
+    val translationFallback: Boolean = true,
+    val qwenRegion: String = "international",
+    val translationGlossary: String = "",
+    val dropCaptions: Boolean = false,
+    val promptExtra: String = "",
+    val promptRules: String = "",
+    val selectedGGUF: String = "",
+) {
+    /** Desktop uses the configured API first (the chosen one first), then the installed local model (stage 5). */
+    fun translationPreferences(automatic: Boolean = false, hasKey: (String) -> Boolean = { SecureKeys.load(it).isNotEmpty() }): AppPreferences? {
+        if (automatic && !autoTranslation) return null
+        val clouds = listOf("gemini", "openai", "deepl", "qwen", "claude")
+        val wanted = translationProvider
+        val preferred = if (wanted in clouds) listOf(wanted) + clouds.filter { it != wanted } else clouds
+        val provider = preferred.firstOrNull(hasKey) ?: return null
+        return copy(translationProvider = provider, translationModel = translationModels[provider] ?: if (wanted == provider) translationModel else "")
+    }
+    /** 번역 프롬프트: the user's rules after the app's (extra) or in their place (custom), 4000 characters each. */
+    val rulesExtra: String get() = promptExtra.trim().take(4000)
+    val rulesCustom: String get() = promptRules.trim().take(4000)
+}
+
+/** The subtitle put on an episode by hand, and its timing (iOS SubtitleChoice). */
+@Serializable
+data class SubtitleChoice(val relativeFile: String? = null, val offset: Double = 0.0)
 
 @Serializable
 private data class LibraryState(
     val preferences: AppPreferences = AppPreferences(),
     val favorites: List<SavedAnime> = emptyList(),
     val history: List<WatchEntry> = emptyList(),
+    val subtitles: Map<String, SubtitleChoice> = emptyMap(),
+    val aiSubtitleSeries: Map<String, Boolean> = emptyMap(),
 )
 
 /** 내 목록 · 시청 기록 · 설정 in library.json (iOS LibraryStore), written off the main thread half a second after a change. */
@@ -95,14 +135,25 @@ class LibraryStore(context: Context) {
     var preferences by mutableStateOf(AppPreferences()); private set
     var favorites by mutableStateOf(emptyList<SavedAnime>()); private set
     var history by mutableStateOf(emptyList<WatchEntry>()); private set
+    var subtitleChoices by mutableStateOf(emptyMap<String, SubtitleChoice>()); private set
+    var aiSubtitleSeries by mutableStateOf(emptyMap<String, Boolean>()); private set
     var persistenceError by mutableStateOf<String?>(null)
+
+    fun subtitleChoice(animeID: String, episodeID: String) = subtitleChoices["$animeID#$episodeID"]
+    fun preferAI(value: Boolean, animeID: String) { aiSubtitleSeries = if (value) aiSubtitleSeries + (animeID to true) else aiSubtitleSeries - animeID; persist() }
+    fun saveSubtitle(animeID: String, episodeID: String, file: java.io.File?, offset: Double) {
+        val prefix = com.lilac.anime.android.subtitle.SubtitleFiles.root.canonicalPath + "/"
+        val relative = file?.canonicalPath?.takeIf { it.startsWith(prefix) }?.removePrefix(prefix)
+        subtitleChoices = subtitleChoices + ("$animeID#$episodeID" to SubtitleChoice(relative, offset)); persist()
+    }
+    fun clearSubtitleFiles() { subtitleChoices = subtitleChoices.mapValues { it.value.copy(relativeFile = null) }; persist() }
 
     suspend fun load() {
         if (ready) return
         val state = withContext(Dispatchers.IO) {
             runCatching { if (file.isFile) json.decodeFromString(LibraryState.serializer(), file.readText()) else LibraryState() }
         }
-        state.onSuccess { preferences = it.preferences; favorites = it.favorites; history = it.history }
+        state.onSuccess { preferences = it.preferences; favorites = it.favorites; history = it.history; subtitleChoices = it.subtitles; aiSubtitleSeries = it.aiSubtitleSeries }
             .onFailure { persistenceError = "저장된 보관함을 읽지 못했습니다: " + it.message }
         ready = true
     }
@@ -138,7 +189,7 @@ class LibraryStore(context: Context) {
 
     private fun persist() {
         if (!ready) return
-        val state = LibraryState(preferences, favorites, history)
+        val state = LibraryState(preferences, favorites, history, subtitleChoices, aiSubtitleSeries)
         writing?.cancel()
         writing = scope.launch {
             delay(500)

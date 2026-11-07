@@ -22,7 +22,6 @@ class PlayerModel(private val context: Context, start: PlaybackItem, private val
     var error by mutableStateOf<String?>(null)
     var chapters by mutableStateOf(emptyList<Chapter>()); private set
     var toast by mutableStateOf<Pair<String, Long>?>(null); private set
-    var subtitleTrack by mutableStateOf<String?>(null); private set
 
     val engine = MpvEngine(context)
     val resolver = PlaybackResolver(context)
@@ -42,9 +41,22 @@ class PlayerModel(private val context: Context, start: PlaybackItem, private val
     private var miruroFailed = mutableSetOf<String>()
     private val refreshedSeries = mutableSetOf<String>()
     private val defaults = context.getSharedPreferences("lilac", Context.MODE_PRIVATE)
+    /** The subtitles: the automatic choice, the 자막 tab and the AI translation (stage 3). */
+    val subtitles = com.lilac.anime.android.subtitle.PlayerSubtitles(context, library, engine, { item }, { active },
+        { active?.subtitles?.ifEmpty { null } ?: resolver.subtitles }, { generation }, ::notify)
 
     init {
         scope.launch { snapshotFlow { resolver.streams }.distinctUntilChanged().collect { selectResolved(it) } }
+        // 애니24's own subtitle file can be found after the stream: the playing stream takes it and it is put on.
+        scope.launch {
+            snapshotFlow { resolver.subtitles }.distinctUntilChanged().collect { tracks ->
+                val stream = active ?: return@collect
+                if (item.anime.source == "ohli24" && stream.subtitles.isEmpty() && tracks.isNotEmpty()) {
+                    active = stream.copy(subtitles = tracks, burnedKorean = false)
+                    if (subtitles.subtitle == null) subtitles.automatic(active!!)
+                }
+            }
+        }
     }
 
     fun notify(text: String) { toast = text to System.nanoTime() }
@@ -79,6 +91,7 @@ class PlayerModel(private val context: Context, start: PlaybackItem, private val
         stallJob?.cancel(); miruroMonitor = MiruroStallMonitor(); miruroFailed = mutableSetOf()
         stallJob = scope.launch { while (isActive) { delay(1000); if (token == generation) recoverMiruroIfStalled(token) } }
         engine.configure(library.preferences)
+        subtitles.begin()
         refreshSeries(token)
         // Animenosub's and Miruro's clean video is chosen for a work known to have Korean subtitles (desktop korean-series).
         preferRaw = item.anime.source in setOf("miruro", "animenosub") &&
@@ -129,7 +142,7 @@ class PlayerModel(private val context: Context, start: PlaybackItem, private val
         if (remember) previous = previous + item
         save(); engine.pause(); proxy?.stop(); proxy = null
         generation++; item = next; active = null; chapters = emptyList(); skipEntered = null
-        loadedSkip = false; lastSave = 0.0; lastSkipped = ""; subtitleTrack = null; engine.clearViewerSeek()
+        loadedSkip = false; lastSave = 0.0; lastSkipped = ""; subtitles.reset(); engine.clearViewerSeek()
         begin()
     }
     fun jump(index: Int) {
@@ -159,7 +172,7 @@ class PlayerModel(private val context: Context, start: PlaybackItem, private val
                 if (item.anime.source == "miruro") stream.label.split(" - ").getOrNull(1)?.split(" ")?.firstOrNull()?.let { defaults.edit().putString("miruro.working-provider", it).apply() }
                 engine.configure(library.preferences)
                 engine.load(playable, library.resume(item.anime, item.episodeID), paused)
-                autoTrack(stream)
+                if (subtitles.subtitle == null) subtitles.automatic(stream)
             } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) {
                 if (token == generation && playing == playRequest) error = failure.message
             }
@@ -167,17 +180,6 @@ class PlayerModel(private val context: Context, start: PlaybackItem, private val
     }
     private fun needsProxy(stream: ResolvedStream) = stream.manifestKey != null || stream.hlsManifest != null || (urlExtension(stream.url) == "m3u8" && !isFileURL(stream.url))
 
-    /** A site's Korean track is put on as the video starts (the rest of the automatic choice comes with stage 3). */
-    private fun autoTrack(stream: ResolvedStream) {
-        val korean = stream.subtitles.firstOrNull(SubtitlePolicy::isKorean) ?: return
-        val token = generation
-        scope.launch {
-            snapshotFlow { engine.fileLoaded }.first { it }
-            if (token == generation && subtitleTrack == null) chooseTrack(korean)
-        }
-    }
-    fun chooseTrack(track: RemoteSubtitle) { subtitleTrack = track.url; engine.addSubtitle(track.url, track.label) }
-    val siteTracks: List<RemoteSubtitle> get() = active?.subtitles?.ifEmpty { null } ?: resolver.subtitles
 
     private suspend fun recoverMiruroIfStalled(token: Long) {
         val current = active ?: return
@@ -230,7 +232,7 @@ class PlayerModel(private val context: Context, start: PlaybackItem, private val
 
     fun shutdown() {
         save(); generation++; selectionJob?.cancel(); stallJob?.cancel()
-        engine.shutdown(); resolver.shutdown(); proxy?.stop(); proxy = null
+        subtitles.shutdown(); engine.shutdown(); resolver.shutdown(); proxy?.stop(); proxy = null
         service.close(); scope.cancel()
     }
 }

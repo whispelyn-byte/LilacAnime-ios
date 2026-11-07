@@ -16,6 +16,8 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -103,6 +105,31 @@ fun PlayerScreen(start: PlaybackItem, close: () -> Unit) {
     var showWeb by remember { mutableStateOf(false) }
     var inPip by remember { mutableStateOf(activity?.isInPictureInPictureMode == true) }
     val scope = rememberCoroutineScope()
+    // 파일에서 자막 열기 / 글꼴 파일 선택: the file is copied into the app and used from there.
+    val subtitlePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            val copied = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching {
+                    val name = displayName(context, uri) ?: "subtitle.ass"
+                    val folder = File(context.cacheDir, "opened/" + System.currentTimeMillis()).apply { mkdirs() }
+                    File(folder, name).also { file -> context.contentResolver.openInputStream(uri)!!.use { input -> file.outputStream().use { input.copyTo(it) } } }
+                }.getOrNull()
+            }
+            if (copied != null) model.subtitles.import(copied.absolutePath, translate = false, provider = "user") else model.notify("파일을 열지 못했습니다.")
+        }
+    }
+    val fontPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            val name = displayName(context, uri) ?: "font.ttf"
+            if (name.substringAfterLast('.').lowercase() !in setOf("ttf", "otf", "ttc")) { model.notify("TTF · OTF · TTC 글꼴 파일을 선택하세요."); return@launch }
+            val family = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { context.contentResolver.openInputStream(uri)!!.use { com.lilac.anime.android.subtitle.SubtitleFiles.importFont(it, name) } }.getOrNull()
+            }
+            if (family != null) library.update { it.copy(subtitleFont = family) } else model.notify("글꼴을 가져오지 못했습니다.")
+        }
+    }
 
     // Landscape, full screen, the screen kept on while the player is open; all put back as it closes.
     DisposableEffect(Unit) {
@@ -198,7 +225,17 @@ fun PlayerScreen(start: PlaybackItem, close: () -> Unit) {
                 }
             }
         }
-        if (settings && !inPip) PlayerSettingsPanel(model, close = { settings = false }, openWeb = { settings = false; showWeb = true })
+        if (settings && !inPip) PlayerSettingsPanel(model, close = { settings = false }, openWeb = { settings = false; showWeb = true },
+            openSubtitleFile = { settings = false; subtitlePicker.launch(arrayOf("*/*")) }, openFontFile = { fontPicker.launch(arrayOf("*/*")) })
+        model.subtitles.koreanOffer?.takeIf { !inPip }?.let { offer ->
+            Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 100.dp, start = 24.dp, end = 24.dp).background(Color.Black.copy(alpha = 0.85f), RoundedCornerShape(16.dp)).padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(offer, color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f, fill = false))
+                Text("바꾸기", color = Color.Black, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.background(LilacStyle.accent, RoundedCornerShape(8.dp)).clickable { model.subtitles.acceptOffer() }.padding(horizontal = 12.dp, vertical = 6.dp))
+                Text("닫기", color = Color.White, fontSize = 14.sp, modifier = Modifier.clickable { model.subtitles.dismissOffer() }.padding(6.dp))
+            }
+        }
         if (episodePanel && !inPip) EpisodePanel(model, close = { episodePanel = false }) { index -> episodePanel = false; model.jump(index) }
     }
 }
@@ -459,7 +496,7 @@ private fun <T> ChoiceGrid(options: List<Pair<T, String>>, selection: T, onSelec
 
 /** 플레이어 설정: 재생 · 자막 · 자막 모양 (iOS PlayerSettingsPanel and its tabs). */
 @Composable
-private fun PlayerSettingsPanel(model: PlayerModel, close: () -> Unit, openWeb: () -> Unit) {
+private fun PlayerSettingsPanel(model: PlayerModel, close: () -> Unit, openWeb: () -> Unit, openSubtitleFile: () -> Unit, openFontFile: () -> Unit) {
     val app = LocalApp.current
     val library = app.library
     val prefs = library.preferences
@@ -543,30 +580,8 @@ private fun PlayerSettingsPanel(model: PlayerModel, close: () -> Unit, openWeb: 
                             color = PSDetail, fontSize = 11.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 14.dp))
                         model.error?.let { Note(it, Color.Red) }
                     }
-                    1 -> {
-                        Switch("자막 표시", model.engine.subtitlesVisible) { model.engine.toggleSubtitleVisibility() }
-                        val tracks = model.siteTracks
-                        Column(Modifier.padding(top = 14.dp).fillMaxWidth().background(Color.White.copy(alpha = 0.03f), RoundedCornerShape(12.dp))
-                            .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(12.dp)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Row { Text("사이트 자막 트랙", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f)); Text("${tracks.size}개", color = PSDetail, fontSize = 11.sp) }
-                            Note("영상과 함께 제공되는 자막입니다.")
-                            if (tracks.isEmpty()) Note("이 영상에는 사이트 자막이 없어요.")
-                            tracks.forEach { track ->
-                                TrackOption(track.label, track.language, model.subtitleTrack == track.url) { model.chooseTrack(track) }
-                            }
-                        }
-                        val embedded = model.engine.tracks.filter { it.type == "sub" }
-                        if (embedded.isNotEmpty()) {
-                            Group("영상의 자막")
-                            embedded.forEach { track -> TrackOption(track.title, "", track.selected) { model.engine.selectTrack(track) } }
-                        }
-                        Note("블로그 자막 찾기, Jimaku, AI 번역, Whisper와 싱크 맞추기는 다음 단계에서 옮겨집니다.", Color.White.copy(alpha = 0.66f))
-                    }
-                    else -> {
-                        Group("자막 크기  ${prefs.subtitleSize.toInt()}%")
-                        ChoiceGrid(listOf(70.0, 85.0, 100.0, 115.0, 130.0, 150.0).map { it to "${it.toInt()}%" }, prefs.subtitleSize) { value -> library.update { it.copy(subtitleSize = value) } }
-                        Note("글꼴 · 색 · 테두리 · 위치는 다음 단계에서 옮겨집니다.", Color.White.copy(alpha = 0.66f))
-                    }
+                    1 -> SubtitleTab(model, openSubtitleFile)
+                    else -> StyleTab(model, openFontFile)
                 }
             }
         }

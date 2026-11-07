@@ -50,5 +50,9 @@ dependencies {
     implementation("androidx.core:core-ktx:1.16.0")
     // mpv for Android (the iOS app plays with mpv too).
     implementation("dev.jdtech.mpv:libmpv:1.0.0")
+    // Subtitle archives (iOS uses libarchive): 7z and RAR4; ZIP is the platform's own.
+    implementation("org.apache.commons:commons-compress:1.27.1")
+    implementation("org.tukaani:xz:1.10")
+    implementation("com.github.junrar:junrar:7.5.5")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

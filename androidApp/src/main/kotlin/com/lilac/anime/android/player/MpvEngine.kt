@@ -66,7 +66,11 @@ class MpvEngine(private val context: Context) {
     fun create() {
         if (mpv != null) return
         val player = runCatching { MPVLib.create(context.applicationContext) }.getOrNull() ?: run { error = "mpv 초기화 실패"; return }
-        val fonts = File(context.filesDir, "fonts").apply { mkdirs() }
+        val fonts = com.lilac.anime.android.subtitle.SubtitleFiles.fontDirectory.apply { mkdirs() }
+        // libass finds fonts only in this folder: the system's CJK font is linked into it so Korean is drawn (iOS uses
+        // Apple SD Gothic Neo, its system font).
+        val korean = listOf("/system/fonts/NotoSansCJK-Regular.ttc", "/system/fonts/NotoSansCJKkr-Regular.otf", "/system/fonts/NanumGothic.ttf").map(::File).firstOrNull { it.isFile }
+        if (korean != null) runCatching { val link = File(fonts, "system-" + korean.name); if (!link.exists()) android.system.Os.symlink(korean.absolutePath, link.absolutePath) }
         for ((key, value) in listOf(
             "config" to "no", "terminal" to "no", "msg-level" to "all=error", "vo" to "gpu", "gpu-context" to "android",
             "opengl-es" to "yes", "hwdec" to "mediacodec-copy", "ao" to "audiotrack,opensles", "keep-open" to "yes", "idle" to "yes",
@@ -110,9 +114,44 @@ class MpvEngine(private val context: Context) {
         applyPresentation()
         if (!speedBoosted) changeSpeed(settings.speed)
         configure("sub-scale", (settings.subtitleSize / 100).toString())
+        configure("sub-line-spacing", lineSpacing(settings.subtitleLineHeight).toString())
+        configure("sub-delay", subtitleOffset.toString())
+        configure("sub-font", settings.subtitleFont.ifEmpty { DEFAULT_FONT })
+        configure("sub-color", settings.subtitleColor); configure("sub-border-color", settings.outlineColor)
+        configure("sub-border-size", settings.outlineWidth.toString())
+        configure("sub-bold", if (settings.subtitleBold) "yes" else "no")
+        configure("sub-pos", (100 - settings.subtitlePadding).toString())
         configure("sub-font-size", "36"); configure("sub-margin-x", "36"); configure("sub-shadow-offset", "0")
-        configure("sub-scale-with-window", "no"); configure("sub-border-size", "2"); configure("sub-bold", "yes")
+        configure("sub-scale-with-window", "no")
+        configure("sub-ass-override", assOverride)
+        configure("embeddedfonts", if (translatedSubtitle) "no" else "yes")
     }
+    /** The subtitle's timing for this episode (the player's 자막 타이밍, else 설정's). */
+    var subtitleOffset = 0.0
+        set(value) { field = value; configure("sub-delay", value.toString()) }
+    private var subtitleFile: String? = null
+    var translatedSubtitle = false; private set
+    /** iOS SubtitleAppearance.assOverride: a translation drops its styling, an ASS keeps its effects when asked. */
+    private val assOverride: String get() = when {
+        translatedSubtitle -> "strip"
+        subtitleFile?.substringAfterLast('.')?.lowercase() in setOf("ass", "ssa") && preferences.assEffects -> "no"
+        preferences.vttStyle -> "yes"
+        else -> "strip"
+    }
+    /** mpv's line spacing adds scaled pixels to the 36px font's normal line height (iOS SubtitleLineSpacing). */
+    private fun lineSpacing(percent: Double?): Double = if (percent == null || !percent.isFinite() || percent <= 0) 0.0 else 36 * (percent.coerceIn(80.0, 300.0) / 100 - 1)
+
+    /** A subtitle file put on (iOS MPVEngine.subtitle): added and selected once the video is open, reloaded when the same
+     *  file was written again (a translation as it goes). */
+    fun subtitle(file: File, translated: Boolean = false) {
+        val reload = subtitleFile == file.absolutePath
+        subtitleFile = file.absolutePath; translatedSubtitle = translated
+        configure("sub-ass-override", assOverride)
+        configure("embeddedfonts", if (translated) "no" else "yes")
+        if (fileLoaded) { command("sub-add", file.absolutePath, "select"); if (reload) command("sub-reload") }
+    }
+    fun reloadSubtitle() { command("sub-reload") }
+    fun clearSubtitle() { subtitleFile = null; set("sid", "no") }
     private fun configure(name: String, value: String) { if (configured[name] != value) { configured[name] = value; set(name, value) } }
     val presentation get() = PlayerPresentation(PlayerAspect.of(preferences.playerAspect), PlayerFit.of(preferences.playerFit))
     private fun applyPresentation() { presentation.mpvOptions.toSortedMap().forEach { (name, value) -> configure(name, value) } }
@@ -212,6 +251,7 @@ class MpvEngine(private val context: Context) {
             MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED -> {
                 fileLoaded = true; buffering = false; loadTimeout?.cancel(); error = null
                 set("start", "none")
+                subtitleFile?.let { command("sub-add", it, "select") }
                 if (!startPaused) play()
             }
             MPVLib.MpvEvent.MPV_EVENT_END_FILE -> if (fileLoaded) reachedEnd()
@@ -219,6 +259,11 @@ class MpvEngine(private val context: Context) {
     }
     /** mpv's eof-reached and its end-file event are one ending (iOS PlaybackCompletion). */
     private fun reachedEnd() { if (completionNotified) return; completionNotified = true; onEnd?.invoke() }
+
+    companion object {
+        /** The system's Korean font family (linked into the subtitle font folder). */
+        const val DEFAULT_FONT = "Noto Sans CJK KR"
+    }
 
     fun shutdown() {
         poll?.cancel(); loadTimeout?.cancel(); scope.cancel()

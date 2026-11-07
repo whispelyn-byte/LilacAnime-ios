@@ -334,6 +334,30 @@ private fun TranslateSettings() {
         else SettingField(prefs.translationModel, { v -> library.update { it.copy(translationModel = v, translationModels = it.translationModels + (provider to v)) } }, "모델 ID (빈칸: 기본값)")
         LilacOutlineButton(if (testing) "불러오는 중…" else "연결 테스트 · 모델 목록", enabled = !testing && apiKey.isNotBlank()) { fetch(false) }
     }
+    SettingBlock("Whisper 음성 자막", "자막이 없으면 설치한 Whisper 모델로 일본어 음성을 이 기기에서 인식해 자막을 만듭니다 (whisper.cpp). 현재 위치부터 30초씩 인식하고, 자동 번역 설정에 따라 한국어로 바꿉니다.") {
+        val prefs2 = library.preferences
+        com.lilac.anime.android.audio.WhisperModels.revision
+        com.lilac.anime.android.audio.WhisperModels.variants.forEach { variant ->
+            val installed = com.lilac.anime.android.audio.WhisperModels.file(variant.id) != null
+            val downloading = com.lilac.anime.android.audio.WhisperModels.downloading == variant.id
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(variant.label, fontSize = 13.sp, color = LilacStyle.text, modifier = Modifier.weight(1f))
+                when {
+                    downloading -> LilacOutlineButton("중단 " + Math.round(com.lilac.anime.android.audio.WhisperModels.progress * 100) + "%") { com.lilac.anime.android.audio.WhisperModels.cancelDownload() }
+                    installed -> {
+                        LilacOutlineButton(if (prefs2.whisperModel == variant.id) "사용 중" else "사용", enabled = prefs2.whisperModel != variant.id) { library.update { it.copy(whisperModel = variant.id) } }
+                        LilacOutlineButton("삭제", tint = Color.Red) { scope.launch { com.lilac.anime.android.audio.WhisperModels.remove(variant.id) } }
+                    }
+                    else -> LilacOutlineButton("받기") { com.lilac.anime.android.audio.WhisperModels.download(variant.id) }
+                }
+            }
+        }
+        com.lilac.anime.android.audio.WhisperModels.error?.let { SettingNote(it, Color.Red) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("자막이 없으면 자동으로 음성 인식", fontSize = 13.sp, color = LilacStyle.text, modifier = Modifier.weight(1f))
+            Switch(prefs2.whisperAuto, { on -> library.update { it.copy(whisperAuto = on) } }, colors = SwitchDefaults.colors(checkedTrackColor = LilacStyle.accent))
+        }
+    }
     SettingSwitch("자막 자동 번역", "한국어 자막이 없으면 그 회차의 Jimaku 일본어 자막을, 없으면 영상 사이트의 일본어 트랙을, 그것도 없으면 영어 트랙을 알아서 번역해 띄웁니다. 보고 있는 장면부터 번역합니다.", prefs.autoTranslation) { on -> library.update { it.copy(autoTranslation = on) } }
     SettingSwitch("효과음·화자 이름 빼고 번역", "（ため息）·[laughs] 같은 효과음 설명, 웃음소리만 있는 줄은 지우고, 줄 앞의 화자 이름을 떼고 번역합니다.", prefs.dropCaptions) { on -> library.update { it.copy(dropCaptions = on) } }
     SettingSwitch("실패하면 다른 번역 API로", "키를 등록한 다른 번역 API로 이어서 번역합니다.", prefs.cloudFallback) { on -> library.update { it.copy(cloudFallback = on) } }

@@ -108,7 +108,8 @@ fun SubtitleTab(model: PlayerModel, openFile: () -> Unit) {
     TabSwitch("자막 표시", model.engine.subtitlesVisible) { model.engine.toggleSubtitleVisibility() }
     val state = subtitles.subtitleState ?: (if (translation.running) translation.status else null) ?: subtitles.label?.let { "$it 적용됨" }
         ?: if (model.active == null) "영상 연결 후 자막을 확인합니다." else "자막을 찾는 중이거나 찾은 자막이 없습니다."
-    Text(state, color = Color.White.copy(alpha = 0.66f), fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+    ButtonRow { TabButton(subtitles.whisperStatus.ifEmpty { "Whisper 음성 자막 만들기" }, Modifier.weight(1f)) { subtitles.startWhisper() } }
+    Text(subtitles.syncStatus ?: state, color = Color.White.copy(alpha = 0.66f), fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
     if (subtitles.translatable) {
         val again = subtitles.retranslatable
         ButtonRow {
@@ -183,8 +184,9 @@ fun SubtitleTab(model: PlayerModel, openFile: () -> Unit) {
         embedded.forEach { track -> Option(track.title, "", track.selected) { model.engine.selectTrack(track) } }
     }
     val library = LocalApp.current.library
+    ButtonRow { TabButton(subtitles.syncButtonTitle, Modifier.weight(1f), subtitles.syncRunning || subtitles.syncAvailable) { subtitles.runSync() } }
+    TabSwitch("싱크가 어긋나면 자동으로 맞추기", library.preferences.subtitleSyncCheck, small = true) { on -> library.update { it.copy(subtitleSyncCheck = on) } }
     TabSwitch("다른 사이트 자막 트랙도 찾기", library.preferences.otherSiteTracks, small = true) { on -> library.update { it.copy(otherSiteTracks = on) } }
-    TabNote("Whisper 음성 자막과 음성에 맞춘 싱크 맞추기는 다음 단계에서 옮겨집니다.", Color.White.copy(alpha = 0.6f))
     subtitles.error?.let { Text(it, color = Color.Red, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp)) }
 }
 

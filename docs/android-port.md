@@ -55,7 +55,9 @@ iOS 파일 이름을 기준으로 옮길 범위를 나눴습니다. 체크된 �
 - [x] 로컬 AI 번역 (`LocalModelsView.swift`, `LocalModelInput.swift`, `DesktopModelInstaller.swift`; iOS와 같은 llama.cpp b11490 + `iosApp/Native/Sources/LilacLocalAI`를 NDK로 빌드, JNI `androidApp/src/main/cpp`). CPU 전용 (GPU 백엔드 없음)
 - [x] Anime4K (`Anime4K.swift`; mpv GLSL 셰이더 그대로)
 - [x] 다른 사이트 자막 트랙 (`CrossSiteTracks.swift`의 RE:Anime · Miruro 트랙)
-- [ ] Whisper 음성 자막 (`WhisperSubtitles.swift`, `WhisperLiveTranslation.swift`; iOS는 WhisperKit, Android는 whisper.cpp), 음성 싱크 맞추기 (`SubtitleAutoSync.swift`), 다운로드 OP/ED 분석 (`OfflineAnalyzer.swift`) — 모두 영상에서 음성을 뽑아야 해서 함께
+- [x] 음성 읽기: iOS NativeAudio(FFmpeg) 대신 숨긴 mpv가 `ao=pcm`으로 16 kHz/8 kHz 모노 PCM을 씀 (`audio/AudioExtractor.kt`)
+- [x] Whisper 음성 자막 (`WhisperSubtitles.swift`, `WhisperLiveTranslation.swift`; iOS는 WhisperKit, Android는 whisper.cpp v1.7.4를 별도 모듈 `androidWhisper`로 — ggml이 llama.cpp와 겹치지 않게)
+- [x] 음성 싱크 맞추기 (`SubtitleAutoSync.swift`; 정렬은 공통 `SubtitleSync`), 다운로드 OP/ED 분석 (`OfflineAnalyzer.swift`; 공통 `AudioFingerprint`)
 - [ ] 영상 정리 (`VideoCleanup.swift`), Hugging Face 검색 (`HuggingFaceSearchView.swift`), 애니24·링크애니·Linkkf 한국어 자막 파일 (`koreanSiteTracks`)
 
 ### 6단계 — 연결

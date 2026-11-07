@@ -43,7 +43,11 @@ class PlayerModel(private val context: Context, start: PlaybackItem, private val
     private val defaults = context.getSharedPreferences("lilac", Context.MODE_PRIVATE)
     /** The subtitles: the automatic choice, the 자막 tab and the AI translation (stage 3). */
     val subtitles = com.lilac.anime.android.subtitle.PlayerSubtitles(context, library, engine, { item }, { active },
-        { active?.subtitles?.ifEmpty { null } ?: resolver.subtitles }, { generation }, ::notify)
+        { active?.subtitles?.ifEmpty { null } ?: resolver.subtitles }, { generation }, ::notify,
+        { (playable ?: active)?.let { com.lilac.anime.android.audio.AudioSource(it.url, it.headers + (if (it.referer.isNotEmpty()) mapOf("Referer" to it.referer) else emptyMap()), engine.duration) } },
+        { chapters })
+    /** The stream mpv plays (the proxy's address for HLS that needs it). */
+    var playable: ResolvedStream? = null; private set
 
     init {
         scope.launch { snapshotFlow { resolver.streams }.distinctUntilChanged().collect { selectResolved(it) } }
@@ -89,6 +93,8 @@ class PlayerModel(private val context: Context, start: PlaybackItem, private val
             }
         }
         stallJob?.cancel(); miruroMonitor = MiruroStallMonitor(); miruroFailed = mutableSetOf()
+        // The OP/ED found by comparing downloaded episodes (설정 > 다운로드 > OP/ED 분석), until AniSkip answers.
+        chapters = com.lilac.anime.android.audio.OfflineAnalyzer.chapters(item.anime.id, item.episodeID)
         stallJob = scope.launch { while (isActive) { delay(1000); if (token == generation) recoverMiruroIfStalled(token) } }
         engine.configure(library.preferences)
         subtitles.begin()
@@ -170,7 +176,7 @@ class PlayerModel(private val context: Context, start: PlaybackItem, private val
                 var playable = stream
                 if (needsProxy(stream)) { val started = HlsProxy(); proxy = started; playable = started.start(stream, library.preferences.quality) }
                 if (token != generation || playing != playRequest) return@launch
-                active = stream; error = null
+                active = stream; this@PlayerModel.playable = playable; error = null
                 if (item.anime.source == "miruro") stream.label.split(" - ").getOrNull(1)?.split(" ")?.firstOrNull()?.let { defaults.edit().putString("miruro.working-provider", it).apply() }
                 engine.configure(library.preferences)
                 engine.load(playable, library.resume(item.anime, item.episodeID), paused)

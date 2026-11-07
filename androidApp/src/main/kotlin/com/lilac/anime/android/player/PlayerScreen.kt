@@ -227,6 +227,16 @@ fun PlayerScreen(start: PlaybackItem, close: () -> Unit) {
         }
         if (settings && !inPip) PlayerSettingsPanel(model, close = { settings = false }, openWeb = { settings = false; showWeb = true },
             openSubtitleFile = { settings = false; subtitlePicker.launch(arrayOf("*/*")) }, openFontFile = { fontPicker.launch(arrayOf("*/*")) })
+        // desktop showSyncDone: what the sync did, and 되돌리기 while the subtitle it changed is on screen.
+        model.subtitles.syncNotice?.takeIf { !inPip }?.let { notice ->
+            Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 100.dp, start = 24.dp, end = 24.dp).background(Color.Black.copy(alpha = 0.85f), RoundedCornerShape(16.dp)).padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(notice, color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f, fill = false))
+                Text("되돌리기", color = Color.Black, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.background(LilacStyle.accent, RoundedCornerShape(8.dp)).clickable { model.subtitles.undoSync() }.padding(horizontal = 12.dp, vertical = 6.dp))
+                Text("확인", color = Color.White, fontSize = 14.sp, modifier = Modifier.clickable { model.subtitles.dismissSync() }.padding(6.dp))
+            }
+        }
         model.subtitles.koreanOffer?.takeIf { !inPip }?.let { offer ->
             Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 100.dp, start = 24.dp, end = 24.dp).background(Color.Black.copy(alpha = 0.85f), RoundedCornerShape(16.dp)).padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {

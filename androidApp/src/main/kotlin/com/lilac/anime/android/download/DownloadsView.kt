@@ -157,6 +157,22 @@ fun DownloadsView() {
                 }
             }
         }
+        val scope = rememberCoroutineScope()
+        var analyzing by remember { mutableStateOf(false) }
+        var analysisStatus by remember { mutableStateOf<String?>(null) }
+        Column(Modifier.downloadCard().padding(top = 0.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("OP/ED 분석", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = LilacStyle.text)
+            Text("받은 회차의 오디오를 서로 비교해 오프닝·엔딩 구간을 찾아 둡니다.", fontSize = 12.5.sp, color = LilacStyle.muted)
+            analysisStatus?.let { Text(it, fontSize = 12.5.sp, color = LilacStyle.text) }
+            LilacOutlineButton(if (analyzing) "분석하는 중…" else "다운로드 회차 OP/ED 분석", enabled = !analyzing && entries.any { it.localFile != null }) {
+                analyzing = true
+                scope.launch {
+                    analysisStatus = runCatching { com.lilac.anime.android.audio.OfflineAnalyzer.analyze(context, entries.filter { it.localFile != null }) { analysisStatus = it } }
+                        .fold({ "${it}개 회차 분석 완료" }, { it.message })
+                    analyzing = false
+                }
+            }
+        }
         DownloadStore.error?.let { Text(it, fontSize = 13.sp, color = Color.Red) }
     }
     if (confirmClear) AlertDialog(onDismissRequest = { confirmClear = false }, containerColor = LilacStyle.card,

@@ -16,6 +16,8 @@ class LilacApp : Application() {
         com.lilac.anime.android.subtitle.EpisodeSubtitleStore.init(this)
         com.lilac.anime.android.data.DesktopCatalog.init(this)
         com.lilac.anime.android.localai.LocalModelFiles.init(this)
+        com.lilac.anime.android.audio.WhisperModels.init(this)
+        com.lilac.anime.android.audio.OfflineAnalyzer.init(this)
         com.lilac.anime.android.download.DownloadStore.init(this)
         // Miruro's API answers inside its own page (iOS MiruroTransportRegistry.transport = MiruroBrowser.shared).
         com.lilac.anime.shared.MiruroTransportRegistry.transport = com.lilac.anime.android.player.MiruroBrowser(this)

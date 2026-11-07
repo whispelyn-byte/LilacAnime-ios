@@ -31,7 +31,20 @@ class PlayerSubtitles(
     private val ownTracks: () -> List<RemoteSubtitle>,
     private val token: () -> Long,
     private val notify: (String) -> Unit,
+    /** The video to listen to (Whisper, 자막 싱크): the stream as mpv plays it (through the proxy when it does). */
+    private val video: () -> com.lilac.anime.android.audio.AudioSource? = { null },
+    private val chapters: () -> List<com.lilac.anime.android.player.Chapter> = { emptyList() },
 ) {
+    private val appContext = context.applicationContext
+    val whisper = com.lilac.anime.android.audio.WhisperSubtitles(appContext)
+    private val whisperLive = com.lilac.anime.android.audio.WhisperLiveTranslation()
+    var whisperStatus by mutableStateOf(""); private set
+    var syncStatus by mutableStateOf<String?>(null); private set
+    var syncRunning by mutableStateOf(false); private set
+    var syncNotice by mutableStateOf<String?>(null); private set
+    private var syncUndo: (() -> Unit)? = null
+    private var syncJob: Job? = null
+    private val syncChecked = mutableSetOf<String>()
     val preparer = SubtitlePreparer(context)
     val translation = TranslationCoordinator()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -115,6 +128,7 @@ class PlayerSubtitles(
         translation.cancel(); preparer.cancel(); engine.clearSubtitle()
         subtitle = null; sourceSubtitle = null; selectedProvider = ""; selectedTrackURL = null; selectedMaker = null; selectedJimakuURL = null
         subtitleState = null; makers = emptyList(); searching = false; searchError = null; pressedSource = null; pressedFor = null; pickedSheet = null; sheetPicked = false
+        whisper.cancel(); whisperLive.cancel(); whisperStatus = ""; syncJob?.cancel(); syncRunning = false; syncStatus = null; dismissSync()
         koreanFound = false; error = null; otherJob?.cancel(); otherJob = null; otherTracks = emptyList()
     }
 
@@ -127,6 +141,7 @@ class PlayerSubtitles(
         val requested = ++request
         if (library.preferences.subtitleProvider == "manual" || subtitle != null) return
         if (DesktopSubtitlePolicy.burnedKorean(item().anime.source, stream)) return
+        val prefs = library.preferences
         val opening = item(); val at = token()
         automaticJob?.cancel()
         automaticJob = scope.launch {
@@ -135,6 +150,9 @@ class PlayerSubtitles(
                 val other = if (stream.subtitles.any(SubtitlePolicy::isKorean)) emptyList() else withTimeoutOrNull(12_000) { otherJob?.await() } ?: otherTracks
                 val found = preparer.prepare(opening, merged(stream.subtitles, other), library.preferences, library.aiSubtitleSeries[opening.anime.id] == true, stream = stream)
                 if (found != null && at == token() && requested == request && subtitle == null) select(found.file, found.provider, automatic = true)
+                // Nothing found: the episode heard with Whisper, when a model is installed (iOS automaticSubtitle).
+                else if (found == null && at == token() && requested == request && subtitle == null && prefs.whisperAuto &&
+                    com.lilac.anime.android.audio.WhisperModels.file(prefs.whisperModel) != null) startWhisper(manual = false)
             } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { if (at == token()) error = failure.message }
         }
     }
@@ -163,6 +181,7 @@ class PlayerSubtitles(
             else if (selectedProvider == "reanime" && library.preferences.subtitleProvider != "manual") library.update { it.copy(subtitleProvider = "auto") }
         }
         val at = token()
+        if (library.preferences.subtitleSyncCheck && !com.lilac.anime.android.audio.SubtitleAutoSync.isSynced(file)) checkSync(file)
         classification = scope.launch {
             val korean = isKorean(file)
             if (at != token() || requested != request || subtitle != file) return@launch
@@ -373,6 +392,86 @@ class PlayerSubtitles(
         library.saveSubtitle(item.anime.id, item.episodeID, subtitle, seconds)
     }
     fun shift(delta: Double) = changeOffset(Math.round((offset + delta) * 1000) / 1000.0)
+
+    // MARK: Whisper (iOS startWhisper)
+
+    fun startWhisper(manual: Boolean = true) {
+        if (whisper.running) { if (manual) { whisper.cancel(); whisperLive.cancel(); whisperStatus = "음성 인식 중단" }; return }
+        whisperLive.cancel()
+        whisperStatus = "Whisper 음성 준비 중"
+        if (manual) { request++; automaticJob?.cancel(); translation.cancel(); selectedProvider = "whisper"; pressedSource = "whisper"; pressedFor = subtitle }
+        val at = token(); val item = item()
+        scope.launch {
+            repeat(100) { if (engine.duration > 0) return@repeat; delay(100) }
+            if (at != token()) return@launch
+            val source = video() ?: run { whisperStatus = "영상 연결 후 음성 인식을 시작해 주세요."; return@launch }
+            whisper.start(source.copy(duration = engine.duration), item.anime.id + "#" + item.episodeID, library.preferences.whisperModel, { engine.position },
+                receive = { file, lines, complete ->
+                    if (at != token()) return@start
+                    whisperStatus = if (complete) (if (lines.isEmpty()) "인식된 대사가 없습니다." else "Whisper 자막 저장 완료") else "Whisper ${lines.size}줄 인식 · 눌러서 중단"
+                    if (lines.isEmpty()) return@start
+                    EpisodeSubtitleStore.save(file, item, "whisper", false)
+                    if (subtitle == null || selectedProvider == "whisper") {
+                        selectedProvider = "whisper"; sourceSubtitle = file
+                        if (subtitle == file) engine.reloadSubtitle() else { subtitle = file; engine.subtitle(file, false) }
+                    }
+                    library.preferences.translationPreferences(automatic = true)?.let { preferences ->
+                        whisperLive.update(lines, complete, file, preferences, item.anime) { output ->
+                            if (at != token()) return@update
+                            EpisodeSubtitleStore.save(output, item, "whisper", true, original = file)
+                            if (selectedProvider == "whisper") { if (subtitle == output) engine.reloadSubtitle() else { subtitle = output; engine.subtitle(output, true) } }
+                        }
+                    }
+                }, failed = { message -> whisperStatus = message; if (manual) notify(message) })
+        }
+    }
+
+    // MARK: 자막 싱크 맞추기 (iOS runSubtitleSync / checkSubtitleSync)
+
+    val syncAvailable: Boolean get() = subtitle != null && video() != null
+    val syncButtonTitle: String get() = if (syncRunning) (syncStatus ?: "싱크 맞추는 중") + " · 눌러서 취소" else "음성에 맞춰 싱크 맞추기"
+    fun dismissSync() { syncNotice = null; syncUndo = null }
+    fun undoSync() { syncUndo?.invoke(); dismissSync() }
+    /** As a subtitle goes on: checked against the site's own dialogue track (no audio read) when there is one. */
+    private fun checkSync(file: File) {
+        if (!syncChecked.add(file.path)) return
+        if (com.lilac.anime.android.audio.SubtitleAutoSync.referenceTracks(ownTracks()).isEmpty()) return
+        runSync(auto = true)
+    }
+    fun runSync(auto: Boolean = false) {
+        if (syncRunning) { syncJob?.cancel(); syncRunning = false; syncStatus = null; return }
+        val target = subtitle ?: return
+        val at = token(); val item = item()
+        val provider = selectedProvider
+        val original = sourceSubtitle?.takeIf { it != target }
+        syncRunning = true; syncStatus = "싱크 맞추는 중"
+        syncJob = scope.launch {
+            try {
+                val references = com.lilac.anime.android.audio.SubtitleAutoSync.referenceTracks(ownTracks()).mapNotNull { track ->
+                    runCatching { SubtitleFiles.prepare(track.url, track.headers ?: emptyMap()).firstOrNull() }.getOrNull()
+                }
+                val source = video()?.let { it.copy(duration = engine.duration) }
+                if (auto && references.isEmpty()) return@launch
+                val outcome = com.lilac.anime.android.audio.SubtitleAutoSync.sync(appContext, target, original, references, if (auto) null else source, chapters()) { text, value ->
+                    syncStatus = text + (value?.let { " " + Math.round(it * 100) + "%" } ?: "")
+                }
+                if (at != token() || subtitle != target) return@launch
+                when (outcome) {
+                    is com.lilac.anime.android.audio.SubtitleAutoSync.Outcome.Unchanged -> if (!auto) notify("자막 싱크가 이미 맞아요.")
+                    is com.lilac.anime.android.audio.SubtitleAutoSync.Outcome.Uncertain -> if (!auto) notify(outcome.message)
+                    is com.lilac.anime.android.audio.SubtitleAutoSync.Outcome.Synced -> {
+                        val saved = EpisodeSubtitleStore.list(item).firstOrNull { it.file?.canonicalPath == target.canonicalPath }
+                        EpisodeSubtitleStore.save(outcome.file, item, provider.ifEmpty { "user" }, saved?.translated ?: false, original = saved?.original ?: original)
+                        subtitle = outcome.file; engine.subtitle(outcome.file, saved?.translated == true)
+                        syncNotice = "자막 싱크를 맞췄어요 (" + com.lilac.anime.android.audio.SubtitleAutoSync.moved(outcome.fix) + ")"
+                        syncUndo = { if (subtitle == outcome.file) { subtitle = target; engine.subtitle(target, saved?.translated == true) } }
+                        scope.launch { delay(12_000); if (syncNotice != null && subtitle == outcome.file) dismissSync() }
+                    }
+                }
+            } catch (failure: CancellationException) { throw failure } catch (failure: Throwable) { if (!auto && at == token()) notify(failure.message ?: "싱크를 맞추지 못했습니다.") }
+            finally { if (at == token()) { syncRunning = false; syncStatus = null } }
+        }
+    }
 
     fun shutdown() { reset(); translation.shutdown(); preparer.close(); scope.cancel(); crossService.close() }
 }

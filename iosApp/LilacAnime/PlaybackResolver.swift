@@ -89,7 +89,11 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
     private var flixKey: String?
     private var webPlaybackActive = false
     private let desktop = IosServices()
-    private let agent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1"
+    private static let phoneAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1"
+    /// 애니24 is asked as desktop asks it (main.cjs LINKKF_UA): its player answers a phone with another page.
+    private static let ohliAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+    private var agent: String { currentItem?.anime.source == "ohli24" ? Self.ohliAgent : Self.phoneAgent }
+    private var ohliCaptionsTried = Set<String>()
 
     override init() {
         let controller = WKUserContentController()
@@ -163,6 +167,7 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
     func resolve(_ item: PlaybackItem, preferRaw: Bool = false, preferred: String? = nil) {
         cancel(); currentItem = item; streams = []; subtitles = []; servers = []; serverCandidates = []; error = nil; loading = true; self.preferRaw = preferRaw
         installCaptureScripts(ohli: item.anime.source == "ohli24")
+        webView.customUserAgent = agent
         let token = generation
         if let direct = item.directURL, direct.isFileURL || ["m3u8", "mp4", "mkv", "webm"].contains(direct.pathExtension.lowercased()) {
             streams = [ResolvedStream(label: "영상", url: direct, referer: "", headers: [:], subtitles: item.localSubtitleTracks, burnedKorean: item.burnedKorean)]; loading = false; return
@@ -350,7 +355,7 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
         clearSelectedResolver()
         desktop.cancel(); generation = UUID(); timeout?.cancel(); timeout = nil
         candidateTasks.values.forEach { $0.cancel() }; candidateTasks.removeAll(); ohliPlayer = nil
-        pendingOhli.removeAll(); lastOhliCandidate = nil
+        pendingOhli.removeAll(); lastOhliCandidate = nil; ohliCaptionsTried.removeAll()
         webView.stopLoading(); loading = false
     }
     func shutdown() { cancel(); webView.configuration.userContentController.removeScriptMessageHandler(forName: "lilacMedia"); webView.navigationDelegate = nil; webView.loadHTMLString("", baseURL: nil) }
@@ -398,7 +403,7 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
                message.frameInfo.request.url?.host == currentItem?.watchURL.host {
                 ohliPlayer = url
                 for candidate in pendingOhli where OhliPlayback.accepts(kind: candidate.kind, frame: candidate.frame, selected: url) {
-                    if candidate.kind == "ohliCaption" { addOhliCaption(candidate.url, referer: candidate.frame?.absoluteString ?? ""); continue }
+                    if candidate.kind == "ohliCaption" { addOhliCaptions([candidate.url.absoluteString]); continue }
                     verifyOhli(candidate.url, hls: candidate.kind == "ohliVariant", manifest: candidate.manifest)
                 }
                 pendingOhli.removeAll()
@@ -409,7 +414,7 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
                 pendingOhli.append((url, message.frameInfo.request.url, kind, body["manifest"])); return
             }
             guard OhliPlayback.accepts(kind: kind, frame: message.frameInfo.request.url, selected: ohliPlayer) else { return }
-            if kind == "ohliCaption" { addOhliCaption(url, referer: message.frameInfo.request.url?.absoluteString ?? ""); return }
+            if kind == "ohliCaption" { addOhliCaptions([url.absoluteString]); return }
             verifyOhli(url, hls: body["kind"] == "ohliVariant", manifest: body["manifest"])
             return
         }
@@ -434,11 +439,23 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
         }
     }
     /// The player's own Korean subtitle file, given to every stream of the episode (it is not in the picture then).
-    private func addOhliCaption(_ url: URL, referer: String) {
-        guard !subtitles.contains(where: { $0.url == url }) else { return }
-        var headers = ["User-Agent": agent]
-        if !referer.isEmpty { headers["Referer"] = referer }
-        let track = RemoteSubtitle(label: "애니24 한국어 자막", url: url, language: "ko", headers: headers)
+    /// The player's own Korean subtitle, as desktop resolveOhliEpisode takes it: the first of its files that answers as
+    /// a subtitle (desktop's user agent, no Referer, the body read rather than the MIME type), kept on disk and given to
+    /// every stream of the episode. None that answers: the subtitle is in the picture.
+    private func addOhliCaptions(_ files: [String]) {
+        let token = generation
+        Task { @MainActor in await self.ohliCaptions(files, token: token) }
+    }
+    private func ohliCaptions(_ files: [String], token: UUID) async {
+        let fresh = files.filter { $0.hasPrefix("http") && ohliCaptionsTried.insert($0).inserted }
+        guard !fresh.isEmpty, !subtitles.contains(where: { $0.label == "애니24 한국어 자막" }) else { return }
+        let found: CrossSiteTrack? = await withCheckedContinuation { continuation in
+            desktop.ohliSubtitle(files: fresh) { track, _ in continuation.resume(returning: track) }
+        }
+        guard let found, let content = found.contentBase64,
+              let file = try? await SubtitleFiles.providerFile(content, source: found.url, format: found.format),
+              token == generation, !subtitles.contains(where: { $0.label == "애니24 한국어 자막" }) else { return }
+        let track = RemoteSubtitle(label: "애니24 한국어 자막", url: file, language: "ko")
         subtitles.append(track)
         for index in streams.indices { streams[index].subtitles.append(track); streams[index].burnedKorean = false }
     }
@@ -449,7 +466,9 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
             Task { @MainActor in
                 guard let self, token == self.generation else { return }
                 guard let stream, let url = URL(string: stream.url), OhliPlayback.isEpisodePlaylist(stream.manifest) else { self.loadPage(player, seconds: 45); return }
-                for file in stream.subtitles.compactMap(URL.init(string:)) { self.addOhliCaption(file, referer: player.absoluteString) }
+                // The subtitle file is read before the video is handed over, as desktop's ohliStream does.
+                await self.ohliCaptions(stream.subtitles, token: token)
+                guard token == self.generation else { return }
                 self.verifyOhli(url, hls: true, manifest: stream.manifest)
                 if self.streams.isEmpty { self.loadPage(player, seconds: 45) }
             }

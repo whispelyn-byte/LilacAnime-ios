@@ -14,7 +14,7 @@ import kotlin.io.encoding.Base64
 
 internal expect fun inflateCatalogGzip(data: ByteArray): ByteArray
 
-private const val PROVIDER_SUBTITLE_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+const val PROVIDER_SUBTITLE_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
 internal fun JsonObject.text(key: String) = (get(key) as? JsonPrimitive)?.contentOrNull.orEmpty()
 internal fun JsonObject.number(key: String) = text(key).toIntOrNull()
@@ -759,9 +759,12 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
     internal suspend fun ohliEpisodeSubtitle(url: String): CrossSiteTrack? {
         val player = ohliPlayer(url)
         val html = client.get(player) { header("User-Agent", PROVIDER_SUBTITLE_AGENT); header("Referer", DesktopSourceParser.OHLI24_WEB + "/") }.body<String>()
-        for (file in DesktopSourceParser.ohliSubtitleFiles(html)) {
-            verifiedProviderSubtitle(file, emptyMap(), "ohli24")?.let { return it }
-        }
+        return ohliSubtitle(DesktopSourceParser.ohliSubtitleFiles(html))
+    }
+    /** The first of an 애니24 player's subtitle files that answers as one, fetched as desktop ohliSubtitleFile does
+     *  (its own user agent, no Referer; the body read, not the MIME type). None: the subtitle is in the picture. */
+    suspend fun ohliSubtitle(files: List<String>): CrossSiteTrack? {
+        for (file in files.distinct()) verifiedProviderSubtitle(file, emptyMap(), "ohli24")?.let { return it }
         return null
     }
     /** A 링크애니 episode's own Korean subtitle file alone (its page's player_aaaa subtitle_url, when the file is the

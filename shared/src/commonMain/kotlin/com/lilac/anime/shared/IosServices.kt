@@ -61,6 +61,7 @@ class IosServices internal constructor(private val worker: CoroutineDispatcher) 
     }
     fun ohliPlayer(url: String, completion: (String?, String?) -> Unit) { scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { source.ohliPlayer(url) } } }
     fun ohliStream(playerUrl: String, userAgent: String, completion: (OhliDirectStream?, String?) -> Unit) { scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { source.ohliStream(playerUrl, userAgent) } } }
+    fun ohliSubtitle(files: List<String>, completion: (CrossSiteTrack?, String?) -> Unit) { scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { source.ohliSubtitle(files) } } }
     fun desktopServers(sourceKey: String, url: String, number: Int, anilist: Int, completion: (List<DesktopPlaybackServer>?, String?) -> Unit) {
         scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { source.desktopServers(sourceKey, url, number, anilist) } }
     }

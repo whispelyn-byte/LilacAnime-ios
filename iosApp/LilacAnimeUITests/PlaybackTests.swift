@@ -1,20 +1,19 @@
 import XCTest
 
 final class PlaybackTests: XCTestCase {
-    /// The header (desktop ott.css): the destinations as words, settings as the gear, the rest under 더보기.
+    /// The header (desktop ott.css): the destinations as words and settings as the gear, nothing beside it (the
+    /// content source is chosen in 설정, as on desktop).
     func testRepeatedHeaderNavigationRemainsInteractive() {
         let app = XCUIApplication(); app.launchArguments = ["--ui-preview", "workspace"]; app.launch()
-        let menu = app.buttons["workspace-menu"]
-        XCTAssertTrue(menu.waitForExistence(timeout: 15))
+        let settings = app.buttons["workspace-settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["workspace-menu"].exists)
         for route in ["settings", "history", "favorites", "catalog", "home", "settings", "home"] {
-            let target = route == "settings" ? app.buttons["workspace-settings"] : app.buttons["workspace-route-" + route]
+            let target = route == "settings" ? settings : app.buttons["workspace-route-" + route]
             XCTAssertTrue(waitForHittable(target)); target.tap()
-            // XCUITest gives a SwiftUI Menu no hit point (-1, -1) even on screen; the gear beside it stands for the header.
-            XCTAssertTrue(menu.exists); XCTAssertTrue(app.buttons["workspace-settings"].isHittable)
+            XCTAssertTrue(settings.isHittable)
         }
         XCTAssertTrue(app.buttons["전체 작품 둘러보기"].waitForExistence(timeout: 5))
-        menu.tap()
-        XCTAssertTrue(app.buttons["로컬 영상 열기"].waitForExistence(timeout: 5))
     }
     func testLocalModelsBackAndWorkspaceNavigation() {
         let app = XCUIApplication(); app.launchArguments = ["--ui-preview", "workspace"]; app.launch()

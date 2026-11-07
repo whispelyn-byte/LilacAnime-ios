@@ -224,9 +224,9 @@ fun StyleTab(model: PlayerModel, openFont: () -> Unit) {
     LilacSlider(prefs.subtitlePadding, 3f..30f, 1f) { v -> library.update { it.copy(subtitlePadding = v) } }
     val offset = subtitles.offset
     Label("자막 타이밍", if (kotlin.math.abs(offset) < 0.0005) "0초" else (if (offset > 0) "+" else "") + "%.2f".format(offset).trimEnd('0').trimEnd('.') + "초")
-    SyncInput(offset) { subtitles.setOffset(it) }
+    SyncInput(offset) { subtitles.changeOffset(it) }
     Chips(listOf("fast" to "0.25초 빠르게", "reset" to "원래대로", "slow" to "0.25초 늦게"), "") { value ->
-        if (value == "reset") subtitles.setOffset(0.0) else subtitles.shift(if (value == "fast") -0.25 else 0.25)
+        if (value == "reset") subtitles.changeOffset(0.0) else subtitles.shift(if (value == "fast") -0.25 else 0.25)
     }
     TabGroup("특수 효과 자막 (ASS)")
     TabSwitch("원본 효과 그대로", prefs.assEffects, small = true) { on -> library.update { it.copy(assEffects = on) } }

@@ -331,12 +331,12 @@ class PlayerSubtitles(
 
     // MARK: timing
 
-    fun setOffset(seconds: Double) {
+    fun changeOffset(seconds: Double) {
         offset = seconds; engine.subtitleOffset = seconds
         val item = item()
         library.saveSubtitle(item.anime.id, item.episodeID, subtitle, seconds)
     }
-    fun shift(delta: Double) = setOffset(Math.round((offset + delta) * 1000) / 1000.0)
+    fun shift(delta: Double) = changeOffset(Math.round((offset + delta) * 1000) / 1000.0)
 
     fun shutdown() { reset(); translation.shutdown(); preparer.close(); scope.cancel() }
 }

@@ -28,6 +28,12 @@ extern "C" LilacModel *lilac_model_open_with_backend(const char *path, int conte
     auto *state = new LilacModel();
     auto mp = llama_model_default_params();
     mp.n_gpu_layers = gpu ? 99 : 0;
+#ifdef __ANDROID__
+    // CPU mode lists no GPU at all: llama.cpp otherwise still creates a backend for every GPU when it
+    // builds the context, and a Vulkan device that failed to come up crashes there (vkCreateFence).
+    static ggml_backend_dev_t cpu_only[] = { nullptr };
+    if (!gpu) mp.devices = cpu_only;
+#endif
     state->gpu = gpu && llama_supports_gpu_offload();
     state->model = llama_model_load_from_file(path, mp);
     if (!state->model) { delete state; return nullptr; }

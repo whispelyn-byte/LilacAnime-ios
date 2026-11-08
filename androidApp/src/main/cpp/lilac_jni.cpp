@@ -5,6 +5,20 @@
 #include <string>
 #include "LilacLocalAI.h"
 #include "ggml-backend.h"
+#include "llama.h"
+
+// llama.cpp logs to stderr, which Android drops: send it to logcat (tag "llama") so a GPU that
+// cannot load a model shows why. Debug lines are skipped.
+static void log_to_logcat(ggml_log_level level, const char *text, void *) {
+    if (level == GGML_LOG_LEVEL_DEBUG || !text) return;
+    const int priority = level == GGML_LOG_LEVEL_ERROR ? ANDROID_LOG_ERROR
+        : level == GGML_LOG_LEVEL_WARN ? ANDROID_LOG_WARN : ANDROID_LOG_INFO;
+    __android_log_write(priority, "llama", text);
+}
+extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *, void *) {
+    llama_log_set(log_to_logcat, nullptr);
+    return JNI_VERSION_1_6;
+}
 
 // The first GPU llama.cpp can offload to (Vulkan on Android), as "Vulkan0 (device description)".
 static std::string gpu_device() {

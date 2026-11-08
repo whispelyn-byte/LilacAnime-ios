@@ -56,6 +56,8 @@ object LocalInference {
     private var loadedContext = 0
     private var loadedThreads = 0
     private var loadedGPU = false
+    /** Set once the GPU could not load a model: Vulkan is not retried until the app restarts. */
+    private var gpuFailed = false
     private var idle: Job? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     var lastRun by mutableStateOf(""); private set
@@ -69,7 +71,9 @@ object LocalInference {
             if (handle != 0L) { LocalAI.nativeClose(handle); handle = 0L }
             // GPU: llama.cpp's Vulkan backend (Exynos Xclipse, Mali, Adreno); all layers go to the GPU.
             // A device without a usable Vulkan GPU loads on the CPU instead.
-            handle = if (preferences.localGPU) LocalAI.nativeOpen(path, preferences.contextSize, threads, 1) else 0L
+            val useGPU = preferences.localGPU && !gpuFailed
+            handle = if (useGPU) LocalAI.nativeOpen(path, preferences.contextSize, threads, 1) else 0L
+            if (useGPU && handle == 0L) gpuFailed = true
             if (handle == 0L) handle = LocalAI.nativeOpen(path, preferences.contextSize, threads, 0)
             if (handle == 0L) throw PlaybackFailure("모델을 읽지 못했습니다. 기기 메모리 또는 llama.cpp b11490의 모델 지원을 확인하세요.")
             loaded = path; loadedContext = preferences.contextSize; loadedThreads = threads; loadedGPU = preferences.localGPU

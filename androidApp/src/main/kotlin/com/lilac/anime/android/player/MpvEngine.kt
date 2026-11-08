@@ -1,9 +1,11 @@
 package com.lilac.anime.android.player
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.PixelCopy
 import android.view.Surface
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
@@ -14,6 +16,7 @@ import dev.jdtech.mpv.MPVLib
 import kotlinx.coroutines.*
 import org.json.JSONArray
 import java.io.File
+import kotlin.coroutines.resume
 
 data class MediaTrack(val id: Int, val type: String, val title: String, val selected: Boolean)
 
@@ -39,6 +42,9 @@ class MpvEngine(private val context: Context) {
     private val main = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var mpv: MPVLib? = null
+    private var surface: Surface? = null
+    private var surfaceWidth = 0
+    private var surfaceHeight = 0
     private var initializationFailed = false
     private var surfaceAttached = false
     private var pending: ResolvedStream? = null
@@ -114,15 +120,17 @@ class MpvEngine(private val context: Context) {
     fun attachSurface(surface: Surface) {
         val player = mpv ?: return
         player.attachSurface(surface)
+        this.surface = surface
         surfaceAttached = true
         set("force-window", "yes")
         set("vo", "gpu")
         openPending()
     }
-    fun surfaceSize(width: Int, height: Int) { set("android-surface-size", "${width}x$height") }
+    fun surfaceSize(width: Int, height: Int) { surfaceWidth = width; surfaceHeight = height; set("android-surface-size", "${width}x$height") }
     fun detachSurface() {
         val player = mpv ?: return
         surfaceAttached = false
+        surface = null
         set("vo", "null"); set("force-window", "no")
         player.detachSurface()
     }
@@ -279,13 +287,29 @@ class MpvEngine(private val context: Context) {
         if (tapped && toggleOnTap) toggle()
     }
 
-    /** 스크린샷: the frame on screen at the video's own size, without subtitles or controls, as a PNG file. */
-    suspend fun screenshot(file: File): Boolean = withContext(Dispatchers.IO) {
-        val player = mpv ?: return@withContext false
-        if (!fileLoaded) return@withContext false
-        runCatching { player.command(arrayOf("screenshot-to-file", file.absolutePath, "video")) }
-        repeat(30) { if (file.isFile && file.length() > 0) return@withContext true; delay(100) }
-        false
+    /** 스크린샷: the video frame on screen, without subtitles or controls, as a PNG file. libmpv 1.0.0's ffmpeg has no
+     *  image encoders, so mpv's screenshot-to-file cannot write one ("Could not open libavcodec encoder"): the frame is
+     *  copied from the surface mpv draws into (PixelCopy), with subtitles hidden for that moment, and Android encodes it. */
+    suspend fun screenshot(file: File): Boolean {
+        if (mpv == null || !fileLoaded) return false
+        val target = surface?.takeIf { it.isValid } ?: return false
+        if (surfaceWidth <= 0 || surfaceHeight <= 0) return false
+        val hideSubtitles = subtitlesVisible
+        val bitmap = try {
+            if (hideSubtitles) { set("sub-visibility", "no"); delay(150) }
+            Bitmap.createBitmap(surfaceWidth, surfaceHeight, Bitmap.Config.ARGB_8888).takeIf { copySurface(target, it) }
+        } finally {
+            if (hideSubtitles) set("sub-visibility", if (subtitlesVisible) "yes" else "no")
+        } ?: return false
+        return withContext(Dispatchers.IO) {
+            try { file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) } && file.length() > 0 }
+            catch (_: Exception) { false } finally { bitmap.recycle() }
+        }
+    }
+    private suspend fun copySurface(source: Surface, bitmap: Bitmap): Boolean = suspendCancellableCoroutine { continuation ->
+        try {
+            PixelCopy.request(source, bitmap, { result -> if (continuation.isActive) continuation.resume(result == PixelCopy.SUCCESS) }, Handler(Looper.getMainLooper()))
+        } catch (_: Exception) { if (continuation.isActive) continuation.resume(false) }
     }
 
     val canSaveProgress get() = fileLoaded && playbackStarted

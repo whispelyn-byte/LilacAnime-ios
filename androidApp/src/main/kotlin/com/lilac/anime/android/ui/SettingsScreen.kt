@@ -385,7 +385,7 @@ private fun TranslateSettings() {
         com.lilac.anime.android.audio.WhisperModels.error?.let { SettingNote(it, Color.Red) }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("자막이 없으면 자동으로 음성 인식", fontSize = 13.sp, color = LilacStyle.text, modifier = Modifier.weight(1f))
-            Switch(prefs2.whisperAuto, { on -> library.update { it.copy(whisperAuto = on) } }, colors = SwitchDefaults.colors(checkedTrackColor = LilacStyle.accent))
+            Switch(prefs2.whisperAuto, { on -> library.update { it.copy(whisperAuto = on) } }, colors = SwitchDefaults.colors(checkedTrackColor = LilacStyle.accent, checkedThumbColor = Color.White))
         }
     }
     SettingSwitch("자막 자동 번역", "한국어 자막이 없으면 그 회차의 Jimaku 일본어 자막을, 없으면 영상 사이트의 일본어 트랙을, 그것도 없으면 영어 트랙을 알아서 번역해 띄웁니다. 보고 있는 장면부터 번역합니다.", prefs.autoTranslation) { on -> library.update { it.copy(autoTranslation = on) } }

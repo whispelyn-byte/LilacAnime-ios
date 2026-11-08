@@ -64,7 +64,7 @@ fun LocalModelSettings() {
         }
     }
     Text("로컬 AI 모델", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = LilacStyle.text)
-    SettingNote("인터넷 없이 이 기기에서 자막을 번역합니다 (llama.cpp b11490, CPU). 모델 파일 크기 외에 추론 메모리가 필요하니 기기 메모리에 맞는 양자화 모델을 고르세요." +
+    SettingNote("인터넷 없이 이 기기에서 자막을 번역합니다 (llama.cpp b11490, Vulkan GPU · GPU를 쓸 수 없으면 CPU). 모델 파일 크기 외에 추론 메모리가 필요하니 기기 메모리에 맞는 양자화 모델을 고르세요." +
         if (LocalAI.available) "" else " 이 기기에서는 로컬 AI 라이브러리를 불러오지 못했습니다.")
     SettingBlock("데스크탑 제공 모델") {
         ModelInstaller.all(context).filter { !it.legacy || ModelInstaller.installed(it) }.forEach { model ->
@@ -123,7 +123,7 @@ fun LocalModelSettings() {
     }
     SettingBlock("로컬 AI 세부 설정", "값을 바꾸면 다음 번역부터 적용됩니다. 모델별 권장값을 켜 두면 모델에 맞는 프롬프트와 샘플링을 씁니다." + if (LocalInference.lastRun.isEmpty()) "" else " 마지막 실행: " + LocalInference.lastRun) {
         Row { Text("모델별 권장 프롬프트·샘플링", fontSize = 13.sp, color = LilacStyle.text, modifier = Modifier.weight(1f))
-            Switch(prefs.modelSampling, { on -> library.update { it.copy(modelSampling = on) } }, colors = SwitchDefaults.colors(checkedTrackColor = LilacStyle.accent)) }
+            Switch(prefs.modelSampling, { on -> library.update { it.copy(modelSampling = on) } }, colors = SwitchDefaults.colors(checkedTrackColor = LilacStyle.accent, checkedThumbColor = Color.White)) }
         Text("컨텍스트 ${prefs.contextSize}", fontSize = 12.sp, color = LilacStyle.muted)
         SettingChoices(listOf(2048, 4096, 8192).map { it to it.toString() }, prefs.contextSize) { v -> library.update { it.copy(contextSize = v) } }
         Text("스레드 " + if (prefs.threads == 0) "자동" else prefs.threads.toString(), fontSize = 12.sp, color = LilacStyle.muted)

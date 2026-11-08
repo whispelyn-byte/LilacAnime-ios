@@ -162,7 +162,7 @@ fun VideoCleanupControls(engine: MpvEngine) {
         listOf("워터마크 지우기" to value.watermark, "영상에 박힌 자막 지우기" to value.subtitles).forEachIndexed { index, (title, on) ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                Switch(on, { v -> set(if (index == 0) value.copy(watermark = v) else value.copy(subtitles = v)) }, colors = SwitchDefaults.colors(checkedTrackColor = LilacStyle.accent))
+                Switch(on, { v -> set(if (index == 0) value.copy(watermark = v) else value.copy(subtitles = v)) }, colors = SwitchDefaults.colors(checkedTrackColor = LilacStyle.accent, checkedThumbColor = Color.White))
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

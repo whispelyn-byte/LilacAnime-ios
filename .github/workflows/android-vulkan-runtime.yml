@@ -29,4 +29,4 @@ jobs:
           name: lilac-llama-vulkan-runtime
           path: |
             build/vulkan-runtime/lilac-llama-vulkan-runtime.zip
-            build/vulkan-runtime/llama-bench
+            build/vulkan-runtime/bench/

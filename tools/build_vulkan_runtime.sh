@@ -118,9 +118,18 @@ if [[ -n "$common" ]]; then
 fi
 "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" --strip-unneeded "$OUT/runtime/"*.so
 
-# llama-bench is not part of the pack; push it with adb to compare CPU vs Vulkan.
+# llama-bench is not part of the pack; push bench/ with adb to compare CPU vs Vulkan.
+# It needs libllama-bench-impl.so in addition to the runtime libraries.
+rm -rf "$OUT/bench" && mkdir -p "$OUT/bench"
 bench="$(find "$OUT/build-llama" -name llama-bench -type f -print -quit)"
-[[ -n "$bench" ]] && cp "$bench" "$OUT/llama-bench"
+if [[ -n "$bench" ]]; then
+  cp "$bench" "$OUT/bench/llama-bench"
+  impl="$(find "$OUT/build-llama" -name libllama-bench-impl.so -type f -print -quit)"
+  [[ -n "$impl" ]] && cp "$impl" "$OUT/bench/"
+  cp "$OUT/runtime/"lib*.so "$OUT/bench/"
+  rm -f "$OUT/bench/liblilac_local_ai_jni.so"
+  "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" --strip-unneeded "$OUT/bench/"*
+fi
 
 VERSION="$(cd "$LLAMA_ROOT" && git describe --tags --always 2>/dev/null || echo "$LLAMA_REF")"
 LIB_JSON="$(printf '    "%s",\n' "${LIBS[@]}" | sed '$ s/,$//')"
@@ -145,5 +154,5 @@ JSON
 rm -f "$OUT/lilac-llama-vulkan-runtime.zip"
 (cd "$OUT/runtime" && zip -q -9 -r "$OUT/lilac-llama-vulkan-runtime.zip" .)
 echo "Runtime pack: $OUT/lilac-llama-vulkan-runtime.zip"
-echo "Benchmark:    $OUT/llama-bench (adb push with the runtime .so files)"
+echo "Benchmark:    $OUT/bench (adb push the whole folder)"
 echo "Bridge revision: $BRIDGE_REV"

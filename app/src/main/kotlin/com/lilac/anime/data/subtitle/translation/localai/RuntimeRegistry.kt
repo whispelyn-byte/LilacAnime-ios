@@ -24,6 +24,23 @@ object RuntimeRegistry {
             hardware.contains("qcom") || hardware.contains("qualcomm")
     }
 
+    /** Lower-case SoC identifiers of this device, used to match `socVendors` tokens. */
+    private fun socIdentity(): String = buildList {
+        add(Build.HARDWARE.orEmpty())
+        add(Build.BOARD.orEmpty())
+        if (Build.VERSION.SDK_INT >= 31) {
+            add(Build.SOC_MANUFACTURER.orEmpty())
+            add(Build.SOC_MODEL.orEmpty())
+        }
+    }.joinToString(" ").lowercase()
+
+    /** 2 = built for this SoC, 1 = SoC-agnostic, 0 = built for another SoC vendor. */
+    private fun socScore(pack: RuntimePack, identity: String): Int {
+        val vendors = pack.effectiveSocVendors
+        if (vendors.isEmpty()) return 1
+        return if (vendors.any { identity.contains(it) }) 2 else 0
+    }
+
     fun all(context: Context): List<Candidate> = LocalAiRuntimeManager.listInstalled(context).map {
         Candidate(it.id, it.name, it.version, Kind.NATIVE_PACK, it)
     }
@@ -59,6 +76,9 @@ object RuntimeRegistry {
         if (candidates.isEmpty()) return null
         val preferred = selectedId(context, model)
         if (preferred != AUTO) candidates.firstOrNull { it.id == preferred }?.let { return it }
-        return candidates.firstOrNull()
+        // Auto: a Snapdragon (Hexagon/OpenCL) pack only reaches the CPU on Exynos,
+        // so prefer packs built for this SoC, then SoC-agnostic ones (e.g. Vulkan).
+        val identity = socIdentity()
+        return candidates.maxByOrNull { candidate -> candidate.pack?.let { socScore(it, identity) } ?: 0 }
     }
 }

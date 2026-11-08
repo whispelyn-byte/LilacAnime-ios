@@ -103,7 +103,7 @@ internal object LocalAiNative {
 
     private fun loadRuntimeDependencies(directory: File, declared: List<String>) {
         val names = if (declared.isNotEmpty()) declared else listOf(
-            "libggml-base.so", "libggml-cpu.so", "libggml-opencl.so",
+            "libggml-base.so", "libggml-cpu.so", "libggml-opencl.so", "libggml-vulkan.so",
             "libggml-hexagon.so", "libggml.so", "libllama-common.so", "libllama.so"
         )
         names.forEach { name ->

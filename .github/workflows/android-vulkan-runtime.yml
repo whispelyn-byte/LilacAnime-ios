@@ -1,0 +1,32 @@
+name: Android Vulkan runtime pack
+
+on:
+  push:
+    branches: ['android-vulkan-runtime']
+    paths: ['app/src/main/cpp/lilac_local_ai/**', 'tools/build_vulkan_runtime.sh', 'tools/native-wrapper/**', '.github/workflows/android-vulkan-runtime.yml']
+  workflow_dispatch:
+    inputs:
+      llama_ref:
+        description: llama.cpp tag
+        default: b11490
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build zip
+      - name: Build runtime pack
+        env:
+          LLAMA_REF: ${{ inputs.llama_ref || 'b11490' }}
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
+          bash tools/build_vulkan_runtime.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lilac-llama-vulkan-runtime
+          path: |
+            build/vulkan-runtime/lilac-llama-vulkan-runtime.zip
+            build/vulkan-runtime/llama-bench

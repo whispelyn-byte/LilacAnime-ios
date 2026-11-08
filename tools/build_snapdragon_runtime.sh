@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LLAMA_ROOT="${LLAMA_ROOT:-$HOME/src/llama.cpp}"
 OUT="${OUT:-$ROOT/build/snapdragon-runtime}"
 IMAGE="${IMAGE:-ghcr.io/snapdragon-toolchain/arm64-android:v0.7}"
-BRIDGE_REV="${BRIDGE_REV:-3}"
+BRIDGE_REV="${BRIDGE_REV:-4}"
 
 # llama.cpp packaging layout differs between the adb and Android builds.
 # Prefer pkg-adb when present, otherwise use pkg-android.
@@ -88,6 +88,7 @@ cat > "$OUT/runtime/runtime.json" <<JSON
     "libggml-htp-v81.so"
   ],
   "backendOrder": ["npu", "gpu", "cpu"],
+  "socVendors": ["qualcomm", "qcom"],
   "supportedArchitectures": [],
   "supportedQuantizations": []
 }

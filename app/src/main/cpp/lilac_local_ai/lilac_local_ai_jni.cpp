@@ -176,6 +176,21 @@ void install_ggml_log_callback() {
     }
 }
 
+// A GPU is identified by its ggml device type, not its name: OpenCL reports
+// "GPUOpenCL", while Vulkan reports "Vulkan0" (e.g. Exynos Xclipse, Mali).
+bool is_gpu_device(ggml_backend_dev_t d) {
+    const int type = (int) g.ggml_backend_dev_type(d);
+    if (type == GGML_BACKEND_DEVICE_TYPE_GPU || type == GGML_BACKEND_DEVICE_TYPE_IGPU) return true;
+    const std::string name = g.ggml_backend_dev_name(d);
+    return name.find("GPU") != std::string::npos ||
+           name.find("OpenCL") != std::string::npos ||
+           name.rfind("Vulkan", 0) == 0;
+}
+
+bool is_vulkan_device(ggml_backend_dev_t d) {
+    return std::string(g.ggml_backend_dev_name(d)).rfind("Vulkan", 0) == 0;
+}
+
 void log_devices() {
     const char * ld = std::getenv("LD_LIBRARY_PATH");
     const char * adsp = std::getenv("ADSP_LIBRARY_PATH");
@@ -199,7 +214,7 @@ void log_devices() {
         LOGI("DEVICE[%zu] name=%s type=%d desc=%s", i,
              name.c_str(), type, g.ggml_backend_dev_description(d));
         if (name.rfind("HTP", 0) == 0) has_htp = true;
-        if (name.find("GPU") != std::string::npos || name.find("OpenCL") != std::string::npos) has_gpu = true;
+        if (is_gpu_device(d)) has_gpu = true;
         if (type == GGML_BACKEND_DEVICE_TYPE_CPU) has_cpu = true;
     }
     LOGI("DEVICE_CAPS HTP=%s GPU=%s CPU=%s",
@@ -279,9 +294,11 @@ ggml_backend_dev_t find_first_device_matching(const std::string & kind) {
         const std::string name = g.ggml_backend_dev_name(d);
         const int type = (int) g.ggml_backend_dev_type(d);
         if (kind == "npu" && name.rfind("HTP", 0) == 0) return d;
-        if (kind == "gpu" && (name.find("GPU") != std::string::npos || name.find("OpenCL") != std::string::npos)) return d;
+        if (kind == "gpu" && is_gpu_device(d)) return d;
+        if (kind == "vulkan" && is_vulkan_device(d)) return d;
+        if (kind == "opencl" && name.find("OpenCL") != std::string::npos) return d;
         if (kind == "cpu" && type == GGML_BACKEND_DEVICE_TYPE_CPU) return d;
-            }
+    }
     return nullptr;
 }
 

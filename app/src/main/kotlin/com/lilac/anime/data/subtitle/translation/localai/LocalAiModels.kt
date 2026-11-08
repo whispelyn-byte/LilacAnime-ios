@@ -71,9 +71,21 @@ data class RuntimePack(
     val supportedQuantizations: Set<String>,
     val nativeLibraries: List<String> = emptyList(),
     val backendOrder: List<String> = listOf("npu", "gpu"),
+    /** SoC vendor tokens this pack is built for (e.g. "qualcomm"); empty means any SoC. */
+    val socVendors: List<String> = emptyList(),
     val directory: String,
     val installed: Boolean = true
 ) {
+    /**
+     * Packs built before `socVendors` existed bundled the Hexagon backend and were
+     * Snapdragon-only, so treat them as Qualcomm packs.
+     */
+    val effectiveSocVendors: List<String>
+        get() = socVendors.ifEmpty {
+            if (nativeLibraries.any { it.equals("libggml-hexagon.so", true) }) listOf("qualcomm", "qcom")
+            else emptyList()
+        }
+
     companion object {
         fun fromJson(json: JSONObject, directory: String): RuntimePack = RuntimePack(
             id = json.getString("id"),
@@ -94,6 +106,9 @@ data class RuntimePack(
             backendOrder = json.optJSONArray("backendOrder")?.let { array ->
                 buildList { for (i in 0 until array.length()) array.optString(i).trim().lowercase().takeIf { it.isNotBlank() }?.let(::add) }
             }?.ifEmpty { listOf("npu", "gpu") } ?: listOf("npu", "gpu"),
+            socVendors = json.optJSONArray("socVendors")?.let { array ->
+                buildList { for (i in 0 until array.length()) array.optString(i).trim().lowercase().takeIf { it.isNotBlank() }?.let(::add) }
+            } ?: emptyList(),
             directory = directory
         )
     }

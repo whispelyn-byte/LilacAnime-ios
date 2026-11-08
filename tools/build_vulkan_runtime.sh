@@ -69,8 +69,8 @@ cmake -S "$LLAMA_ROOT" -B "$OUT/build-llama" -G Ninja \
   -DANDROID_ABI=arm64-v8a \
   -DANDROID_PLATFORM="android-$API_LEVEL" \
   -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_CXX_FLAGS="-I$VK_HEADERS/include" \
-  -DCMAKE_C_FLAGS="-I$VK_HEADERS/include" \
+  -DCMAKE_CXX_FLAGS="-I$VK_HEADERS/include -I$SPIRV_PREFIX/include" \
+  -DCMAKE_C_FLAGS="-I$VK_HEADERS/include -I$SPIRV_PREFIX/include" \
   -DBUILD_SHARED_LIBS=ON \
   -DGGML_VULKAN=ON \
   -DGGML_OPENCL=OFF \

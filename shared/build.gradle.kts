@@ -1,6 +1,6 @@
 import com.android.build.gradle.LibraryExtension
 plugins { kotlin("multiplatform"); kotlin("plugin.serialization") }
-val includeAndroid = providers.gradleProperty("includeAndroid").orNull == "true"
+val includeAndroid = providers.gradleProperty("includeAndroid").orNull == "true" || providers.gradleProperty("includeLegacyAndroid").orNull == "true"
 if (includeAndroid) apply(plugin = "com.android.library")
 kotlin {
     jvm()
@@ -39,7 +39,7 @@ kotlin {
 }
 if (includeAndroid) extensions.configure<LibraryExtension> {
     namespace = "com.lilac.anime.shared"
-    compileSdk = 37
+    compileSdk = 36
     defaultConfig { minSdk = 26 }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

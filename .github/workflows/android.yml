@@ -27,6 +27,12 @@ jobs:
           test "$(git -C androidApp/build/llama.cpp rev-parse HEAD)" = 9c2e0e491a822adae1f0b1c831adb4160057d24f
       - name: Get whisper.cpp v1.7.4
         run: git clone --depth 1 --branch v1.7.4 https://github.com/ggml-org/whisper.cpp.git androidWhisper/build/whisper.cpp
+      - name: Get Vulkan-Headers and SPIRV-Headers (llama.cpp Vulkan GPU backend, androidApp/src/main/cpp/CMakeLists.txt)
+        run: |
+          git clone --depth 1 --branch v1.4.304 https://github.com/KhronosGroup/Vulkan-Headers.git androidApp/build/vulkan-headers
+          git clone --depth 1 --branch vulkan-sdk-1.4.304.0 https://github.com/KhronosGroup/SPIRV-Headers.git androidApp/build/spirv-headers-src
+          cmake -S androidApp/build/spirv-headers-src -B androidApp/build/spirv-headers-build -DCMAKE_INSTALL_PREFIX="$PWD/androidApp/build/spirv-headers" -DSPIRV_HEADERS_ENABLE_TESTS=OFF
+          cmake --install androidApp/build/spirv-headers-build
       - name: Build debug APK
         run: sh ./gradlew --no-daemon -PincludeAndroid=true :androidApp:assembleDebug
       - name: Name the APK

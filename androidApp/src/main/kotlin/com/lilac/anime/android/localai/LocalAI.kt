@@ -55,6 +55,7 @@ object LocalInference {
     private var loaded = ""
     private var loadedContext = 0
     private var loadedThreads = 0
+    private var loadedGPU = false
     private var idle: Job? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     var lastRun by mutableStateOf(""); private set
@@ -64,12 +65,14 @@ object LocalInference {
         idle?.cancel()
         val path = File(LocalModelFiles.directory, preferences.selectedGGUF).absolutePath
         val threads = if (preferences.threads == 0) maxOf(1, Runtime.getRuntime().availableProcessors() - 2) else preferences.threads
-        if (loaded != path || loadedContext != preferences.contextSize || loadedThreads != threads) {
+        if (loaded != path || loadedContext != preferences.contextSize || loadedThreads != threads || loadedGPU != preferences.localGPU) {
             if (handle != 0L) { LocalAI.nativeClose(handle); handle = 0L }
-            // CPU only: llama.cpp's GPU backends are not built for Android here.
-            handle = LocalAI.nativeOpen(path, preferences.contextSize, threads, 0)
+            // GPU: llama.cpp's Vulkan backend (Exynos Xclipse, Mali, Adreno); all layers go to the GPU.
+            // A device without a usable Vulkan GPU loads on the CPU instead.
+            handle = if (preferences.localGPU) LocalAI.nativeOpen(path, preferences.contextSize, threads, 1) else 0L
+            if (handle == 0L) handle = LocalAI.nativeOpen(path, preferences.contextSize, threads, 0)
             if (handle == 0L) throw PlaybackFailure("모델을 읽지 못했습니다. 기기 메모리 또는 llama.cpp b11490의 모델 지원을 확인하세요.")
-            loaded = path; loadedContext = preferences.contextSize; loadedThreads = threads
+            loaded = path; loadedContext = preferences.contextSize; loadedThreads = threads; loadedGPU = preferences.localGPU
         }
         return handle
     }

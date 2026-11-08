@@ -1,8 +1,21 @@
 // JNI over iOS's LilacLocalAI C API (LilacLocalAI.h), for com.lilac.anime.android.localai.LocalAI.
 #include <jni.h>
+#include <android/log.h>
 #include <cstring>
 #include <string>
 #include "LilacLocalAI.h"
+#include "ggml-backend.h"
+
+// The first GPU llama.cpp can offload to (Vulkan on Android), as "Vulkan0 (device description)".
+static std::string gpu_device() {
+    for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+        ggml_backend_dev_t device = ggml_backend_dev_get(i);
+        const auto type = ggml_backend_dev_type(device);
+        if (type == GGML_BACKEND_DEVICE_TYPE_GPU || type == GGML_BACKEND_DEVICE_TYPE_IGPU)
+            return std::string(ggml_backend_dev_name(device)) + " (" + ggml_backend_dev_description(device) + ")";
+    }
+    return {};
+}
 
 static LilacModel *model(jlong handle) { return reinterpret_cast<LilacModel *>(handle); }
 static std::string text(JNIEnv *env, jstring value) {
@@ -29,12 +42,24 @@ static jstring string(JNIEnv *env, const char *value) {
 #define FN(name) Java_com_lilac_anime_android_localai_LocalAI_##name
 extern "C" {
 JNIEXPORT jlong JNICALL FN(nativeOpen)(JNIEnv *env, jobject, jstring path, jint context, jint threads, jint gpu) {
-    return reinterpret_cast<jlong>(lilac_model_open_with_backend(text(env, path).c_str(), context, threads, gpu));
+    LilacModel *opened = lilac_model_open_with_backend(text(env, path).c_str(), context, threads, gpu);
+    const std::string device = gpu ? gpu_device() : std::string();
+    __android_log_print(ANDROID_LOG_INFO, "LilacLocalAI", "MODEL_OPEN ok=%d gpu_requested=%d backend=%s",
+                        opened != nullptr, (int)gpu, opened ? (std::strcmp(lilac_backend(opened), "CPU") == 0 ? "CPU" : device.c_str()) : "-");
+    return reinterpret_cast<jlong>(opened);
 }
 JNIEXPORT void JNICALL FN(nativeClose)(JNIEnv *, jobject, jlong handle) { if (handle) lilac_model_close(model(handle)); }
 JNIEXPORT void JNICALL FN(nativeSetThinking)(JNIEnv *, jobject, jlong handle, jboolean on) { lilac_set_thinking(model(handle), on ? 1 : 0); }
 JNIEXPORT jstring JNICALL FN(nativeChatTemplate)(JNIEnv *env, jobject, jlong handle) { return string(env, lilac_chat_template(model(handle))); }
-JNIEXPORT jstring JNICALL FN(nativeBackend)(JNIEnv *env, jobject, jlong handle) { return string(env, lilac_backend(model(handle))); }
+// The shared iOS wrapper names any GPU "Metal"; on Android report the actual device.
+JNIEXPORT jstring JNICALL FN(nativeBackend)(JNIEnv *env, jobject, jlong handle) {
+    const char *backend = lilac_backend(model(handle));
+    if (backend && std::strcmp(backend, "CPU") != 0) {
+        const std::string device = gpu_device();
+        return string(env, device.empty() ? "GPU" : device.c_str());
+    }
+    return string(env, backend);
+}
 JNIEXPORT jint JNICALL FN(nativeOutputTokens)(JNIEnv *, jobject, jlong handle) { return lilac_output_tokens(model(handle)); }
 JNIEXPORT jdouble JNICALL FN(nativeSeconds)(JNIEnv *, jobject, jlong handle) { return lilac_generation_seconds(model(handle)); }
 JNIEXPORT void JNICALL FN(nativeCancel)(JNIEnv *, jobject, jlong handle) { if (handle) lilac_cancel(model(handle)); }

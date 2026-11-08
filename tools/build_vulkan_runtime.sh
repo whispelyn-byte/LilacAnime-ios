@@ -13,6 +13,7 @@
 #   LLAMA_ROOT     existing llama.cpp checkout (default: clone LLAMA_REF into OUT)
 #   LLAMA_REF      llama.cpp tag to clone (default: b11490, same as iOS)
 #   VULKAN_HEADERS_REF  Khronos Vulkan-Headers tag (default: v1.4.304)
+#   SPIRV_HEADERS_REF   Khronos SPIRV-Headers tag (default: vulkan-sdk-1.4.304.0)
 #   CPU_ARCH       GGML_CPU_ARM_ARCH for the CPU fallback (default: armv8.2-a+dotprod+fp16)
 #   OUT            output directory (default: build/vulkan-runtime)
 set -euo pipefail
@@ -21,6 +22,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${OUT:-$ROOT/build/vulkan-runtime}"
 LLAMA_REF="${LLAMA_REF:-b11490}"
 VULKAN_HEADERS_REF="${VULKAN_HEADERS_REF:-v1.4.304}"
+SPIRV_HEADERS_REF="${SPIRV_HEADERS_REF:-vulkan-sdk-1.4.304.0}"
 CPU_ARCH="${CPU_ARCH:-armv8.2-a+dotprod+fp16}"
 BRIDGE_REV="${BRIDGE_REV:-4}"
 API_LEVEL=28
@@ -52,6 +54,16 @@ if [[ ! -d "$VK_HEADERS/include/vulkan" ]]; then
   git clone --depth 1 --branch "$VULKAN_HEADERS_REF" https://github.com/KhronosGroup/Vulkan-Headers.git "$VK_HEADERS"
 fi
 
+# ggml-vulkan does find_package(SPIRV-Headers CONFIG); the NDK has no CMake
+# package for it. It is header-only, so install it once with the host CMake.
+SPIRV_SRC="$OUT/SPIRV-Headers"
+SPIRV_PREFIX="$OUT/spirv-headers-install"
+if [[ ! -f "$SPIRV_PREFIX/share/cmake/SPIRV-Headers/SPIRV-HeadersConfig.cmake" ]]; then
+  [[ -d "$SPIRV_SRC/.git" ]] || git clone --depth 1 --branch "$SPIRV_HEADERS_REF" https://github.com/KhronosGroup/SPIRV-Headers.git "$SPIRV_SRC"
+  cmake -S "$SPIRV_SRC" -B "$OUT/build-spirv" -DCMAKE_INSTALL_PREFIX="$SPIRV_PREFIX" -DSPIRV_HEADERS_ENABLE_TESTS=OFF
+  cmake --install "$OUT/build-spirv"
+fi
+
 cmake -S "$LLAMA_ROOT" -B "$OUT/build-llama" -G Ninja \
   -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \
   -DANDROID_ABI=arm64-v8a \
@@ -70,6 +82,7 @@ cmake -S "$LLAMA_ROOT" -B "$OUT/build-llama" -G Ninja \
   -DVulkan_INCLUDE_DIR="$VK_HEADERS/include" \
   -DVulkan_LIBRARY="$VULKAN_LIB" \
   -DVulkan_GLSLC_EXECUTABLE="$GLSLC" \
+  -DSPIRV-Headers_DIR="$SPIRV_PREFIX/share/cmake/SPIRV-Headers" \
   -DLLAMA_CURL=OFF \
   -DLLAMA_BUILD_TESTS=OFF \
   -DLLAMA_BUILD_EXAMPLES=OFF \

@@ -31,8 +31,15 @@ if (EXISTS "${VULKAN_HEADERS}/include/vulkan/vulkan.hpp" AND
         set(NDK_HOST linux-x86_64)
     endif()
     find_program(LILAC_GLSLC glslc PATHS "${ANDROID_NDK}/shader-tools/${NDK_HOST}" NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
+    # ggml-vulkan calls Vulkan 1.1 entry points (vkGetPhysicalDeviceFeatures2), which the NDK's
+    # libvulkan.so stub exports from API 28 on. Android 8.x (API 26-27) cannot load the library then,
+    # but those devices lack the Vulkan 1.2 llama.cpp needs anyway.
+    set(LILAC_VULKAN_API ${ANDROID_PLATFORM_LEVEL})
+    if (LILAC_VULKAN_API LESS 28)
+        set(LILAC_VULKAN_API 28)
+    endif()
     find_library(LILAC_VULKAN_LIBRARY vulkan
-        PATHS "${CMAKE_SYSROOT}/usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}/${ANDROID_PLATFORM_LEVEL}"
+        PATHS "${CMAKE_SYSROOT}/usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}/${LILAC_VULKAN_API}"
         NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
     set(GGML_VULKAN ON CACHE BOOL "" FORCE)
     set(Vulkan_INCLUDE_DIR "${VULKAN_HEADERS}/include" CACHE PATH "" FORCE)

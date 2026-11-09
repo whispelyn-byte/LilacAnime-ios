@@ -33,21 +33,19 @@ class ReanimeAudioTest {
         assertEquals(listOf("named", "dub"), result.map { it.url.substringAfterLast('/') })
     }
 
-    @Test fun wrongAudioWatchFallsBackToFlixAndDubOnlyStaysUnavailable() = runTest {
+    // desktop 7178799: the old /api/watch route answers 404 after seconds; the servers are asked of Flix only, and a
+    // dub-only Flix reply leaves an original-audio episode with no server.
+    @Test fun serversAreAskedOfFlixOnlyAndDubOnlyStaysUnavailable() = runTest {
         for (flixType in listOf("sub", "dub")) {
-            // /api/watch and /api/flix are asked at once, answered on MockEngine's threads: the set is guarded.
-            val requested = mutableSetOf<String>(); val lock = Mutex()
+            val requested = mutableListOf<String>(); val lock = Mutex()
             val client = HttpClient(MockEngine { request ->
                 lock.withLock { requested += request.url.encodedPath }
-                val json = if (request.url.encodedPath.startsWith("/api/watch/"))
-                    buildJsonObject { put("episode_links", JsonArray(listOf(server("watch-dub", "HD-2", "dub")))) }
-                else root(server("flix", "HD-1", flixType))
-                respond(json.toString(), headers = headersOf(HttpHeaders.ContentType, "application/json"))
+                respond(root(server("flix", "HD-1", flixType)).toString(), headers = headersOf(HttpHeaders.ContentType, "application/json"))
             })
             try {
                 val result = DesktopSourceRepository(client).serverPages("reanime", "https://reanime.to/watch/test?ep=2", 2, 206774)
                 assertEquals(if (flixType == "sub") listOf("https://flixcloud.cc/e/flix") else emptyList(), result.map { it.url })
-                assertEquals(setOf("/api/watch/test/2", "/api/flix/206774/2"), requested)
+                assertEquals(listOf("/api/flix/206774/2"), requested)
             } finally { client.close() }
         }
     }
@@ -58,18 +56,13 @@ class ReanimeAudioTest {
         val client = HttpClient(MockEngine { request ->
             val path = request.url.encodedPath
             lock.withLock { requested += path }
-            val json = when {
-                path.startsWith("/api/watch/") -> buildJsonObject { put("episode_links", JsonArray(emptyList())) }
-                path.startsWith("/api/v1/anime/") -> buildJsonObject { put("anilist_id", 14741) }
-                else -> root(server("sub", "HD-2", "sub"))
-            }
+            val json = if (path.startsWith("/api/v1/anime/")) buildJsonObject { put("anilist_id", 14741) } else root(server("sub", "HD-2", "sub"))
             respond(json.toString(), headers = headersOf(HttpHeaders.ContentType, "application/json"))
         })
         try {
             val result = DesktopSourceRepository(client).serverPages("reanime", "https://reanime.to/watch/love-chunibyo-other-delusions-y66mwz?ep=1", 1, 0)
             assertEquals(listOf("https://flixcloud.cc/e/sub"), result.map { it.url })
-            assertTrue("/api/v1/anime/love-chunibyo-other-delusions-y66mwz" in requested, requested.toString())
-            assertTrue("/api/flix/14741/1" in requested, requested.toString())
+            assertEquals(listOf("/api/v1/anime/love-chunibyo-other-delusions-y66mwz", "/api/flix/14741/1"), requested)
         } finally { client.close() }
     }
 }

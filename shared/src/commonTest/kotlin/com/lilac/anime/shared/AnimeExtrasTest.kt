@@ -3,7 +3,9 @@ package com.lilac.anime.shared
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.*
 import io.ktor.http.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
@@ -21,7 +23,9 @@ class AnimeExtrasTest {
     private val themes = """{"data":{"openings":["1: \"Song\" by Band (eps 1-12)"],"endings":["\"Bye\" by Duo"]}}"""
     private fun MockRequestHandleScope.json(text: String) = respond(text, headers = headersOf(HttpHeaders.ContentType, "application/json"))
 
-    @Test fun theEntryByItsIdShapedForThePageWithMalSongNames() = runTest {
+    // On a real dispatcher: runTest's virtual time would let the 5 s wait for MAL's songs run out at once while the mock
+    // engine answers on a thread of its own.
+    @Test fun theEntryByItsIdShapedForThePageWithMalSongNames() = runTest { withContext(Dispatchers.Default) {
         val asked = mutableListOf<String>(); val lock = Mutex()
         val client = HttpClient(MockEngine { request ->
             lock.withLock { asked += request.url.host }
@@ -42,7 +46,7 @@ class AnimeExtrasTest {
             assertEquals(listOf("Official Site"), extras.links.map { it.site })
             assertEquals(listOf("\"Song\" by Band (eps 1-12)"), extras.openings); assertEquals(listOf("\"Bye\" by Duo"), extras.endings)
         } finally { client.close() }
-    }
+    } }
 
     // A 애니24 work's own id is not trusted as it is: its entry is found by the original title (strictly). A lookup AniList
     // did not answer is asked again next time; an answer is kept for half an hour.

@@ -17,13 +17,15 @@ object LibraryFacts {
     val sources = listOf("reanime", "miruro", "animenosub", "ohli24", "linkani")
     /** The sources whose episode lists carry air dates (링크애니 dates none). */
     val dated = listOf("reanime", "miruro", "animenosub", "ohli24")
+    private val isoDay = Regex("""\d{4}-\d{2}-\d{2}""")
+    private val finishedStatus = Regex("finished|completed|ended|완결", RegexOption.IGNORE_CASE)
 
     /** The facts of a work from its page: the latest episode out by [nowMillis] (an episode listed ahead of its airing, or
      *  one that cannot be played yet, is not). Dubs and specials count: a new one is an update too. */
     fun of(detail: SourceDetail, nowMillis: Long): LibraryFact {
         val limit = kotlin.time.Instant.fromEpochMilliseconds(nowMillis + 12 * 60 * 60 * 1000L).toString().take(10)
         val latest = detail.servers.flatMap { it.episodes }.filter { it.playable }
-            .map { it.airedDate.take(10) }.filter { Regex("\d{4}-\d{2}-\d{2}").matches(it) && it <= limit }.maxOrNull().orEmpty()
+            .map { it.airedDate.take(10) }.filter { isoDay.matches(it) && it <= limit }.maxOrNull().orEmpty()
         val anime = detail.anime
         return LibraryFact(anime.availableEpisodes ?: -1, anime.totalEpisodes ?: -1, -1, anime.status, latest)
     }
@@ -39,9 +41,9 @@ object LibraryFacts {
     /** How long a work's facts are good for: a week for one that has all its episodes or is marked finished, else 3 hours. */
     fun dueAfterMillis(anime: Anime): Long {
         val uploaded = anime.availableEpisodes ?: 0; val total = anime.totalEpisodes ?: 0
-        val finished = (total > 0 && uploaded >= total) || Regex("finished|completed|ended|완결", RegexOption.IGNORE_CASE).containsMatchIn(anime.status)
+        val finished = (total > 0 && uploaded >= total) || finishedStatus.containsMatchIn(anime.status)
         return if (finished) 7 * 24 * 60 * 60 * 1000L else 3 * 60 * 60 * 1000L
     }
     /** The day an update's time names ("2026-11-10T15:30:00Z" → "2026-11-10"), "" for none. */
-    fun day(value: String): String = value.take(10).takeIf { Regex("\d{4}-\d{2}-\d{2}").matches(it) }.orEmpty()
+    fun day(value: String): String = value.take(10).takeIf { isoDay.matches(it) }.orEmpty()
 }

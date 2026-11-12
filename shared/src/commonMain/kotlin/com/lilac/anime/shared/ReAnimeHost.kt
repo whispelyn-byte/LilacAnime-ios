@@ -9,7 +9,7 @@ package com.lilac.anime.shared
 object ReAnimeHost {
     const val WEB = "https://reanime.cz"
     const val ID = "https://reanime.to"
-    private val known = Regex("^https?://(?:www\.)?reanime\.(?:to|cz)(?=[/?#]|$)", RegexOption.IGNORE_CASE)
+    private val known = Regex("""^https?://(?:www\.)?reanime\.(?:to|cz)(?=[/?#]|$)""", RegexOption.IGNORE_CASE)
     /** The address to ask or open for [url]: RE:Anime's at its current name, any other one as it is. */
     fun live(url: String): String = known.replaceFirst(url, WEB)
 }

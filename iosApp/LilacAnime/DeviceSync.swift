@@ -357,14 +357,18 @@ enum DeviceSyncMapping {
                 "anime": animeItem(anime, source: entry.anime.source), "progress": progress, "updated": (entry.updatedAt.timeIntervalSince1970 * 1000).rounded(),
                 "episodeNumber": entry.number, "androidEpisodeKey": entry.androidEpisodeKey ?? ""]
             if let animeID = entry.androidAnimeID { item["androidAnimeId"] = animeID }
+            if entry.watched == true { item["watched"] = true }
             return item
         }
-        return ["key": key, "src": "", "name": anime.title + " · " + entry.episodeTitle, "subtitleTitle": anime.title, "image": anime.poster,
+        var item: DeviceSyncPlan.Item = ["key": key, "src": "", "name": anime.title + " · " + entry.episodeTitle, "subtitleTitle": anime.title, "image": anime.poster,
                 "episode": ["provider": entry.anime.source, "url": entry.watchURL, "id": entry.episodeID, "number": Double(entry.episodeLabel) ?? Double(entry.number), "name": entry.episodeLabel,
                             "special": entry.episodeLabel.range(of: #"^\d+(?:\.\d+)?[a-z]?$"#, options: [.regularExpression, .caseInsensitive]) == nil],
                 "anime": animeItem(anime, source: entry.anime.source), "resolveKind": entry.anime.source == "linkkf" ? "linkkf" as Any : NSNull(),
                 "progress": progress, "updated": (entry.updatedAt.timeIntervalSince1970 * 1000).rounded(),
                 "ios": ["animeID": entry.anime.id, "episodeID": entry.episodeID, "title": entry.episodeTitle, "displayNumber": entry.episodeLabel, "position": entry.position, "duration": entry.duration, "snapshot": snapshot]]
+        // Only when set, as the desktop writes it: the other items stay as they were (nothing to send again).
+        if entry.watched == true { item["watched"] = true }
+        return item
     }
     static func lists(_ library: LibraryStore) -> DeviceSyncPlan.Lists {
         var favorites: [String: DeviceSyncPlan.Item] = [:], history: [String: DeviceSyncPlan.Item] = [:]
@@ -427,6 +431,8 @@ enum DeviceSyncMapping {
         if ios == nil || (DeviceSyncPlan.number(ios?["duration"]) ?? 0) <= 0 { entry.progressPercent = DeviceSyncPlan.number(data["progress"]) }
         entry.androidEpisodeKey = androidKey
         entry.androidAnimeID = (data["androidAnimeId"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        // 시청함 (desktop 8065f4a): an episode played to 90% on any device stays checked.
+        if data["watched"] as? Bool == true || (DeviceSyncPlan.number(data["progress"]) ?? 0) >= 90 { entry.watched = true }
         return entry
     }
 
@@ -476,6 +482,7 @@ enum DeviceSyncMapping {
             if !deleted, let data {
                 var merged = own.item
                 merged["progress"] = data["progress"]; merged["updated"] = data["updated"]
+                if data["watched"] as? Bool == true { merged["watched"] = true }
                 merged["androidAnimeId"] = data["androidAnimeId"]; merged["androidEpisodeKey"] = data["androidEpisodeKey"]
                 // The phone knows how far in percent; this device keeps the position, so it is worked out from the length.
                 if var ios = merged["ios"] as? DeviceSyncPlan.Item, let duration = DeviceSyncPlan.number(ios["duration"]), duration > 0,

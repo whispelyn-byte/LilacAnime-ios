@@ -248,6 +248,8 @@ final class DetailModel: ObservableObject {
     @Published var anime: Anime?
     @Published var servers: [EpisodeServer] = []
     @Published var extras: SourceExtras?
+    /// 작품 정보 더 보기 (desktop 19110b2): AniList's and MAL's extras, filled in when they come (nil without an entry).
+    @Published var anilist: AnimeExtras?
     @Published var error: String?
     @Published var loading = false
     private let service = IosServices()
@@ -262,6 +264,9 @@ final class DetailModel: ObservableObject {
                 if let anime = detail?.anime {
                     Task { await DesktopCatalog.shared.enrich(anime, source: source, cast: true) }
                     if source == "linkkf" { self.service.sourceExtras(anime: anime) { [weak self] value, _ in self?.extras = value } }
+                    self.service.animeExtras(anime: anime, sourceKey: source) { [weak self] value, _ in
+                        Task { @MainActor in guard let self, token == self.generation else { return }; self.anilist = value }
+                    }
                 }
                 self.anime = detail?.anime; self.servers = detail?.servers ?? []; self.error = error; self.loading = false
             }
@@ -279,6 +284,7 @@ struct DetailView: View {
     let summary: Anime
     let source: String
     @EnvironmentObject private var library: LibraryStore
+    @EnvironmentObject private var navigation: DesktopNavigation
     @StateObject private var model = DetailModel()
     @EnvironmentObject private var downloads: DownloadStore
     @ObservedObject private var names = DesktopCatalog.shared
@@ -405,6 +411,7 @@ struct DetailView: View {
                     if anime.score > 0 { Text("★ " + String(format: "%g", (anime.score * 100).rounded() / 100)).foregroundStyle(LilacStyle.score) }
                     Text([anime.format, anime.year, anime.status, anime.studios.first ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")).foregroundStyle(LilacStyle.muted)
                 }.font(.system(size: 13, weight: .medium)).lineLimit(2)
+                if let airing = airingLine { Text(airing).font(.system(size: 12, weight: .semibold)).foregroundStyle(LilacStyle.accent).lineLimit(2) }
             }.padding(.bottom, 4)
         }
     }
@@ -426,6 +433,11 @@ struct DetailView: View {
                 Link(destination: page) {
                     if labels { Label("작품 정보", systemImage: "arrow.up.right.square") } else { Image(systemName: "arrow.up.right.square") }
                 }.buttonStyle(LilacGhostButtonStyle()).accessibilityLabel("사이트에서 작품 정보 보기")
+            }
+            if let trailer = model.anilist?.trailer, !trailer.isEmpty, let url = URL(string: trailer) {
+                Link(destination: url) {
+                    if labels { Label("PV", systemImage: "play.rectangle") } else { Image(systemName: "play.rectangle") }
+                }.buttonStyle(LilacGhostButtonStyle()).accessibilityLabel("PV 보기")
             }
         }.fixedSize(horizontal: true, vertical: false)
     }
@@ -479,6 +491,7 @@ struct DetailView: View {
                 let pages = max(1, (ordered.count + pageSize - 1) / pageSize)
                 let current = min(page, pages - 1)
                 let saved = savedAnime(server.episodes)
+                let watched = watchProgress(server.episodes)
                 // The count on the left, the tools on the right; on a narrow screen the tools go under it.
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 8) { episodeCount(server); Spacer(minLength: 4); episodeTools(server) }
@@ -512,6 +525,11 @@ struct DetailView: View {
                                         let badges = [episode.dubbed ? "더빙" : "", episode.isFiller ? "FILLER" : "", episode.isRecap ? "RECAP" : "",
                                             String(episode.airedDate.split(separator: "T").first ?? ""), episode.playable ? "" : "재생 불가"].filter { !$0.isEmpty }
                                         if !badges.isEmpty { Text(badges.joined(separator: " · ")).font(.system(size: 11)).foregroundStyle(LilacStyle.muted) }
+                                        // 본 회차 (desktop 8065f4a): checked from 90%, how far a started one got.
+                                        if let percent = watched[episode.id], percent > 0 {
+                                            Text(percent >= 90 ? "✓ 시청함" : "\(Int(percent))% 시청").font(.system(size: 11, weight: .semibold))
+                                                .foregroundStyle(percent >= 90 ? LilacStyle.accent : LilacStyle.muted)
+                                        }
                                     }
                                     Spacer(minLength: 0)
                                 }.padding(.vertical, 12).padding(.leading, 8).contentShape(Rectangle())
@@ -522,6 +540,12 @@ struct DetailView: View {
                         }.padding(.trailing, 8)
                             .background(LilacStyle.card2, in: RoundedRectangle(cornerRadius: LilacStyle.radius))
                             .overlay(RoundedRectangle(cornerRadius: LilacStyle.radius).stroke(LilacStyle.line))
+                            .overlay(alignment: .bottomLeading) {
+                                if let percent = watched[episode.id], percent > 0, percent < 90 {
+                                    GeometryReader { size in Rectangle().fill(LilacStyle.accent).frame(width: size.size.width * percent / 100, height: 3) }
+                                        .frame(height: 3).clipShape(RoundedRectangle(cornerRadius: 1.5)).padding(.horizontal, 2).padding(.bottom, 1)
+                                }
+                            }
                     }
                 }
             } else if !model.loading {
@@ -551,10 +575,121 @@ struct DetailView: View {
                     HStack(alignment: .top) { Text(row.0).font(.subheadline).foregroundStyle(.secondary).frame(width: 60, alignment: .leading); Text(row.1).font(.subheadline); Spacer(minLength: 0) }
                 }
             }
+            if let extras = model.anilist { anilistInformation(extras) }
         }.padding(18).background(LilacStyle.card, in: RoundedRectangle(cornerRadius: 8))
+    }
+    /// 다음 화 · 8화 일본 방영 11월 13일 (금) 오후 10:30 (2일 후), while one is announced.
+    private var airingLine: String? {
+        guard let extras = model.anilist, extras.nextAiringAt > 0, extras.nextEpisode > 0 else { return nil }
+        let at = Date(timeIntervalSince1970: TimeInterval(extras.nextAiringAt)), left = at.timeIntervalSinceNow
+        guard left > -60 else { return nil }
+        let formatter = DateFormatter(); formatter.locale = Locale(identifier: "ko_KR"); formatter.dateFormat = "M월 d일 (E) a h:mm"
+        let hours = Int(left / 3600)
+        let soon = left < 3600 ? "곧" : hours < 24 ? "\(hours)시간 후" : "\(hours / 24)일 후"
+        return "다음 화 · \(extras.nextEpisode)화 일본 방영 \(formatter.string(from: at)) (\(soon))"
+    }
+    /// 캐릭터 · 성우, the songs (MAL), tags and sites: AniList's and MAL's part of 작품 정보.
+    @ViewBuilder private func anilistInformation(_ extras: AnimeExtras) -> some View {
+        if !extras.characters.isEmpty {
+            Divider()
+            Text("캐릭터 · 성우").font(.headline)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 12)], alignment: .leading, spacing: 12) {
+                ForEach(Array(extras.characters.enumerated()), id: \.offset) { _, character in
+                    HStack(spacing: 10) {
+                        AnimeArtwork(url: character.image, width: 44, height: 60).clipShape(RoundedRectangle(cornerRadius: 6))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(character.native.isEmpty ? character.name : character.native).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                            let role = character.role == "MAIN" ? "주연" : character.role == "SUPPORTING" ? "조연" : ""
+                            let detail = [character.native.isEmpty ? "" : character.name, role].filter { !$0.isEmpty }.joined(separator: " · ")
+                            if !detail.isEmpty { Text(detail).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1) }
+                            let voice = character.voiceNative.isEmpty ? character.voice : character.voiceNative
+                            if !voice.isEmpty { Text("CV " + voice).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1) }
+                        }
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+        }
+        ForEach(Array([("오프닝 곡", extras.openings), ("엔딩 곡", extras.endings)].enumerated()), id: \.offset) { _, songs in
+            if !songs.1.isEmpty {
+                Divider()
+                Text(songs.0).font(.headline)
+                VStack(alignment: .leading, spacing: 4) { ForEach(songs.1, id: \.self) { Text("• " + $0).font(.subheadline).foregroundStyle(.secondary) } }
+            }
+        }
+        if !extras.tags.isEmpty {
+            Divider()
+            Text("태그").font(.headline)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) { ForEach(extras.tags, id: \.self) { Text($0).font(.system(size: 11, weight: .medium)).padding(.horizontal, 10).padding(.vertical, 5).background(LilacStyle.card2, in: Capsule()) } }
+            }
+        }
+        let links = extraLinks(extras)
+        if !links.isEmpty {
+            Divider()
+            Text("공식 · 정보 사이트").font(.headline)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 8)], alignment: .leading, spacing: 8) {
+                ForEach(Array(links.enumerated()), id: \.offset) { _, link in
+                    if let url = URL(string: link.1) { Link(link.0, destination: url).font(.subheadline).lineLimit(1) }
+                }
+            }
+        }
+    }
+    private func extraLinks(_ extras: AnimeExtras) -> [(String, String)] {
+        var links: [(String, String)] = []
+        if !extras.url.isEmpty { links.append(("AniList", extras.url)) }
+        if extras.malId > 0 { links.append(("MyAnimeList", "https://myanimelist.net/anime/\(extras.malId)")) }
+        for link in extras.links { links.append((link.site, link.url)) }
+        return links
+    }
+    /// AniList's related works (for the sources that list none of their own) and the works recommended with this one.
+    /// They are not works of the source playing: one picked is searched for on it.
+    private var anilistGroups: [(String, [ExtraWork])] {
+        guard let extras = model.anilist else { return [] }
+        var groups: [(String, [ExtraWork])] = []
+        if !["reanime", "miruro", "linkkf"].contains(source) {
+            for work in extras.relations {
+                let name = extras.relationName(type: work.relationType)
+                if let index = groups.firstIndex(where: { $0.0 == name }) { groups[index].1.append(work) } else { groups.append((name, [work])) }
+            }
+        }
+        if !extras.recommendations.isEmpty { groups.append(("비슷한 작품", extras.recommendations)) }
+        return groups
+    }
+    private func anilistRelated(_ groups: [(String, [ExtraWork])]) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(group.0).font(.system(size: 13, weight: .bold)).foregroundStyle(LilacStyle.accent)
+                    Text("AniList · 누르면 지금 소스에서 검색").font(.system(size: 11)).foregroundStyle(LilacStyle.muted)
+                }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .top, spacing: 12) {
+                        ForEach(group.1, id: \.anilistId) { work in extraCard(work) }
+                    }
+                }
+            }
+        }
+    }
+    private func extraCard(_ work: ExtraWork) -> some View {
+        Button { navigation.search(work.title) } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                AnimeArtwork(url: work.image, width: 120, height: 170).clipShape(RoundedRectangle(cornerRadius: LilacStyle.radius))
+                    .overlay(alignment: .topTrailing) {
+                        if work.score > 0 {
+                            Text("★ " + String(format: "%g", work.score)).font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                                .padding(.horizontal, 6).padding(.vertical, 3).background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 4)).padding(6)
+                        }
+                    }
+                Text(work.title).font(.system(size: 13, weight: .semibold)).foregroundStyle(LilacStyle.text).lineLimit(2).frame(width: 120, alignment: .leading)
+                Text([work.year, work.format.replacingOccurrences(of: "_", with: " ")].filter { !$0.isEmpty }.joined(separator: " · "))
+                    .font(.system(size: 11)).foregroundStyle(LilacStyle.muted).lineLimit(1)
+            }
+        }.buttonStyle(.plain).accessibilityLabel(work.title + " 검색")
     }
     private var related: some View {
         VStack(alignment: .leading, spacing: 16) {
+            let groups = anilistGroups
             if let extras = model.extras, !extras.related.isEmpty {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 26) {
                     ForEach(extras.related, id: \.id) { related in
@@ -562,7 +697,7 @@ struct DetailView: View {
                     }
                 }
             } else if anime.reAnimeRelated.isEmpty {
-                LilacEmptyState(icon: "square.stack", title: "관련 작품이 없습니다", message: "관련 작품 정보가 제공되면 여기에 표시됩니다.")
+                if groups.isEmpty { LilacEmptyState(icon: "square.stack", title: "관련 작품이 없습니다", message: "관련 작품 정보가 제공되면 여기에 표시됩니다.") }
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 26) {
                     ForEach(anime.reAnimeRelated, id: \.id) { relation in
@@ -575,7 +710,21 @@ struct DetailView: View {
                     }
                 }
             }
+            if !groups.isEmpty { anilistRelated(groups) }
         }
+    }
+    /// How far each listed episode was watched (episode id -> 0–100), from 시청 기록: the same episode, or for an entry of
+    /// this work whose episode is not in the list (the phone's, an older list) the episode of the same number
+    /// (desktop 8065f4a episodeWatchProgress). Once watched it stays 100 though it is watched again.
+    private func watchProgress(_ episodes: [Episode]) -> [String: Double] {
+        let work = source + ":" + anime.id, ids = Set(episodes.map(\.id))
+        var progress: [String: Double] = [:]
+        for entry in library.history where entry.anime.id == work {
+            let id = ids.contains(entry.episodeID) ? entry.episodeID : episodes.first { Int($0.number) == entry.number && !$0.dubbed }?.id
+            guard let id else { continue }
+            progress[id] = max(progress[id] ?? 0, entry.watchedPercent)
+        }
+        return progress
     }
     private func downloadIcon(_ state: DownloadStore.EpisodeState) -> String {
         switch state { case .completed: return "trash"; case .active: return "xmark.circle"; case .stopped: return "arrow.clockwise.circle"; case .idle: return "arrow.down.circle" }

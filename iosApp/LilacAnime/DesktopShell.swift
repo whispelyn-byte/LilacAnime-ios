@@ -125,14 +125,14 @@ struct DesktopSavedView: View {
                             } else {
                                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 26) {
                                     ForEach(order == "updated" ? recent.ordered(library.favorites) : library.favorites) { saved in
-                                        NavigationLink { DetailView(summary: saved.anime, source: saved.source) } label: { AnimePosterCard(anime: saved.anime) }
+                                        NavigationLink { DetailView(summary: recent.shown(saved), source: saved.source) } label: { AnimePosterCard(anime: recent.shown(saved)) }
                                             .buttonStyle(.plain).contextMenu { Button("내 목록에서 삭제", role: .destructive) { library.toggle(saved.anime, source: saved.source) } }
                                     }
                                 }
                             }
                         }.padding(.horizontal, LilacStyle.gutter(sizeClass)).padding(.bottom, 30)
                     }.background(LilacStyle.background).toolbar(.hidden, for: .navigationBar)
-                        .task(id: order + library.favorites.map(\.id).joined(separator: "|")) { if order == "updated" && !UIShowcase.enabled { await recent.loadLibrary(library.favorites) } }
+                        .task(id: order + library.favorites.map(\.id).joined(separator: "|")) { if !UIShowcase.enabled { await recent.loadLibrary(library.favorites, order: order) } }
                 }
             }
         }.background(LilacStyle.background)

@@ -49,8 +49,12 @@ data class WatchEntry(
     val updatedAt: Long,
     val progressPercent: Double? = null,
     val displayNumber: String? = null,
+    /** Played to 90% or more once (desktop 8065f4a): the episode list keeps it checked as 시청함 though it is watched again. */
+    val watched: Boolean? = null,
 ) {
     val progress: Double get() = if (duration > 0) minOf(position / duration, 1.0) else (progressPercent ?: 0.0) / 100
+    /** How far it was watched (0–100): 100 once watched. */
+    val watchedPercent: Double get() = if (watched == true) 100.0 else progress * 100
     val episodeLabel: String get() = displayNumber ?: anime.anime.episodes.firstOrNull { it.id == episodeID }?.displayNumber ?: number.toString()
 }
 
@@ -211,13 +215,15 @@ class LibraryStore(context: Context) {
         if (!position.isFinite() || !duration.isFinite() || position < 0) return
         val id = anime.id + "#" + episodeID
         if (duration <= 0 && history.any { it.id == id && it.progress > 0 }) return
+        val watched = history.any { it.id == id && it.watched == true } || (duration > 0 && position / duration >= 0.9)
         // Only the newest entry of a series keeps its episode list (iOS: library.json grew without end otherwise).
         val older = history.filter { it.id != id }.map { entry ->
             if (entry.anime.id != anime.id || entry.anime.snapshot.contains("\"episodes\":[]")) entry
             else entry.copy(displayNumber = entry.episodeLabel,
                 anime = SavedAnime.of(AnimeSnapshot.withEpisodes(entry.anime.anime, emptyList()), entry.anime.source, entry.anime.savedAt))
         }
-        history = (listOf(WatchEntry(id, anime, episodeID, title, number, watchURL, directURL, position, duration, System.currentTimeMillis(), displayNumber = displayNumber)) + older).take(500)
+        history = (listOf(WatchEntry(id, anime, episodeID, title, number, watchURL, directURL, position, duration, System.currentTimeMillis(), displayNumber = displayNumber,
+            watched = if (watched) true else null)) + older).take(500)
         persist(); onChange?.invoke(false)
     }
     fun resume(anime: SavedAnime, episodeID: String): Double =

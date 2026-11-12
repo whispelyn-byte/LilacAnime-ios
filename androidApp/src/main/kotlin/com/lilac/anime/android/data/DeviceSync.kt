@@ -116,6 +116,8 @@ object DeviceSyncMapping {
             .put("progress", progress).put("updated", entry.updatedAt.toDouble())
             .put("ios", JSONObject().put("animeID", entry.anime.id).put("episodeID", entry.episodeID).put("title", entry.episodeTitle).put("displayNumber", label)
                 .put("position", entry.position).put("duration", entry.duration).put("snapshot", snapshot))
+            // 시청함 only when set, as the desktop writes it: the other items stay as they were.
+            .apply { if (entry.watched == true) put("watched", true) }
     }
     fun lists(library: LibraryStore): Map<String, Map<String, JSONObject>> {
         val favorites = linkedMapOf<String, JSONObject>(); val history = linkedMapOf<String, JSONObject>()
@@ -168,7 +170,9 @@ object DeviceSyncMapping {
         val duration = DeviceSyncPlan.number(ios?.opt("duration")) ?: 0.0
         return WatchEntry(anime.id + "#" + episodeID, anime, episodeID, title, number, url, null, DeviceSyncPlan.number(ios?.opt("position")) ?: 0.0, duration,
             (DeviceSyncPlan.number(data.opt("updated")) ?: 0.0).toLong(), if (ios == null || duration <= 0) DeviceSyncPlan.number(data.opt("progress")) else null,
-            ios?.optString("displayNumber")?.ifEmpty { null } ?: name)
+            ios?.optString("displayNumber")?.ifEmpty { null } ?: name,
+            // 시청함 (desktop 8065f4a): an episode played to 90% on any device stays checked.
+            watched = if (data.optBoolean("watched") || (DeviceSyncPlan.number(data.opt("progress")) ?: 0.0) >= 90) true else null)
     }
     /** Writes the merged items into the lists: changed ones in place, new ones first, removals out. */
     fun apply(changes: Map<String, Map<String, JSONObject?>>, library: LibraryStore) {

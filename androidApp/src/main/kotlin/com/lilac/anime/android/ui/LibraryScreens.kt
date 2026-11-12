@@ -115,7 +115,7 @@ fun SavedScreen() {
     var menuFor by remember { mutableStateOf<String?>(null) }
     /** 저장순 / 회차 업데이트순, kept across launches. */
     var order by remember { mutableStateOf(navigation.string("libraryOrder") ?: "saved") }
-    LaunchedEffect(order, library.favorites.map { it.id }) { if (order == "updated") RecentUpdates.loadLibrary(library.favorites) }
+    LaunchedEffect(order, library.favorites.map { it.id }) { RecentUpdates.loadLibrary(library.favorites, order, navigation) }
     LazyVerticalGrid(
         GridCells.Adaptive(150.dp), Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = LilacStyle.gutter, vertical = 12.dp),
@@ -140,8 +140,9 @@ fun SavedScreen() {
         }
         if (tab == 0) items(if (order == "updated") RecentUpdates.ordered(library.favorites) else library.favorites, key = { it.id }) { saved ->
             Box {
-                AnimePosterCard(saved.anime, onLongClick = { menuFor = saved.id }) {
-                    navigation.open(saved.anime, saved.source)
+                val shown = RecentUpdates.shown(saved)
+                AnimePosterCard(shown, onLongClick = { menuFor = saved.id }) {
+                    navigation.open(shown, saved.source)
                 }
                 DropdownMenu(menuFor == saved.id, { menuFor = null }, containerColor = LilacStyle.card) {
                     DropdownMenuItem(text = { Text("내 목록에서 삭제", color = Color.Red) }, onClick = { menuFor = null; library.toggle(saved.anime, saved.source) })

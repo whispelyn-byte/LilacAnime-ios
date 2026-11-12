@@ -53,6 +53,13 @@ struct WatchEntry: Codable, Identifiable {
     /// tell the episode's address: it plays the episode of that number from the work's list, which then takes its place.
     var androidAnimeID: String? = nil
     var androidEpisodeKey: String? = nil
+    /// Played to 90% or more once (desktop 8065f4a): the episode list keeps it checked as 시청함 though it is watched again.
+    var watched: Bool? = nil
+    /// How far it was watched (0–100): 100 once watched, else its position (or the other device's percentage).
+    var watchedPercent: Double {
+        if watched == true { return 100 }
+        return duration > 0 ? min(100, max(0, position / duration * 100)) : (progressPercent ?? 0)
+    }
     var byNumber: Bool { androidEpisodeKey != nil && !watchURL.hasPrefix("http") }
     /// One whose address it could tell (Re:Anime, Miruro) also plays the work's own listed episode, as the phone's carries no
     /// AniList id and none of the list's other fields; its own address stays the fallback (desktop 466e6cb playHistoryItem).
@@ -212,6 +219,7 @@ final class LibraryStore: ObservableObject {
                   directURL: String?, position: Double, duration: Double, displayNumber: String? = nil) {
         guard position.isFinite, duration.isFinite, position >= 0 else { return }
         let id = anime.id + "#" + episodeID
+        let watched = history.contains { $0.id == id && $0.watched == true } || (duration > 0 && position / duration >= 0.9)
         history.removeAll { $0.id == id || ($0.androidEpisodeKey != nil && $0.anime.id == anime.id && $0.episodeLabel == (displayNumber ?? String(number))) }
         // Only the newest entry of a series keeps its episode list: the same long list in every watched episode's entry
         // made library.json grow without end. An older entry asks for the list again when it is played.
@@ -223,7 +231,8 @@ final class LibraryStore: ObservableObject {
             history[index].anime = trimmed
         }
         history.insert(WatchEntry(id: id, anime: anime, episodeID: episodeID, episodeTitle: title, number: number,
-                                  watchURL: watchURL, directURL: directURL, position: position, duration: duration, updatedAt: Date(), displayNumber: displayNumber), at: 0)
+                                  watchURL: watchURL, directURL: directURL, position: position, duration: duration, updatedAt: Date(), displayNumber: displayNumber,
+                                  watched: watched ? true : nil), at: 0)
         history = Array(history.prefix(500)); persist()
     }
     func resume(_ anime: SavedAnime, episodeID: String) -> Double {

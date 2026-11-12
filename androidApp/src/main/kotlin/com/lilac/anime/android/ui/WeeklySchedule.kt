@@ -20,6 +20,7 @@ import com.lilac.anime.android.data.await
 import com.lilac.anime.android.data.displayTitle
 import com.lilac.anime.shared.*
 import kotlinx.coroutines.*
+import kotlinx.serialization.builtins.serializer
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.ZoneId
@@ -133,9 +134,7 @@ fun WeeklyScheduleView(source: String, known: List<Anime>, refresh: Int, modifie
 /** iOS DesktopRecentUpdates: a source's newest-episode lists, for 홈 > 최근 업데이트 and 내 목록 > 회차 업데이트순. */
 object RecentUpdates {
     val supported = listOf("reanime", "miruro", "animenosub", "ohli24", "linkani")
-    data class Update(val anime: Anime, val rank: Int, val saved: SavedAnime, val date: Long?)
     var home by mutableStateOf(emptyList<Anime>()); private set
-    var library by mutableStateOf(emptyMap<String, Update>()); private set
     var homeNote by mutableStateOf(""); private set
     var libraryNote by mutableStateOf(""); private set
     private val service by lazy { IosServices() }
@@ -167,33 +166,118 @@ object RecentUpdates {
             homeNote = if (source == "miruro") "최근 2주간 방영된 회차 기준입니다." else if (items.isEmpty()) "최근 업데이트된 회차가 없습니다." else "소스의 최근 회차 업데이트 목록입니다."
         }.onFailure { if (request == homeRequest) { homeNote = it.message ?: "목록을 불러오지 못했습니다."; cache.remove("$source:1") } }
     }
-    suspend fun loadLibrary(favorites: List<SavedAnime>) {
+    // --- 내 목록 (desktop 19110b2, GitHub issue #28; iOS DesktopRecentUpdates) ---
+    // A saved work was the card of the day it was saved: its episode count stood still, and 회차 업데이트순 knew a date only
+    // for RE:Anime's and Miruro's works in their recent lists. What each saved work has now is kept apart from the saved
+    // card ("libraryFacts" in the app's preferences, so the list synced with the other devices is not rewritten): its
+    // counts and the day of its latest episode, from the sources' recent lists and the work's own page (LibraryFacts).
+    // 링크애니 dates no episode: its works are dated by when a new episode was first seen here.
+    @kotlinx.serialization.Serializable
+    data class Fact(val available: Int = -1, val total: Int = -1, val status: String = "", val updatedAt: String = "", val seenAt: Long? = null, val checkedAt: Long? = null)
+    private val factsJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+    private val factsSerializer = kotlinx.serialization.builtins.MapSerializer(String.serializer(), Fact.serializer())
+    var facts by mutableStateOf(emptyMap<String, Fact>()); private set
+    private var store: com.lilac.anime.android.data.Navigation? = null
+    private var feedRank = emptyMap<String, Int>()
+    private var refreshing = false
+    private fun attach(navigation: com.lilac.anime.android.data.Navigation) {
+        if (store != null) return
+        store = navigation
+        facts = runCatching { factsJson.decodeFromString(factsSerializer, navigation.string("libraryFacts") ?: "{}") }.getOrDefault(emptyMap())
+    }
+    private fun keepFacts(favorites: List<SavedAnime>) {
+        val saved = favorites.map { it.id }.toSet(); facts = facts.filterKeys { it in saved }
+        store?.putString("libraryFacts", factsJson.encodeToString(factsSerializer, facts))
+    }
+    private fun uploaded(anime: Anime) = anime.availableEpisodes ?: 0
+    /** What a list or a page says of a saved work now. A value it does not give leaves the known one; the later day stays. */
+    private fun learn(saved: SavedAnime, available: Int, total: Int, status: String, updatedAt: String, checked: Boolean) {
+        val before = uploaded(shown(saved))
+        var fact = facts[saved.id] ?: Fact()
+        if (available >= 0) fact = fact.copy(available = available)
+        if (total >= 0) fact = fact.copy(total = total)
+        if (status.isNotEmpty()) fact = fact.copy(status = status)
+        val day = LibraryFacts.day(updatedAt)
+        if (day.isNotEmpty() && day > fact.updatedAt) fact = fact.copy(updatedAt = day)
+        if (fact.checkedAt != null && fact.available > before) fact = fact.copy(seenAt = System.currentTimeMillis())
+        if (checked) fact = fact.copy(checkedAt = System.currentTimeMillis())
+        facts = facts + (saved.id to fact)
+    }
+    /** The card as it is now (both orders show it). */
+    fun shown(saved: SavedAnime): Anime {
+        val fact = facts[saved.id] ?: return saved.anime
+        return LibraryFacts.shown(saved.anime, LibraryFact(fact.available, fact.total, -1, fact.status, fact.updatedAt))
+    }
+    /** The saved works whose own page is due, those never looked at first, 40 a visit, 3 at a time. */
+    private suspend fun refreshDue(favorites: List<SavedAnime>) {
+        if (refreshing) return
+        val now = System.currentTimeMillis()
+        val due = favorites.filter { it.source in LibraryFacts.sources }
+            .filter { saved -> facts[saved.id]?.checkedAt?.let { now - it > LibraryFacts.dueAfterMillis(shown(saved)) } ?: true }
+            .sortedBy { facts[it.id]?.checkedAt ?: 0L }.take(40)
+        if (due.isEmpty()) return
+        refreshing = true
+        try {
+            for (chunk in due.chunked(3)) {
+                val found = coroutineScope { chunk.map { saved -> async { saved to service.await<LibraryFact> { libraryFact(saved.anime, saved.source, it) }.getOrNull() } }.awaitAll() }
+                for ((saved, fact) in found) {
+                    if (fact != null) learn(saved, fact.availableEpisodes, fact.totalEpisodes, fact.status, fact.updatedAt, checked = true)
+                    // A page that could not be read is tried again in half an hour.
+                    else facts = facts + (saved.id to (facts[saved.id] ?: Fact()).copy(checkedAt = System.currentTimeMillis() - 3 * 3_600_000L + 1_800_000L))
+                }
+            }
+        } finally { refreshing = false }
+        keepFacts(favorites)
+    }
+    suspend fun loadLibrary(favorites: List<SavedAnime>, order: String, navigation: com.lilac.anime.android.data.Navigation) {
+        attach(navigation)
         val request = ++libraryRequest
+        if (order != "updated") { refreshDue(favorites); return }
         libraryNote = "저장한 작품의 최근 회차 목록을 확인하는 중…"
         val sources = favorites.map { it.source }.distinct().sorted()
-        val found = mutableMapOf<String, Update>(); val failed = mutableListOf<String>()
+        val saved = favorites.associateBy { it.id }
+        val ranks = mutableMapOf<String, Int>(); val failed = mutableListOf<String>()
         for (source in sources.filter { it in supported }) {
             runCatching { recent(source, 8).await() }.onSuccess { list ->
-                list.forEachIndexed { rank, anime -> found["$source:${anime.id}"] = Update(anime, rank, SavedAnime.of(anime, source), timestamp(anime.updatedAt)) }
+                list.forEachIndexed { rank, anime ->
+                    val id = "$source:${anime.id}"; val work = saved[id] ?: return@forEachIndexed
+                    ranks[id] = rank
+                    val before = uploaded(shown(work))
+                    // A list that dates the work settles it; one that does not (Animenosub, 애니24) leaves its page to be read
+                    // when the work has no day yet or shows more episodes than before. 링크애니 has no dates anywhere.
+                    val settled = LibraryFacts.day(anime.updatedAt).isNotEmpty() || source !in LibraryFacts.dated
+                    learn(work, uploaded(anime).takeIf { it > 0 } ?: -1, anime.totalEpisodes ?: -1, anime.status, anime.updatedAt, settled)
+                    if (!settled && (facts[id]?.updatedAt.isNullOrEmpty() || uploaded(shown(work)) > before)) facts = facts + (id to facts.getValue(id).copy(checkedAt = null))
+                }
             }.onFailure { failed += ContentSources.name(source); cache.remove("$source:8") }
         }
         if (request != libraryRequest) return
-        library = found
+        feedRank = ranks; keepFacts(favorites)
         val unsupported = sources.filter { it !in supported }.map(ContentSources::name)
-        libraryNote = "소스별 최근 회차 목록에 있는 작품을 먼저 표시합니다. 목록 밖 작품은 저장순을 유지합니다." +
+        val note = "최신 회차가 나온 날짜순입니다. 날짜를 알 수 없는 작품은 뒤에 둡니다." +
             (if (unsupported.isEmpty()) "" else " ${unsupported.joinToString("·")}: 업데이트순 미지원.") + (if (failed.isEmpty()) "" else " ${failed.joinToString("·")}: 목록을 불러오지 못했습니다.")
+        libraryNote = "$note 저장한 작품의 최신 회차를 확인하는 중…"
+        refreshDue(favorites)
+        if (request == libraryRequest) libraryNote = note
     }
-    fun ordered(favorites: List<SavedAnime>): List<SavedAnime> = favorites.withIndex().sortedWith { l, r ->
-        val a = library[l.value.id]; val b = library[r.value.id]
-        when {
-            (a != null) != (b != null) -> if (a != null) -1 else 1
-            a == null || b == null -> l.index.compareTo(r.index)
-            (a.date != null) != (b.date != null) -> if (a.date != null) -1 else 1
-            a.date != null && b.date != null -> if (a.date == b.date) l.index.compareTo(r.index) else b.date.compareTo(a.date)
-            l.value.source != r.value.source -> l.value.source.compareTo(r.value.source)
-            else -> if (a.rank == b.rank) l.index.compareTo(r.index) else a.rank.compareTo(b.rank)
+    /** The latest episode's day, newest first, whatever the source; works without a day follow, those in their source's
+     *  recent list first (in its order), then the rest as saved. */
+    fun ordered(favorites: List<SavedAnime>): List<SavedAnime> {
+        fun time(saved: SavedAnime): String {
+            val fact = facts[saved.id]
+            return fact?.updatedAt?.takeIf { it.isNotEmpty() } ?: fact?.seenAt?.let { java.time.Instant.ofEpochMilli(it).toString().take(10) } ?: ""
         }
-    }.map { library[it.value.id]?.saved ?: it.value }
-    private fun timestamp(text: String): Long? = runCatching { java.time.OffsetDateTime.parse(text).toInstant().toEpochMilli() }.getOrNull()
-        ?: runCatching { java.time.Instant.parse(text).toEpochMilli() }.getOrNull()
+        return favorites.withIndex().sortedWith { l, r ->
+            val a = time(l.value); val b = time(r.value)
+            val ra = feedRank[l.value.id]; val rb = feedRank[r.value.id]
+            when {
+                a.isEmpty() != b.isEmpty() -> if (a.isNotEmpty()) -1 else 1
+                a.isNotEmpty() -> if (a == b) l.index.compareTo(r.index) else b.compareTo(a)
+                (ra != null) != (rb != null) -> if (ra != null) -1 else 1
+                ra == null || rb == null -> l.index.compareTo(r.index)
+                l.value.source != r.value.source -> l.value.source.compareTo(r.value.source)
+                else -> if (ra == rb) l.index.compareTo(r.index) else ra.compareTo(rb)
+            }
+        }.map { it.value }
+    }
 }

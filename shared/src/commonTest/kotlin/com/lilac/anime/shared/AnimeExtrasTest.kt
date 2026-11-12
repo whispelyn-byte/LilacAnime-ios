@@ -19,7 +19,7 @@ class AnimeExtrasTest {
         "recommendations":{"nodes":[{"mediaRecommendation":{"id":30,"type":"ANIME","averageScore":81,"title":{"romaji":"Other"},"coverImage":{"large":"javascript:alert(1)"}}},{"mediaRecommendation":null}]},
         "externalLinks":[{"site":"Official Site","url":"https://show.example/","type":"INFO"},{"site":"Twitter","url":"https://x.example/","type":"SOCIAL"},{"site":"Bad","url":"http://plain.example/","type":"INFO"}]}}}"""
     private val themes = """{"data":{"openings":["1: \"Song\" by Band (eps 1-12)"],"endings":["\"Bye\" by Duo"]}}"""
-    private fun json(text: String) = respond(text, headers = headersOf(HttpHeaders.ContentType, "application/json"))
+    private fun MockRequestHandleScope.json(text: String) = respond(text, headers = headersOf(HttpHeaders.ContentType, "application/json"))
 
     @Test fun theEntryByItsIdShapedForThePageWithMalSongNames() = runTest {
         val asked = mutableListOf<String>(); val lock = Mutex()

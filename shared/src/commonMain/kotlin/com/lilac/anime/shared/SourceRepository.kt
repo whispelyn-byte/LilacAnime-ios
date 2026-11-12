@@ -65,7 +65,7 @@ class SourceRepository(private val client: HttpClient, private val details: Deta
         }
         return when (source) {
             "miruro", "ohli24", "linkani" -> desktop.browse(source, query, page, filter)
-            "reanime" -> ReAnimeHarParser.parseSearch(getText("https://reanime.to/api/v1/search", buildMap {
+            "reanime" -> ReAnimeHarParser.parseSearch(getText(ReAnimeHost.WEB + "/api/v1/search", buildMap {
                 put("limit", "36"); put("offset", ((page - 1) * 36).toString())
                 if (query.isNotBlank()) put("q", query.trim())
                 if (filter.sort.isNotBlank()) put("sort", when (filter.sort) { "popular" -> "popularity_desc"; "year" -> "year_desc"; else -> "score_desc" })
@@ -113,9 +113,9 @@ class SourceRepository(private val client: HttpClient, private val details: Deta
             "reanime" -> {
                 val slug = summary.id.removePrefix("reanime:").substringBefore('/')
                 // The series route and the episode route go out together (one after the other took a whole request first).
-                val listed = async { runCatching { getText("https://reanime.to/api/v1/anime/" + slug + "/episodes", mapOf("limit" to "2000")) } }
+                val listed = async { runCatching { getText(ReAnimeHost.WEB + "/api/v1/anime/" + slug + "/episodes", mapOf("limit" to "2000")) } }
                 try {
-                    val root = kotlinx.serialization.json.Json.parseToJsonElement(getText("https://reanime.to/api/v1/anime/" + slug)).jsonObject
+                    val root = kotlinx.serialization.json.Json.parseToJsonElement(getText(ReAnimeHost.WEB + "/api/v1/anime/" + slug)).jsonObject
                     if (root.text("anime_id").isNotBlank()) {
                         val parsed = DesktopReanimeParser.detail(root, summary)
                         val episodes = DesktopReanimeParser.episodes(kotlinx.serialization.json.Json.parseToJsonElement(listed.await().getOrThrow()).jsonObject, parsed)
@@ -123,8 +123,8 @@ class SourceRepository(private val client: HttpClient, private val details: Deta
                     }
                 } catch (error: CancellationException) { throw error } catch (_: Exception) { /* Preserve the previous Svelte fallback. */ }
                 listed.cancel()
-                val detail = async { getText("https://reanime.to/anime/$slug/__data.json", mapOf("x-appkit-invalidated" to "001")) }
-                val watch = async { getText("https://reanime.to/watch/$slug/__data.json", mapOf("x-appkit-invalidated" to "001")) }
+                val detail = async { getText(ReAnimeHost.WEB + "/anime/$slug/__data.json", mapOf("x-appkit-invalidated" to "001")) }
+                val watch = async { getText(ReAnimeHost.WEB + "/watch/$slug/__data.json", mapOf("x-appkit-invalidated" to "001")) }
                 val detailJson = detail.await()
                 val anime = ReAnimeHarParser.parseDetail(detailJson, summary).copy(source = "reanime")
                 val episodes = ReAnimeHarParser.parseWatchEpisodes(watch.await(), anime, ReAnimeHarParser.episodeTotal(detailJson))
@@ -144,7 +144,7 @@ class SourceRepository(private val client: HttpClient, private val details: Deta
     }
     suspend fun filters(source: String): SourceFilters = filterCache[source]?.takeIf { Clock.System.now().toEpochMilliseconds() - it.first < 600000 }?.second ?: when (source) {
         "reanime" -> {
-            val raw = getText("https://reanime.to/api/v1/search", mapOf("facets" to "true", "limit" to "0"))
+            val raw = getText(ReAnimeHost.WEB + "/api/v1/search", mapOf("facets" to "true", "limit" to "0"))
             val it = ReAnimeHarParser.parseFacets(raw)
             val root = Json.parseToJsonElement(raw).jsonObject
             SourceFilters(it.genres, it.years, root.obj("facets").obj("format").keys.toList().ifEmpty { it.formats }, it.statuses, listOf("WINTER", "SPRING", "SUMMER", "FALL"), it.studios, supportsYear = true, supportsSeason = true, sorts = listOf("popular", "year", "updated", "score"), extraFilters = DesktopCatalogTaxonomy.reanime(root), note = "태그·상태·국가·더빙·등급 등을 선택하세요. 제작사·등장인물·제작진은 사이트의 영문 분류명을 입력하세요.")
@@ -193,7 +193,7 @@ class SourceRepository(private val client: HttpClient, private val details: Deta
         val now = Clock.System.now(); val key = "$source:snapshot"
         updateCache[key]?.takeIf { now.toEpochMilliseconds() - it.first < 300000 }?.let { return it.second }
         val items = if (source == "reanime") {
-            val rows = DesktopCatalogUpdates.reanimeRows(Json.parseToJsonElement(getText("https://reanime.to/__data.json")).jsonObject)
+            val rows = DesktopCatalogUpdates.reanimeRows(Json.parseToJsonElement(getText(ReAnimeHost.WEB + "/__data.json")).jsonObject)
             ReAnimeHarParser.parseSearch(JsonObject(mapOf("results" to rows)).toString())
         } else {
             val rows = mutableListOf<JsonElement>(); val cursors = mutableSetOf<String>(); var cursor = ""
@@ -252,13 +252,15 @@ class SourceRepository(private val client: HttpClient, private val details: Deta
     /** 애니24's, 링크애니's and Linkkf's Korean subtitle files of the same episode (slower; desktop d8f7978). */
     suspend fun koreanSiteTracks(anime: Anime, provider: String, number: Int, special: Boolean, dub: Boolean, koreanTitles: List<String>) =
         crossSite.koreanSiteTracks(CrossSiteWork.of(anime, provider), number, special, dub, koreanTitles)
-    suspend fun top(period: String) = ReAnimeHarParser.parseTop(getText("https://reanime.to/api/v1/top/anime", mapOf("period" to period, "limit" to "20")))
-    suspend fun schedule(week: Int) = ReAnimeHarParser.parseSchedule(getText("https://reanime.to/api/v1/schedule", mapOf("tz" to "Asia/Seoul", "week" to week.toString())))
-    suspend fun facets() = ReAnimeHarParser.parseFacets(getText("https://reanime.to/api/v1/search", mapOf("facets" to "true", "limit" to "0")))
-    suspend fun getText(url: String, params: Map<String, String> = emptyMap()): String = client.get(url) {
+    suspend fun top(period: String) = ReAnimeHarParser.parseTop(getText(ReAnimeHost.WEB + "/api/v1/top/anime", mapOf("period" to period, "limit" to "20")))
+    suspend fun schedule(week: Int) = ReAnimeHarParser.parseSchedule(getText(ReAnimeHost.WEB + "/api/v1/schedule", mapOf("tz" to "Asia/Seoul", "week" to week.toString())))
+    suspend fun facets() = ReAnimeHarParser.parseFacets(getText(ReAnimeHost.WEB + "/api/v1/search", mapOf("facets" to "true", "limit" to "0")))
+    /** A page or API answer as text. A work's or an episode's saved RE:Anime address is asked at the site's current name
+     *  ([ReAnimeHost]). */
+    suspend fun getText(url: String, params: Map<String, String> = emptyMap()): String = client.get(ReAnimeHost.live(url)) {
         header("Accept", "application/json,text/html,*/*")
         header("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1")
-        header("Referer", Url(url).let { it.protocol.name + "://" + it.host + "/" })
+        header("Referer", Url(ReAnimeHost.live(url)).let { it.protocol.name + "://" + it.host + "/" })
         params.forEach { (key, value) -> parameter(key, value) }
     }.bodyAsText()
     suspend fun sourceSections(source: String): List<SourceSection> = try { primarySections(source) }
@@ -283,7 +285,7 @@ class SourceRepository(private val client: HttpClient, private val details: Deta
         val date = currentCatalogDate(); val year = date.take(4)
         val season = listOf("WINTER", "SPRING", "SUMMER", "FALL")[(date.substring(5,7).toInt() - 1) / 3]
         if (source == "reanime") {
-            val root = Json.parseToJsonElement(getText("https://reanime.to/api/v1/search", buildMap {
+            val root = Json.parseToJsonElement(getText(ReAnimeHost.WEB + "/api/v1/search", buildMap {
                 put("limit", "100"); put("offset", "0")
                 if (seasonOnly) { put("season", season); put("year", year) } else { put("status", "RELEASING"); put("sort", "popularity") }
             })).jsonObject

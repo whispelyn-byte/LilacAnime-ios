@@ -70,7 +70,7 @@ internal class WeeklySchedule(private val repository: SourceRepository, private 
             val rows: List<JsonObject>
             val anime: Map<String, Anime>
             if (source == "reanime") {
-                val root = Json.parseToJsonElement(document("reanime:week:$monday") { repository.getText("https://reanime.to/api/v1/schedule", mapOf("tz" to "Asia/Seoul", "week" to "0")) }).jsonObject
+                val root = Json.parseToJsonElement(document("reanime:week:$monday") { repository.getText(ReAnimeHost.WEB + "/api/v1/schedule", mapOf("tz" to "Asia/Seoul", "week" to "0")) }).jsonObject
                 val groups = root["schedule"] as? JsonArray ?: error("RE:Anime 방영표 응답 오류")
                 val group = groups.filterIsInstance<JsonObject>().firstOrNull { it.text("date") == date } ?: error("RE:Anime 날짜 누락")
                 rows = (group["episodes"] as? JsonArray ?: error("RE:Anime 회차 누락")).filterIsInstance<JsonObject>()

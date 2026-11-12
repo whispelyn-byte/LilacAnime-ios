@@ -386,9 +386,13 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
             }
             check(response.status.isSuccess()) { "AniList HTTP ${response.status.value}" }
             val rows = Json.parseToJsonElement(response.body<String>()).jsonObject.obj("data").obj("Page").list("media").filterIsInstance<JsonObject>()
-            fun same(row: JsonObject) = DesktopTitleRules.compareKey(row.obj("title").text("native")) == DesktopTitleRules.compareKey(native)
+            // Only an entry with the same original title counts (a season written either way: "2期" / "第2期"), the one of the
+            // air year first. A show that merely aired the same year is another work: its id gave the episode that work's
+            // OP/ED times (desktop 19110b2).
+            val wanted = CrossSiteTitles.titleKey(native)
+            fun same(row: JsonObject) = row.obj("title").text("native").let { DesktopTitleRules.compareKey(it) == DesktopTitleRules.compareKey(native) || (wanted.isNotEmpty() && CrossSiteTitles.titleKey(it) == wanted) }
             fun inYear(row: JsonObject) = year.toIntOrNull()?.takeIf { it > 0 }?.let { it == (row.number("seasonYear") ?: row.obj("startDate").number("year")) } == true
-            val row = rows.firstOrNull { same(it) && inYear(it) } ?: rows.firstOrNull(::same) ?: rows.firstOrNull(::inYear)
+            val row = rows.firstOrNull { same(it) && inYear(it) } ?: rows.firstOrNull(::same)
             val result = row?.let { it.number("id") to it.number("idMal") }
             nativeIDs[key] = result
             result
@@ -424,7 +428,7 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
             try {
                 val html = client.get(server.url) {
                     header("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1")
-                    header("Referer", "https://reanime.to/")
+                    header("Referer", ReAnimeHost.WEB + "/")
                 }.body<String>()
                 val tracks = FlixSubtitleTracks.parse(html)
                 if (tracks.isNotEmpty()) return tracks.map { it.copy(headers = mapOf("Referer" to server.url)) }
@@ -473,17 +477,17 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
         // /api/flix is asked by the work's AniList id. An episode from the phone (기기 동기화) comes without it when this
         // device never opened the work: it is read from the series route by the episode's slug (desktop 466e6cb).
         val anilistId = if (anilist > 0 || slug.isBlank()) anilist else try {
-            Json.parseToJsonElement(text("https://reanime.to/api/v1/anime/$slug")).jsonObject.number("anilist_id") ?: 0
+            Json.parseToJsonElement(text(ReAnimeHost.WEB + "/api/v1/anime/$slug")).jsonObject.number("anilist_id") ?: 0
         } catch (e: CancellationException) { throw e } catch (_: Exception) { 0 }
         // The servers come from /api/flix alone (desktop 7178799). The old /api/watch route answers every episode with a
         // 404 page after 1 to 9 seconds (45 on a slow line), and playback waited for it before it used Flix's servers.
         if (anilistId <= 0) return emptyList()
-        return DesktopSourceParser.reanimeServers(Json.parseToJsonElement(text("https://reanime.to/api/flix/$anilistId/$number")).jsonObject)
+        return DesktopSourceParser.reanimeServers(Json.parseToJsonElement(text(ReAnimeHost.WEB + "/api/flix/$anilistId/$number")).jsonObject)
     }
     private val cursors = mutableMapOf<String, MutableMap<Int, String>>()
-    private suspend fun text(url: String, params: Map<String, String> = emptyMap()) = client.get(url) {
+    private suspend fun text(url: String, params: Map<String, String> = emptyMap()) = client.get(ReAnimeHost.live(url)) {
         header("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1")
-        header("Referer", Url(url).let { it.protocol.name + "://" + it.host + "/" })
+        header("Referer", Url(ReAnimeHost.live(url)).let { it.protocol.name + "://" + it.host + "/" })
         header("Accept-Language", "ko-KR,ko;q=0.9")
         params.forEach { (key, value) -> parameter(key, value) }
     }.body<String>()

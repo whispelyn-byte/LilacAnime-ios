@@ -87,6 +87,18 @@ class FullParityRegressionTest {
             assertNotEquals(DesktopTitleRules.compareKey("作品 Part 1"), DesktopTitleRules.compareKey("作品 Part 2"))
         } finally { client.close() }
     }
+    // desktop 19110b2: a show that only aired the same year is another work (its OP/ED times were given to the episode);
+    // the same title with its season written another way ("2期" / "第2期") is the same one.
+    @Test fun nativeIDsNeverTakeAnotherTitleOfTheSameYear() = runTest {
+        val client = HttpClient(MockEngine {
+            respond("""{"data":{"Page":{"media":[{"id":7,"idMal":77,"seasonYear":2025,"title":{"native":"別の作品"}},{"id":8,"idMal":88,"seasonYear":2025,"title":{"native":"ダンダダン 第2期"}}]}}}""", headers = headersOf(HttpHeaders.ContentType, "application/json"))
+        })
+        try {
+            val repository = DesktopSourceRepository(client)
+            assertNull(repository.lookupNativeIDs("知らない作品", "2025"))
+            assertEquals(8 to 88, repository.lookupNativeIDs("ダンダダン 2期", "2025"))
+        } finally { client.close() }
+    }
     @Test fun koreanMetadataRetainsEpisodeDatesCountsAndMovieFallback() {
         val anime = Anime(id = "1", title = "작품", detailUrl = "https://www.ohli24.net/1/series.html")
         val detail = DesktopSourceParser.koreanDetail("""<ul class="article-box-meta"><li><span>원제:</span><span>日本語</span></li><li><span>방영일:</span><span>2025-01-01</span></li><li><span>총화수:</span><span>12화</span></li></ul><div class="eps-list"><div class="eps-item"><a href="/1/episode.html">2화<span class="eps-date">2025-01-08</span></a></div></div>""", anime, "ohli24")

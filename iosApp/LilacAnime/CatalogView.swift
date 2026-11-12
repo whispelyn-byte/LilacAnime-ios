@@ -422,7 +422,7 @@ struct DetailView: View {
             }.buttonStyle(LilacGhostButtonStyle()).foregroundStyle(saved ? LilacStyle.accent : LilacStyle.text)
                 .accessibilityLabel(saved ? "즐겨찾기 해제" : "즐겨찾기 추가")
             // app.js openDetail: the source's own page for the work (작품 정보).
-            if let page = URL(string: anime.detailUrl), ["http", "https"].contains(page.scheme ?? "") {
+            if let page = URL(string: ReAnimeHost.shared.live(url: anime.detailUrl)), ["http", "https"].contains(page.scheme ?? "") {
                 Link(destination: page) {
                     if labels { Label("작품 정보", systemImage: "arrow.up.right.square") } else { Image(systemName: "arrow.up.right.square") }
                 }.buttonStyle(LilacGhostButtonStyle()).accessibilityLabel("사이트에서 작품 정보 보기")
@@ -541,7 +541,7 @@ struct DetailView: View {
             Divider()
             if let views = model.extras?.views, !views.isEmpty { Text("조회 " + views).font(.caption).foregroundStyle(.secondary) }
             // app.js openDetail: the source's own page for the work (작품 정보).
-            if let page = URL(string: anime.detailUrl), ["http", "https"].contains(page.scheme ?? "") {
+            if let page = URL(string: ReAnimeHost.shared.live(url: anime.detailUrl)), ["http", "https"].contains(page.scheme ?? "") {
                 Link(destination: page) { Label("사이트에서 작품 정보 보기", systemImage: "arrow.up.right.square") }.font(.subheadline)
             }
             ForEach(Array([("원제", anime.native), ("로마자", anime.romaji), ("영문명", anime.english),

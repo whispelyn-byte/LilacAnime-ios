@@ -21,6 +21,7 @@ class IosServices internal constructor(private val worker: CoroutineDispatcher) 
     private val tmdbLazy = lazy { TmdbTitleResolver() }
     private val metadataLazy = lazy { DesktopMetadataRepository() }
     private val thumbnailsLazy = lazy { EpisodeThumbnailRepository() }
+    private val extrasLazy = lazy { AnimeExtrasRepository() }
     private val source by sourceLazy
     private val discovery by discoveryLazy
     private val translator by translatorLazy
@@ -29,6 +30,7 @@ class IosServices internal constructor(private val worker: CoroutineDispatcher) 
     private val tmdb by tmdbLazy
     private val metadata by metadataLazy
     private val thumbnails by thumbnailsLazy
+    private val extras by extrasLazy
     fun catalogKoreanIndex(completion: (String?, String?) -> Unit) { scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { metadata.wikidataIndex() } } }
     fun desktopMetadata(anime: Anime, credential: String, includeCast: Boolean, background: Boolean, completion: (DesktopMetadata?, String?) -> Unit) {
         scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { metadata.resolve(anime, credential, includeCast, background) } }
@@ -39,6 +41,14 @@ class IosServices internal constructor(private val worker: CoroutineDispatcher) 
     /** 회차 썸네일 where the source gives none (see EpisodeThumbnailRepository): episode number -> picture. */
     fun episodeThumbnails(anime: Anime, completion: (Map<Int, String>?, String?) -> Unit) {
         scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { thumbnails.thumbnails(anime) } }
+    }
+    /** 내 목록: a saved work's facts of now from its page (LibraryFacts.of; the page is kept 5 minutes as for opening it). */
+    fun libraryFact(anime: Anime, sourceKey: String, completion: (LibraryFact?, String?) -> Unit) {
+        scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { LibraryFacts.of(source.detail(anime, sourceKey), kotlin.time.Clock.System.now().toEpochMilliseconds()) } }
+    }
+    /** 작품 정보 더 보기: the work's AniList / MAL extras (null when it has no AniList entry; see AnimeExtrasRepository). */
+    fun animeExtras(anime: Anime, sourceKey: String, completion: (AnimeExtras?, String?) -> Unit) {
+        scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { extras.extras(anime, sourceKey) } }
     }
     fun koreanTitle(titles: List<String>, credential: String, completion: (String?, String?) -> Unit) {
         scope.launch(start = CoroutineStart.UNDISPATCHED) { call(completion) { tmdb.desktopTitles(titles, credential, light = true).firstOrNull() } }
@@ -149,5 +159,6 @@ class IosServices internal constructor(private val worker: CoroutineDispatcher) 
         if (tmdbLazy.isInitialized()) tmdb.close()
         if (metadataLazy.isInitialized()) metadata.close()
         if (thumbnailsLazy.isInitialized()) thumbnails.close()
+        if (extrasLazy.isInitialized()) extras.close()
     }
 }

@@ -163,7 +163,7 @@ fun DetailScreen(summary: Anime, source: String) {
                             tint = if (saved) LilacStyle.accent else null) { library.toggle(anime, source) }
                         val link = anime.detailUrl.takeIf { it.startsWith("http://") || it.startsWith("https://") }
                         if (link != null) LilacGhostButton(if (wide) "작품 정보" else "", icon = Icons.AutoMirrored.Filled.OpenInNew) {
-                            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link))) }
+                            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(ReAnimeHost.live(link)))) }
                         }
                     }
                     // Tabs underlined in lilac (#detailDialog tabs).
@@ -279,7 +279,7 @@ private fun Information(anime: Anime, extras: SourceExtras?, overview: String) {
         HorizontalDivider(color = LilacStyle.line)
         extras?.views?.takeIf { it.isNotEmpty() }?.let { Text("조회 $it", fontSize = 12.sp, color = LilacStyle.muted) }
         anime.detailUrl.takeIf { it.startsWith("http://") || it.startsWith("https://") }?.let { link ->
-            Row(Modifier.clickable { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link))) } }, verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.clickable { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(ReAnimeHost.live(link)))) } }, verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.AutoMirrored.Filled.OpenInNew, null, tint = LilacStyle.accent, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("사이트에서 작품 정보 보기", fontSize = 15.sp, color = LilacStyle.accent)

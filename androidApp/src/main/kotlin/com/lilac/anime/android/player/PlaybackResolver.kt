@@ -18,6 +18,8 @@ import com.lilac.anime.shared.DesktopPlaybackStream
 import com.lilac.anime.shared.IosServices
 import com.lilac.anime.shared.OhliDirectStream
 import com.lilac.anime.shared.CrossSiteTrack
+import com.lilac.anime.shared.FlixEmbed
+import com.lilac.anime.shared.Ohli24Host
 import com.lilac.anime.shared.PROVIDER_SUBTITLE_AGENT
 import com.lilac.anime.android.subtitle.SubtitleFiles
 import kotlinx.coroutines.*
@@ -149,8 +151,9 @@ class PlaybackResolver(private val context: Context) {
                     raceServers(serverCandidates.toList(), item)
                 } else loadNextServer(item.watchURL)
             }
-            // ani.ohli24.com: the episode's player is named in its page data and read directly (desktop resolveOhliEpisode).
-            source == "ohli24" && urlHost(item.watchURL) == "ani.ohli24.com" -> scope.launch {
+            // 애니24 (kept as ani.ohli24.com, asked at a101.ohli24.com): the episode's player is named in its page data and
+            // read directly (desktop resolveOhliEpisode).
+            source == "ohli24" && Ohli24Host.owns(item.watchURL) -> scope.launch {
                 val player = desktop.await<String> { ohliPlayer(item.watchURL, it) }
                 if (token != generation) return@launch
                 val address = player.getOrNull()
@@ -271,7 +274,10 @@ class PlaybackResolver(private val context: Context) {
     private fun loadPage(url: String, seconds: Int) {
         flixKey = null; webPlaybackActive = false
         val token = generation
-        webView.loadUrl(url, mapOf("Referer" to (currentItem?.watchURL ?: "")))
+        val referer = currentItem?.watchURL ?: ""
+        // A FlixCloud player plays only inside a frame (FlixEmbed): opened in one, on a page at the episode site's address.
+        if (FlixEmbed.isPlayer(url)) webView.loadDataWithBaseURL(FlixEmbed.embedder(referer), FlixEmbed.page(url), "text/html", "utf-8", null)
+        else webView.loadUrl(url, mapOf("Referer" to referer))
         timeout?.cancel()
         timeout = scope.launch {
             delay(seconds * 1000L)

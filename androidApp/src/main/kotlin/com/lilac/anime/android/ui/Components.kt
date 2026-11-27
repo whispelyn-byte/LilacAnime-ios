@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.lilac.anime.shared.Anime
 import com.lilac.anime.shared.DesktopAnimeMetadata
+import com.lilac.anime.shared.Ohli24Host
 
 /** 22% from the top, as the desktop's `background-position: center 22%`: a cropped poster keeps its upper part. */
 val PosterFocus: Alignment = BiasAlignment(0f, -0.56f)
@@ -116,7 +117,8 @@ fun LilacSectionTitle(title: String, modifier: Modifier = Modifier, seeAll: (() 
 @Composable
 fun AnimeArtwork(url: String, modifier: Modifier = Modifier, alignment: Alignment = Alignment.Center) {
     Box(modifier.background(LilacStyle.card2)) {
-        if (url.isNotEmpty()) AsyncImage(model = url, contentDescription = null, contentScale = ContentScale.Crop, alignment = alignment, modifier = Modifier.matchParentSize())
+        // A poster saved before 애니24's move (ani.ohli24.com answers 451) is fetched at its new name.
+        if (url.isNotEmpty()) AsyncImage(model = Ohli24Host.live(url), contentDescription = null, contentScale = ContentScale.Crop, alignment = alignment, modifier = Modifier.matchParentSize())
     }
 }
 

@@ -59,9 +59,36 @@ class OhliSourceTest {
         assertEquals(DesktopSourceParser.ohliPath("e", "작품 9.5화"), episodes[2].id)
         assertEquals(2, detail.anime.availableEpisodes)
         assertEquals("作品", detail.anime.native)
-        assertEquals("https://ani.ohli24.com/storage/a.jpg", detail.anime.poster)
+        assertEquals("https://a101.ohli24.com/storage/a.jpg", detail.anime.poster)
         assertEquals(listOf("판타지", "모험"), detail.anime.genres)
         assertTrue(requested.any { it.contains("page=2") })
+        // Kept as ani.ohli24.com, asked at a101.ohli24.com (ani.ohli24.com answers 451 since November 2026).
+        assertTrue(summary.detailUrl.startsWith("https://ani.ohli24.com/c/"))
+        assertTrue(requested.isNotEmpty() && requested.filter { "ohli24" in it }.all { it.startsWith("https://a101.ohli24.com/") }, requested.toString())
+    }
+
+    @Test fun savedAddressesAreAskedAtTheNewNameAndOtherSitesAreLeftAlone() {
+        assertEquals("https://a101.ohli24.com/e/x%203%ED%99%94", Ohli24Host.live("https://ani.ohli24.com/e/x%203%ED%99%94"))
+        assertEquals("https://a101.ohli24.com/storage/a.jpg", Ohli24Host.live("https://ani.ohli24.com/storage/a.jpg"))
+        assertEquals("https://a101.ohli24.com", Ohli24Host.live("https://a7.ohli24.com"))
+        assertTrue(Ohli24Host.owns("https://ani.ohli24.com/c/x") && Ohli24Host.owns("https://a101.ohli24.com/c/x"))
+        for (other in listOf("https://www.ohli24.net/1/x.html", "https://ani.ohli24.com.example/x", "https://reanime.to/x")) {
+            assertFalse(Ohli24Host.owns(other)); assertEquals(other, Ohli24Host.live(other))
+        }
+        assertEquals("https://reanime.cz/watch/x", SiteHost.live("https://reanime.to/watch/x"))
+        assertEquals("https://a101.ohli24.com/c/x", SiteHost.live("https://ani.ohli24.com/c/x"))
+    }
+
+    // Since the November 2026 move a board's card names its count in main_right, its year in main_left, and its genres
+    // as a list; a movie's card gives its length ("112분") instead of a count.
+    @Test fun theNewBoardCardsGiveTheirCountYearGenresAndMovies() {
+        fun card(json: String) = DesktopSourceParser.ohliAnime(kotlinx.serialization.json.Json.parseToJsonElement(json) as kotlinx.serialization.json.JsonObject)
+        val show = card("""{"slug":"작품","title":"작품","main_right":"49화","main_left":"2024","genres":[{"name":"액션"},{"name":" 판타지 "}],"thumbnail":"b.jpg"}""")
+        assertEquals(49, show.availableEpisodes); assertEquals("2024", show.year); assertEquals(listOf("액션", "판타지"), show.genres)
+        assertEquals("TV", show.format); assertEquals("https://a101.ohli24.com/storage/b.jpg", show.poster)
+        assertEquals("https://ani.ohli24.com/c/%EC%9E%91%ED%92%88", show.detailUrl)
+        val movie = card("""{"slug":"극장","title":"극장","main_right":"112분","main_left":"2023","genres":["드라마"]}""")
+        assertEquals("MOVIE", movie.format); assertNull(movie.availableEpisodes); assertEquals(listOf("드라마"), movie.genres)
     }
 
     // desktop 0.5.21 (issue #11): a number inside an episode's own title is not its number.

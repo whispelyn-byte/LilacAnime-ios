@@ -210,8 +210,9 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
             }
             return
         }
-        // ani.ohli24.com: the episode's player is named in its page data; it is opened directly (desktop resolveOhliEpisode).
-        if item.anime.source == "ohli24" && item.watchURL.host == "ani.ohli24.com" {
+        // 애니24 (kept as ani.ohli24.com, asked at a101.ohli24.com): the episode's player is named in its page data; it is
+        // opened directly (desktop resolveOhliEpisode).
+        if item.anime.source == "ohli24" && Ohli24Host.shared.owns(url: item.watchURL.absoluteString) {
             desktop.ohliPlayer(url: item.watchURL.absoluteString) { [weak self] value, failure in
                 Task { @MainActor in
                     guard let self, token == self.generation else { return }
@@ -341,9 +342,15 @@ final class PlaybackResolver: NSObject, ObservableObject, WKNavigationDelegate, 
     private func loadPage(_ url: URL, seconds: Double) {
         flixKey = nil; webPlaybackActive = false
         let token = generation
-        var request = URLRequest(url: url)
-        request.setValue(currentItem?.watchURL.absoluteString ?? "", forHTTPHeaderField: "Referer")
-        webView.load(request)
+        let referer = currentItem?.watchURL.absoluteString ?? ""
+        // A FlixCloud player plays only inside a frame (FlixEmbed): opened in one, on a page at the episode site's address.
+        if FlixEmbed.shared.isPlayer(url: url.absoluteString) {
+            webView.loadHTMLString(FlixEmbed.shared.page(player: url.absoluteString), baseURL: URL(string: FlixEmbed.shared.embedder(referer: referer)))
+        } else {
+            var request = URLRequest(url: url)
+            request.setValue(referer, forHTTPHeaderField: "Referer")
+            webView.load(request)
+        }
         timeout = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             guard !Task.isCancelled, let self, self.generation == token else { return }

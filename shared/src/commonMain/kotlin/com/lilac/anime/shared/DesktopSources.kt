@@ -109,12 +109,14 @@ object DesktopSourceParser {
                 genres = card.select(".top-list-body-genre a").map { it.text() }.filter(String::isNotBlank))
         }.distinctBy { it.id }
     }
-    // --- 애니24 (ani.ohli24.com), as desktop main.cjs reads it -------------------------------------------------------
+    // --- 애니24 (a101.ohli24.com; addresses kept as ani.ohli24.com: Ohli24Host), as desktop main.cjs reads it ----------
     // A Laravel + Inertia app: each page carries what it shows as JSON (<script data-page="app">). Boards: /방영중 (every
     // airing show on one page), /완결 and /극장판 (24 a page, ?page=N, ?keyword=). A series is /c/<title> (its info rows,
     // story and episodes, 100 a page); an episode is /e/<title N화>, its player in playing.body.url. It took the place of
     // www.ohli24.net, a copy no longer kept up (episodes missing, dates off).
-    const val OHLI24_WEB = "https://ani.ohli24.com"
+    const val OHLI24_WEB = Ohli24Host.WEB
+    /** The name a work's and an episode's address is kept under ([Ohli24Host.ID]); asked at [OHLI24_WEB]. */
+    const val OHLI24_ID = Ohli24Host.ID
     /** An address in a playlist or page, as the browser reads it against where it came from. */
     fun resolveUrl(value: String, base: String): String {
         val trimmed = value.trim()
@@ -125,7 +127,8 @@ object DesktopSourceParser {
         if (trimmed.startsWith("/")) return origin + trimmed
         return origin + url.encodedPath.substringBeforeLast('/') + "/" + trimmed
     }
-    /** 애니24 별점 높은순 pages ranked by how many rated each show, then by its rating; each show once. */
+    /** 애니24 별점 높은순 pages ranked by how many rated each show, then by its rating; each show once. Since the November
+     *  2026 move the cards carry no rating_count, so the site's own order (a weighted rating) stands. */
     fun ohliPopular(items: List<JsonObject>): List<Anime> {
         fun number(item: JsonObject, key: String) = (item[key] as? JsonPrimitive)?.content?.toDoubleOrNull() ?: 0.0
         return items.distinctBy { it.text("slug") }
@@ -152,7 +155,7 @@ object DesktopSourceParser {
         return Json.parseToJsonElement(json).jsonObject.obj("props")
     }
     /** Each part escaped whole, "/" too (a title like "란마 1/2 (2026)"), as encodeURIComponent does. */
-    fun ohliPath(vararg parts: String): String = OHLI24_WEB + "/" + parts.joinToString("/") { it.encodeURLParameter() }
+    fun ohliPath(vararg parts: String): String = OHLI24_ID + "/" + parts.joinToString("/") { it.encodeURLParameter() }
     fun ohliInfo(item: JsonObject): Map<String, String> = item.obj("metadata").list("info_rows").mapNotNull { row ->
         val pair = row as? JsonArray ?: return@mapNotNull null
         val label = (pair.getOrNull(0) as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
@@ -193,22 +196,30 @@ object DesktopSourceParser {
         val year = yoe + era * 400 + if (month <= 2) 1 else 0
         return year.toString().padStart(4, '0') + "-" + month.toString().padStart(2, '0') + "-" + day.toString().padStart(2, '0')
     }
-    /** A series as the app lists it, from a board's card (comics.data) or the airing list's shorter one. */
+    /** A series as the app lists it, from a board's card (comics.data) or the airing list's shorter one. Since the
+     *  November 2026 move a card names its count in main_right ("49화"; a movie, its length: "112분"), its year in
+     *  main_left, and its genres as a list of {name}. */
     fun ohliAnime(item: JsonObject): Anime {
         val slug = item.text("slug").ifBlank { item.text("title") }
         val info = ohliInfo(item)
+        val right = item.text("main_right").trim()
         val count = item.number("episodes_count") ?: Regex("\\d+").find(item.text("eps"))?.value?.toIntOrNull()
+            ?: Regex("^(\\d+)\\s*화$").find(right)?.groupValues?.get(1)?.toIntOrNull()
+        val movie = item.text("category") == "극장판" || Regex("^\\d+\\s*분$").matches(right)
+        val genres = (item["genres"] as? JsonArray)?.mapNotNull { genre ->
+            ((genre as? JsonObject)?.get("name") ?: genre).let { (it as? JsonPrimitive)?.contentOrNull?.trim() }
+        } ?: item.text("tags_string").split(",").map(String::trim)
         val thumbnail = item.text("thumbnail")
         return Anime(id = slug, title = item.text("title").ifBlank { slug }, source = "ohli24", detailUrl = ohliPath("c", slug),
             native = item.text("original_title").ifBlank { info["원제"].orEmpty() },
             poster = if (thumbnail.isBlank()) "" else "$OHLI24_WEB/storage/$thumbnail",
             score = item.text("rating").toDoubleOrNull() ?: 0.0,
-            year = Regex("\\d{4}").find(info["방영일"].orEmpty().ifBlank { info["상영일"].orEmpty() }.ifBlank { item.text("published_at") })?.value.orEmpty(),
-            format = if (item.text("category") == "극장판") "MOVIE" else "TV",
+            year = Regex("\\d{4}").find(info["방영일"].orEmpty().ifBlank { info["상영일"].orEmpty() }.ifBlank { item.text("published_at") }.ifBlank { item.text("main_left") })?.value.orEmpty(),
+            format = if (movie) "MOVIE" else "TV",
             totalEpisodes = item.number("episode_total")?.takeIf { it > 0 }, availableEpisodes = count,
             status = item.text("category").ifBlank { if (item.text("eps").isNotBlank()) "방영중" else "" },
             description = DisplayText.plain(item.text("description")),
-            genres = item.text("tags_string").split(",").map(String::trim).filter(String::isNotBlank))
+            genres = genres.filter(String::isNotBlank))
     }
     /** A series and every episode: numbered ones first by number, specials (OVA, SP) after them; a movie is its one 1화. */
     fun ohliDetail(comic: JsonObject, rows: List<JsonObject>, summary: Anime): SourceDetail {
@@ -485,9 +496,9 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
         return DesktopSourceParser.reanimeServers(Json.parseToJsonElement(text(ReAnimeHost.WEB + "/api/flix/$anilistId/$number")).jsonObject)
     }
     private val cursors = mutableMapOf<String, MutableMap<Int, String>>()
-    private suspend fun text(url: String, params: Map<String, String> = emptyMap()) = client.get(ReAnimeHost.live(url)) {
+    private suspend fun text(url: String, params: Map<String, String> = emptyMap()) = client.get(SiteHost.live(url)) {
         header("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1")
-        header("Referer", Url(ReAnimeHost.live(url)).let { it.protocol.name + "://" + it.host + "/" })
+        header("Referer", Url(SiteHost.live(url)).let { it.protocol.name + "://" + it.host + "/" })
         header("Accept-Language", "ko-KR,ko;q=0.9")
         params.forEach { (key, value) -> parameter(key, value) }
     }.body<String>()
@@ -653,7 +664,8 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
         val comics = DesktopSourceParser.ohliProps(text(DesktopSourceParser.ohliPath(board), buildMap {
             if (page > 1) put("page", page.toString()); if (keyword.isNotBlank()) put("keyword", keyword)
         })).obj("comics")
-        return comics.list("data").filterIsInstance<JsonObject>().map(DesktopSourceParser::ohliAnime) to comics.text("next_page_url").isBlank()
+        // A board's cards carry no category: the board names it (완결, 극장판).
+        return comics.list("data").filterIsInstance<JsonObject>().map { DesktopSourceParser.ohliAnime(JsonObject(mapOf("category" to JsonPrimitive(board)) + it)) } to comics.text("next_page_url").isBlank()
     }
     /**
      * The finished and movie boards search themselves (spaced as typed: searched again by pieces when nothing is found);
@@ -682,9 +694,10 @@ internal class DesktopSourceRepository(private val client: HttpClient) {
         pieces.map { piece -> async { try { search(piece) } catch (error: CancellationException) { throw error } catch (_: Exception) { emptyList() } } }.awaitAll()
             .flatten().filter { spaceKey(it.title).contains(wanted) }.distinctBy { it.id }
     }
-    /** A series by its page; one saved from www.ohli24.net is opened by its title, or found by a search for it. */
+    /** A series by its page (at any of the site's names); one saved from www.ohli24.net is opened by its title, or found
+     *  by a search for it. */
     private suspend fun ohliDetail(summary: Anime): SourceDetail {
-        val own = summary.detailUrl.startsWith(DesktopSourceParser.OHLI24_WEB + "/c/")
+        val own = Ohli24Host.owns(summary.detailUrl) && Url(summary.detailUrl).encodedPath.startsWith("/c/")
         val slug = if (own) Url(summary.detailUrl).encodedPath.removePrefix("/c/").decodeURLPart() else summary.title.ifBlank { summary.id }
         var props = try { DesktopSourceParser.ohliProps(text(DesktopSourceParser.ohliPath("c", slug))) }
             catch (error: CancellationException) { throw error } catch (error: Exception) { if (own) throw error; JsonObject(emptyMap()) }

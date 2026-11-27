@@ -96,7 +96,7 @@ struct AnimeArtwork: View {
                 } else if let file = URL(string: url), file.isFileURL, let data = try? Data(contentsOf: file), let image = UIImage(data: data) {
                     Image(uiImage: image).resizable().scaledToFill()
                 } else {
-                    AsyncImage(url: URL(string: url)) { image in image.resizable().scaledToFill() } placeholder: { Color.clear }
+                    AsyncImage(url: URL(string: Ohli24Host.shared.live(url: url))) { image in image.resizable().scaledToFill() } placeholder: { Color.clear }
                 }
             }.frame(width: geometry.size.width, height: geometry.size.height, alignment: alignment).clipped()
         }.frame(width: width, height: height).clipped().accessibilityHidden(true)

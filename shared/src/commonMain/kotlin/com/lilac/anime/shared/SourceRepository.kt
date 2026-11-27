@@ -257,10 +257,10 @@ class SourceRepository(private val client: HttpClient, private val details: Deta
     suspend fun facets() = ReAnimeHarParser.parseFacets(getText(ReAnimeHost.WEB + "/api/v1/search", mapOf("facets" to "true", "limit" to "0")))
     /** A page or API answer as text. A work's or an episode's saved RE:Anime address is asked at the site's current name
      *  ([ReAnimeHost]). */
-    suspend fun getText(url: String, params: Map<String, String> = emptyMap()): String = client.get(ReAnimeHost.live(url)) {
+    suspend fun getText(url: String, params: Map<String, String> = emptyMap()): String = client.get(SiteHost.live(url)) {
         header("Accept", "application/json,text/html,*/*")
         header("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1")
-        header("Referer", Url(ReAnimeHost.live(url)).let { it.protocol.name + "://" + it.host + "/" })
+        header("Referer", Url(SiteHost.live(url)).let { it.protocol.name + "://" + it.host + "/" })
         params.forEach { (key, value) -> parameter(key, value) }
     }.bodyAsText()
     suspend fun sourceSections(source: String): List<SourceSection> = try { primarySections(source) }

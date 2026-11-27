@@ -16,8 +16,18 @@
       seen.add(url); post({url,kind:'video',referer:location.href,pk:key()});
     } catch (_) {}
   };
+  // Framed (FlixEmbed: the player plays only inside a frame), what the resolver reads from the top page is passed up
+  // to it: the key, the bootstrap's result and the embedded subtitle tracks.
+  let tracks = [];
+  const relay = () => {
+    if (!window.parent || window.parent === window) return;
+    try {
+      if (!tracks.length) tracks = parseFlixSubtitleTracks(document.documentElement.innerHTML || '');
+      window.parent.postMessage({lilacFlixState:{pk:key(),result:String(window.__lilacReAnimeFlixResult||''),tracks,stopped}}, '*');
+    } catch (_) {}
+  };
   const stop = () => {
-    stopped = true; clearInterval(timer);
+    stopped = true; clearInterval(timer); relay();
     document.querySelectorAll('video,audio').forEach(media=>media.pause());
     document.querySelectorAll('iframe').forEach(frame=>frame.contentWindow?.postMessage({lilacStopDiscovery:true},'*'));
   };
@@ -28,6 +38,12 @@
       post({kind:'flixError',error:'FlixCloud가 이 앱 세션을 차단했습니다. 다른 영상 서버로 전환합니다.'});
       stop(); return;
     }
+    // A file taken down answers "404: File not found": the next server is tried at once, not after the time limit.
+    if (/404|file could not be found|file not found/.test(document.title.toLowerCase()) || text.includes('this file could not be found')) {
+      post({kind:'flixError',error:'FlixCloud에서 이 영상을 찾지 못했습니다. 다른 영상 서버로 전환합니다.'});
+      stop(); return;
+    }
+    relay();
     const pk = key();
     if (pk && pk !== lastKey) { lastKey = pk; post({kind:'flixKey',pk}); }
     document.querySelectorAll('video').forEach(v=>{v.muted=true;v.play().catch(()=>{})});
